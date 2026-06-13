@@ -18,10 +18,15 @@ sock.on("message", (msg) => {
   if (msg.length < 16) return;
   const frames = msg.readUInt32LE(4);
   const fpsX10 = msg.readUInt16LE(8);
-  const parseErr = msg.readUInt16LE(10);
+  const drops = msg.readUInt16LE(10);
   const rssi = msg.readInt8(12);
+  let extra = "";
+  if (msg.length >= 20) {
+    const layoutHash = msg.readUInt32LE(16);
+    extra = ` layout_hash=0x${layoutHash.toString(16).padStart(8, "0")}`;
+  }
   console.log(
-    `status: frames=${frames} fps=${(fpsX10 / 10).toFixed(1)} parse_err=${parseErr} rssi=${rssi}`,
+    `status: frames=${frames} fps=${(fpsX10 / 10).toFixed(1)} drops=${drops} rssi=${rssi}${extra}`,
   );
 });
 

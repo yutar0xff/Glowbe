@@ -20,9 +20,24 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
   "espDrops": 0,
   "ledCount": 225,
   "loopSequenceId": null,
-  "uptimeSec": 3600
+  "uptimeSec": 3600,
+  "frameLoopStaleMs": 12,
+  "layoutMismatch": false,
+  "framesSent": 216000
 }
 ```
+
+- `frameLoopStaleMs`: 直近のフレームループ tick からの経過時間（ms）。出力タスクが停止すると急増する。
+- `layoutMismatch`: ESP STATUS の `layout_hash` とランタイムの `meta.layoutHash` が食い違うとき `true`（いずれか欠損時は照合しない）。
+- `framesSent`: 完全送信に成功したフレーム数（累計）。
+
+### `POST /api/v1/brightness`（草案・未実装）
+
+```json
+{ "value": 128 }
+```
+
+グローバル輝度 0–255。実装時はファームまたはランタイムの最終段で適用（[`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) §6.5）。
 
 ### `POST /api/v1/mode`
 
@@ -54,7 +69,12 @@ UV プレビュー用（間引き可）。
 
 ### `GET /health`
 
-ヘルスチェック。`200 OK` + 本文 `ok`（プレーンテキスト）。監視・起動確認用。
+ヘルスチェック。**プレーンテキスト**。
+
+- 出力ループが直近 **1000ms** 以内に tick していれば `200 OK` + 本文 `ok`。
+- それ以外（タスク停止・長時間ブロック等）では `503 Service Unavailable` + 本文 `stale: output loop tick too old`。
+
+監視・起動確認用。
 
 ### `GET /api/v1/sequences`
 

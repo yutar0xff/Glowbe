@@ -16,6 +16,7 @@ firmware/esp32s3/include/glowbe_layout.h    # ファーム用 C ヘッダ（自�
 ```json
 {
   "layoutId": "prototype-icosahedron-15",
+  "layoutHash": 2085622039,
   "ledCount": 225,
   "dataLineCount": 5,
   "gpios": [16, 17, 18, 19, 21],
@@ -23,6 +24,8 @@ firmware/esp32s3/include/glowbe_layout.h    # ファーム用 C ヘッダ（自�
   "lineGlobalOffset": [0, 45, 90, 135, 180]
 }
 ```
+
+`layoutHash` は `tools/layout-compile.ts` が算出する **FNV-1a 32bit**（配線・GPIO・chip 等）。ファームの `GLOWBE_LAYOUT_HASH` および STATUS 拡張フィールドと一致させ、ランタイムが不一致を検出する。
 
 ## `.ledmap.json`
 
@@ -43,8 +46,8 @@ firmware/esp32s3/include/glowbe_layout.h    # ファーム用 C ヘッダ（自�
 | 8 | u8[data_line_count] | gpio per line |
 | 8+N | u16 LE[data_line_count] | leds per line |
 
-RGB 順序は **グローバルインデックス 0 .. led_count-1** がワイヤプロトコルと一致。
+RGB 順序は **論理 RGB**（グローバル LED インデックスごとに R,G,B）。ワイヤ仕様は [`udp-wire.md`](udp-wire.md)。
 
 ## C ヘッダ
 
-`glowbe_layout.h` にマクロ `GLOWBE_LAYOUT_ID`, `GLOWBE_LED_COUNT`, `GLOWBE_DATA_LINES`, `GLOWBE_GPIO_PINS[]`, `GLOWBE_LINE_LED_COUNTS[]` を出力。
+`glowbe_layout.h` にマクロ `GLOWBE_LAYOUT_ID`, `GLOWBE_LAYOUT_HASH`, `GLOWBE_LED_COUNT`, `GLOWBE_DATA_LINES`, `GLOWBE_GPIO_PINS[]`, `GLOWBE_LINE_LED_COUNTS[]` を出力。

@@ -11,12 +11,25 @@ pub struct Config {
     pub server: Server,
     #[serde(default)]
     pub modes: Modes,
+    #[serde(default)]
+    pub assets: Assets,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Device {
-    pub esp_ip: String,
+    /// When omitted or empty, runtime discovers `_glowbe._udp` via mDNS.
+    #[serde(default)]
+    pub esp_ip: Option<String>,
     pub layout_id: String,
+}
+
+impl Device {
+    pub fn esp_ip_host(&self) -> Option<&str> {
+        self.esp_ip
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -34,6 +47,13 @@ fn default_status_port() -> u16 {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Server {
     pub bind: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct Assets {
+    /// Directory containing `<layout_id>.meta.json` etc. Relative paths are from cwd.
+    #[serde(default)]
+    pub compiled_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

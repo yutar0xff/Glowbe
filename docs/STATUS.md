@@ -2,7 +2,7 @@
 
 > **役割:** 本書は「いま何ができていて、次に何をやるか」の**正本**。  
 > 設計の「あるべき姿」は [`ARCHITECTURE.md`](ARCHITECTURE.md)、各仕様は [`../protocol/`](../protocol/)。  
-> 最終更新: 2026-06-14
+> 最終更新: 2026-06-14（堅牢性・プロトコル・計画ドキュメントの一括反映）
 
 ---
 
@@ -11,7 +11,7 @@
 | 指標 | 現在地 |
 |------|--------|
 | フェーズ | **Phase 1（締め作業中）** |
-| ランタイム | loop パターンを 60fps 想定で UDP 送信 + 状態 API。`cargo test` 2 件パス |
+| ランタイム | loop パターンを 60fps 想定で UDP 送信 + 状態 API。`cargo test` **4** 件パス |
 | ファーム | UDP 受信・フレーム再構成・S3(LCD+DMA)/無印(RMT) ドライバ実装済 |
 | UDP E2E | 「成功扱い」。**60fps×5 分ベンチの合格記録は未取得**（[`BENCHMARK.md`](BENCHMARK.md)） |
 | Web | **未着手** |
@@ -27,16 +27,16 @@
 
 | コンポーネント | パス | 状況 | 備考 |
 |----------------|------|------|------|
-| Rust ランタイム | `runtime/` | 🟡 | フレームループ / UDP 送信 / STATUS 受信 / `GET /api/v1/state` `/health`。モードは loop 固定 |
+| Rust ランタイム | `runtime/` | 🟡 | 送信失敗でループ停止しない・60 連続失敗で再接続／mDNS（`esp_ip` 省略時）／`[assets].compiled_dir`／ホットパス atomics／`layoutMismatch`・**論理 RGB** ワイヤ |
 | `Mode` trait・モード合成 | `runtime/`（§9） | 📄 | trait・プラグイン機構・`POST /api/v1/mode` は未実装。`state.mode` は固定文字列 |
 | メディアワーカー / 変換 | `runtime/`（§7） | ⬜ | Phase 2 |
 | プレビュー（WS JPEG） | `runtime/`（§14） | ⬜ | |
 | サーバマイク（cpal） | `runtime/`（§6.1） | ⬜ | Phase 4 |
 | Web クライアント | `web/` | ⬜ | ディレクトリ未作成 |
-| ESP ファーム（共通） | `firmware/esp32s3/` | ✅ | Wi-Fi STA / UDP / 再構成 / STATUS 送信 / idle パターン |
-| LED ドライバ S3 | `src/led_driver_s3.cpp` | ✅ | LCD(I8080)+DMA 並列（FastLED `FASTLED_USES_ESP32S3_I2S`） |
-| LED ドライバ 無印 | `src/led_driver_esp32.cpp` | ✅（未追跡） | RMT per line |
-| レイアウト v1 + コンパイル | `config/layouts/`, `tools/layout-compile.ts` | ✅ | プロトタイプ 225 LED コンパイル済。製品 60 面は未コンパイル |
+| ESP ファーム（共通） | `firmware/esp32s3/` | ✅ | Wi-Fi STA / UDP / 再構成 / **20 バイト STATUS**（`layout_hash`）/ idle パターン |
+| LED ドライバ S3 | `src/led_driver_s3.cpp` | ✅ | LCD+DMA、`setMaxPower`（暫定 4000mA TODO）、論理 RGB 入力 |
+| LED ドライバ 無印 | `src/led_driver_esp32.cpp` | ✅ | RMT per line、同上 |
+| レイアウト v1 + コンパイル | `config/layouts/`, `tools/layout-compile.ts` | ✅ | **`layoutHash` / `GLOWBE_LAYOUT_HASH`** を出力。プロトタイプ 225 LED コンパイル済 |
 | プロトコル文書 | `protocol/` | ✅ | udp-wire / control-api / glowseq / compiled-layout |
 | ベンチツール | `tools/bench-udp.mjs`, `tools/listen-status.mjs` | ✅ | 合格記録は未取得 |
 | PCB / hardware | `hardware/pcb/` | ⬜ | ディレクトリ未追加 |
@@ -47,8 +47,8 @@
 
 | エンドポイント | 状況 | メモ |
 |----------------|------|------|
-| `GET /api/v1/state` | ✅ | `layoutId, mode, fpsOut, fpsRx, espRssi, espDrops, ledCount, loopSequenceId(常に null), uptimeSec` |
-| `GET /health` | ✅ | `200 ok` |
+| `GET /api/v1/state` | ✅ | `layoutId, mode, fpsOut, fpsRx, espRssi, espDrops, ledCount, loopSequenceId, uptimeSec, frameLoopStaleMs, layoutMismatch, framesSent` |
+| `GET /health` | ✅ | 出力ループ tick が **1s 超 stale** なら **503**、そうでなければ **200 ok** |
 | `POST /api/v1/mode` | ⬜ | モード機構待ち |
 | `POST /api/v1/loop/select` | ⬜ | シーケンス機構待ち（Phase 2） |
 | `GET /api/v1/layout/uv` | ⬜ | UV プレビュー |
@@ -65,18 +65,20 @@
 |--------|-----|------|
 | ループ再生 | `loop` | 🟡 現状は変換シーケンス再生ではなく、ランタイム内蔵のテストパターン（`pattern.rs`）を送出 |
 | インタラクティブ | `interactive` | ⬜ Phase 3 |
-| サーバマイク | `mic` | ⬜ Phase 4 |
-| デジタル時計 | `clock_digital` | ⬜ Phase 4 |
-| アナログ時計 | `clock_analog` | ⬜ Phase 4 |
+| デジタル時計 | `clock_digital` | ⬜ Phase 4a（ロードマップ分割後） |
+| アナログ時計 | `clock_analog` | ⬜ Phase 4a |
+| サーバマイク | `mic` | ⬜ Phase 4b |
 
 ---
 
 ## 5. プロトコル整合（重要メモ）
 
-- **STATUS offset 10 のフィールド名は `drops` に統一済み**（旧 `parse_errors`）。実装・仕様・API（`espDrops`）を 2026-06-14 に揃えた。
-- 現ファームの `drops` は **不正ヘッダで破棄したパケット数**を計上する。仕様（[`udp-wire.md`](../protocol/udp-wire.md)）の「破棄パケット数」と一致。
-  - ⚠️ **TODO:** チャンク欠落による「未完成フレームの破棄」はまだ計上していない。真の frame-drop 検出は将来拡張（`FrameAssembler` に破棄理由の戻り値追加が必要）。
-- FRAME ヘッダは 16 バイト LE。`MAX_CHUNK_PAYLOAD = 1020`。プロトタイプ 225 LED（675B）は 1 チャンクに収まる。
+- **STATUS offset 10 は `drops`**。実装・仕様・API（`espDrops`）で一致。
+- **STATUS 拡張（20 バイト）:** 末尾 4 バイトに `layout_hash`（FNV-1a）。ランタイムは `meta.layoutHash` と照合し `layoutMismatch` を立てる。16 バイトのみの旧ファームは照合スキップ。
+- **FRAME ペイロード上限** ランタイム・ファームとも **1472 バイト**（旧 1020 から拡大）。ESP 側 `FrameAssembler` バッファ **4096** バイト。
+- **ワイヤ色順:** **論理 RGB**（R,G,B）。GRB 物理順は FastLED の `GRB` テンプレートのみが担当（二重変換を解消済み）。
+- 現ファームの `drops` は主に **不正ヘッダで破棄したパケット数**。
+  - ⚠️ **TODO:** チャンク欠落による未完成フレーム破棄の計上（`FrameAssembler` 拡張）。
 
 ---
 
@@ -90,8 +92,12 @@
 | 4 | frame-drop（チャンク欠落）カウントの実装 | 中 |
 | 5 | LICENSE 確定（README "TBD"。完全オープン方針なら明示） | 中 |
 | 6 | 製品レイアウト `product-geodesic-2v-60` のコンパイル・検証 | 中 |
-| 7 | Web クライアント雛形（Phase 1 の状態表示だけでも） | 低〜中 |
+| 7 | Web クライアント雛形（Phase 1.5 読み取り専用ダッシュボード） | 低〜中 |
 | 8 | `hardware/pcb/glowbe-revA/` の追加 | 低 |
+| 9 | **判断待ち:** `SK6805` と FastLED `WS2812` テンプレの組み合わせ／`SK6812` 等への切替 | 低 |
+| 10 | PlatformIO ファームの `pio run` を CI に追加（キャッシュ設定含む） | 低 |
+
+**直近の実装反映:** UDP 送信失敗耐性、`/health` stale、atomics ホットパス、論理 RGB 統一、`setMaxPower`、layout hash、chunk 1472、mDNS、`[assets].compiled_dir`、シーケンス形式方針（`glowseq.md`）、ロードマップ 4a/4b 分離、GitHub Actions（Rust）。
 
 ---
 
@@ -112,7 +118,7 @@
 | ファーム | PlatformIO（`uv`） | `cd firmware/esp32s3 && uv sync && uv run pio run -e prototype -t upload` |
 | ベンチ | Node 20+ | `docs/BENCHMARK.md` 参照 |
 
-`config.toml` は `config.example.toml` をコピーし `device.esp_ip` を実機 IP（シリアル diag の `ip=...`）に合わせる。
+`config.toml` は `config.example.toml` をコピーする。**`device.esp_ip`** は実機 IP にするか、**省略**して同一 LAN で **mDNS**（ESP が `_glowbe._udp` を広告）を使う。
 
 ---
 

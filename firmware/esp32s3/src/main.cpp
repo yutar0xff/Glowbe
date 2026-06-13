@@ -28,7 +28,7 @@ constexpr uint16_t kStatusPort = 49153;
 constexpr uint32_t kStatusIntervalMs = 1000;
 constexpr uint32_t kIdleLedIntervalMs = 50;
 constexpr uint32_t kLinkTimeoutMs = 3000;
-constexpr uint16_t kMaxPacketsPerLoop = 8;
+constexpr uint16_t kMaxPacketsPerLoop = 32;
 
 glowbe::wire::FrameAssembler assembler(GLOWBE_LED_COUNT);
 
@@ -45,7 +45,7 @@ bool have_last_peer = false;
 uint8_t latest_rgb[GLOWBE_LED_COUNT * 3] = {};
 
 void sendStatusTo(const IPAddress& ip) {
-  uint8_t pkt[16] = {};
+  uint8_t pkt[20] = {};
   pkt[0] = glowbe::wire::kMagic0;
   pkt[1] = glowbe::wire::kMagic1;
   pkt[2] = glowbe::wire::kVersion;
@@ -59,6 +59,12 @@ void sendStatusTo(const IPAddress& ip) {
   pkt[10] = static_cast<uint8_t>(drops);
   pkt[11] = static_cast<uint8_t>(drops >> 8);
   pkt[12] = static_cast<int8_t>(WiFi.RSSI());
+  pkt[13] = pkt[14] = pkt[15] = 0;
+  const uint32_t lh = GLOWBE_LAYOUT_HASH;
+  pkt[16] = static_cast<uint8_t>(lh & 0xff);
+  pkt[17] = static_cast<uint8_t>((lh >> 8) & 0xff);
+  pkt[18] = static_cast<uint8_t>((lh >> 16) & 0xff);
+  pkt[19] = static_cast<uint8_t>((lh >> 24) & 0xff);
   glowbe::udp::send(pkt, sizeof(pkt), ip, kStatusPort);
 }
 

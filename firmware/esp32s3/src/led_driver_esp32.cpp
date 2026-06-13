@@ -29,6 +29,8 @@ void glowbe_led_init() {
   FastLED.setBrightness(255);
   // 輝度 < 255 時の時間ディザーが低輝度でチラつきに見えるのを止める
   FastLED.setDither(0);
+  // TODO: set budget (mA) from PCB / supply rating.
+  FastLED.setMaxPowerInVoltsAndMilliamps(5, 4000);
 }
 
 void glowbe_led_set_rgb(const uint8_t* rgb) {
@@ -36,8 +38,8 @@ void glowbe_led_set_rgb(const uint8_t* rgb) {
   for (uint8_t line = 0; line < GLOWBE_DATA_LINES; line++) {
     const uint16_t n = GLOWBE_LINE_LED_COUNTS[line];
     for (uint16_t i = 0; i < n; i++) {
-      // Wire payload is GRB; CRGB stores RGB.
-      CRGB c(rgb[offset + 1], rgb[offset], rgb[offset + 2]);
+      // Wire payload is logical RGB; FastLED GRB template reorders for the strip.
+      CRGB c(rgb[offset], rgb[offset + 1], rgb[offset + 2]);
       glowbe_led_dim(c);
       strips[line][i] = c;
       offset += 3;

@@ -52,8 +52,8 @@ function fillLoopRgb(tMs, buf) {
     const hue = (Math.floor(t / 8) + line * 40 + i * 2) & 0xff;
     const [r, gr, b] = hsvToRgb(hue, 220, 180);
     const o = g * 3;
-    buf[o] = gr;
-    buf[o + 1] = r;
+    buf[o] = r;
+    buf[o + 1] = gr;
     buf[o + 2] = b;
   }
 }

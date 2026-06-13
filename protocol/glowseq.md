@@ -1,8 +1,8 @@
-# Glowbe シーケンス形式（`.glowseq`）v1
+# Glowbe シーケンス（ループ再生用オンディスク形式）v1
 
-メディアパイプライン（正距円筒 → LED）の出力。`assets/sequences/<id>/` に配置。
+メディアパイプライン（正距円筒 → LED）の成果物。既定は **ディレクトリ + manifest + 生 RGB**（`.glowseq` という単一ファイルコンテナは **当面採用しない**。将来拡張で再検討する）。
 
-## ファイル構成
+## 既定ディレクトリ構成
 
 ```
 assets/sequences/<id>/
@@ -10,11 +10,13 @@ assets/sequences/<id>/
 └── frames.bin
 ```
 
+（`manifest.json` の `format` フィールドで `"glowseq"` を宣言してもよいが、物理ファイル名に `.glowseq` 拡張子を必須としない。）
+
 ## manifest.json
 
 ```json
 {
-  "format": "glowseq",
+  "format": "glowbe-sequence",
   "version": 1,
   "id": "sunset-01",
   "layoutId": "prototype-icosahedron-15",
@@ -33,7 +35,7 @@ assets/sequences/<id>/
 
 ## frames.bin
 
-連続した生 RGB フレーム（チャンク・圧縮なし v1）。
+連続した生 RGB フレーム（チャンク・圧縮なし）。
 
 ```
 繰り返し frameCount 回:
@@ -46,6 +48,15 @@ assets/sequences/<id>/
 frame_offset = frame_index * ledCount * 3
 ```
 
-## ループモードでの利用
+## 再生と出力 fps の対応（ランタイム）
 
-ランタイムは `manifest.json` を読み、`frames.bin` をメモリマップまたはストリーミング読み込みし、`frame_index = floor(t * fps) % frameCount` でサンプリングする。
+- **既定:** **最近傍ホールド**（補間なし）。シーケンスの `fps` が 30 でランタイムが 60 のとき、各ソースフレームを 2 出力フレーム分表示するイメージ（実装は `floor(t * src_fps)` でインデックス決定）。
+- **将来:** 線形補間などはオプション化してもよい。
+
+## ループモードの I/O（非ブロッキング）
+
+フレームループの tick 内で **ディスク read をブロックしない**。事前に次フレームを **プリフェッチ / ダブルバッファ** し、tick ではメモリ上のバッファだけを UDP 送出に回す。変換ジョブ（オフライン）とは別の、**再生専用の読み取り戦略**として設計する。
+
+## ループモードでの利用（ランタイム）
+
+ランタイムは `manifest.json` を読み、`frames.bin` をメモリマップまたはストリーミング読み込みし、`frame_index = floor(t * fps) % frameCount`（ホールド規則に従って出力レートへマップ）でサンプリングする。

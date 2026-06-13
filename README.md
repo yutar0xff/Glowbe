@@ -41,14 +41,16 @@ uv run pio run -e prototype -t upload
 
 ```bash
 cp config.example.toml config.toml
-# config.toml の device.esp_ip をシリアル diag の IP に合わせる（2.4 GHz LAN）
+# 手動 IP: device.esp_ip = "..."（シリアル diag の ip=...）
+# または esp_ip を省略して mDNS（同一 LAN、ESP が _glowbe._udp を広告）
 
 cd runtime && cargo run -- ../config.toml
 ```
 
-- UDP **49152** で FRAME 送信（60 fps ループパターン）
-- HTTP **8080** — `GET /api/v1/state`（`fpsOut`, `fpsRx` 等、JSON は camelCase）
-- ESP から STATUS **49153** を受信
+- UDP **49152** で FRAME 送信（60 fps、**論理 RGB**）
+- HTTP **8080** — `GET /api/v1/state`（`fpsOut`, `fpsRx`, `frameLoopStaleMs`, `layoutMismatch` 等）
+- `GET /health` — 出力ループが 1s 以上止まっていると **503**
+- ESP から STATUS **49153** を受信（20 バイト推奨、`layout_hash` 含む）
 
 ### 4. ベンチ
 

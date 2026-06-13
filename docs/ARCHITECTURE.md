@@ -183,6 +183,7 @@ Glowbe/
 │   ├── uploads/                 # 生メディア（gitignore）
 │   ├── sequences/               # 変換済みフレーム列（gitignore）
 │   └── compiled/                # レイアウトバイナリ（コミット対象）
+├── .github/workflows/ci.yml     # Rust fmt / clippy / test
 ├── config.example.toml
 └── README.md
 ```
@@ -226,8 +227,13 @@ Glowbe/
 
 ```toml
 [device]
+# esp_ip を省略（または空）→ 同一 LAN で mDNS `_glowbe._udp` を探索
 esp_ip = "192.168.0.42"
 layout_id = "prototype-icosahedron-15"
+
+[assets]
+# 省略時: リポジトリルートの `assets/compiled`（カレントから上位探索）
+# compiled_dir = "/var/lib/glowbe/compiled"
 
 [output]
 udp_port = 49152
@@ -241,14 +247,20 @@ default = "loop"
 bind = "0.0.0.0:8080"
 ```
 
-**将来構成（設計目標。未実装キーを含む）** — Phase 2 以降で `config.rs` に追加予定:
+### 6.5 電力・輝度・ガンマ
+
+- **ファーム:** `FastLED.setMaxPowerInVoltsAndMilliamps` で電流上限をかけ、全白時のブラウンアウトを抑える（具体 mA は PCB・電源に合わせて更新）。`kGlowbeLedBrightness` でグローバル輝度を抑える。
+- **ランタイム（将来）:** 送出直前にガンマ／輝度を一括適用する場合はモードに依存しない最終段に置く。API 草案: `POST /api/v1/brightness`（[`protocol/control-api.md`](../protocol/control-api.md)）。
+- **判断待ち:** レイアウトは `SK6805` だが FastLED テンプレートが `WS2812` のままか／`SK6812` 等へ切り替えるか（[`STATUS.md`](STATUS.md)）。
+
+**将来構成（未実装キー）** — Phase 2 以降で `config.rs` に追加予定:
 
 ```toml
 [device]
 board_rev = "A"                 # 未実装
 
-[assets]                        # 未実装（Phase 2 メディア）
-uploads = "assets/uploads"
+[assets]
+uploads = "assets/uploads"       # メディア（Phase 2）
 sequences = "assets/sequences"
 
 [preview]                       # 未実装（プレビュー）
@@ -283,12 +295,12 @@ timezone = "Asia/Tokyo"
     → assets/uploads/<id>/  に保存
     → ジョブキュー投入
     → レイアウトの LED UV テーブルで各フレームをサンプリング
-    → assets/sequences/<id>/ にフレーム列保存
-         （生 RGB バイナリ、または .glowseq コンテナ）
+    → assets/sequences/<id>/ にフレーム列保存（**生 RGB + manifest**。単一 `.glowseq` ファイルは当面採用しない。詳細は [`protocol/glowseq.md`](../protocol/glowseq.md)）
     → メタデータ JSON（fps、フレーム数、解像度、作成日時）
 ```
 
 - 変換は **リアルタイム再生とは別スレッド/プロセス**で行い、フレームループをブロックしない。
+- **ループ再生時の読み取り**も tick 内でディスク I/O を行わない（プリフェッチ／ダブルバッファ）。シーケンス fps と出力 60fps の対応は **最近傍ホールド**を既定とする（[`protocol/glowseq.md`](../protocol/glowseq.md)）。
 - 完了後 Web から **ループモードで選択可能**にする。
 
 ### 7.3 サンプリング
@@ -565,10 +577,12 @@ LAN 到達者が制御・UDP 送信可能。展示は閉じた AP を運用で�
 | Phase | 内容 | 状態 |
 |-------|------|------|
 | **0** | プロトコル文書、プロトタイプ layout-compile（225 LED）、ESP スパイクファーム、UDP ベンチツール | 完了 |
-| **1** | Rust ランタイム、ループ E2E、**60 fps ベンチ合格** | UDP E2E 成功扱い。API/ドキュメント締め中 |
+| **1** | Rust ランタイム、ループ E2E、**60 fps ベンチ合格** | UDP E2E 成功扱い。送信耐性・mDNS・レイアウトハッシュ等を実装済 |
+| **1.5** | 最小 Web（`/api/v1/state` ポーリングのみ）— API のドッグフーディング | 未着手 |
 | **2** | メディアパイプライン（正距円筒→シーケンス） | 次: 静止画1枚→LEDフレームから |
 | **3** | インタラクティブ（リップル） | 未着手 |
-| **4** | サーバマイク、デジタル/アナログ時計 | 未着手 |
+| **4a** | デジタル/アナログ時計（依存が軽く先行しやすい） | 未着手 |
+| **4b** | サーバマイク（cpal・プラットフォーム差） | 未着手 |
 | **5** | クライアントマイク、OTA、展示 runbook | 未着手 |
 
 ---

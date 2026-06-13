@@ -1,5 +1,7 @@
 mod api;
 mod config;
+mod discover;
+mod metrics;
 mod output;
 mod pattern;
 mod state;
@@ -28,38 +30,51 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| "config.toml".into());
     let config = config::load(Path::new(&config_path)).context("load config")?;
 
-    let repo_root = find_repo_root()?;
-    let meta_path = repo_root.join(format!(
-        "assets/compiled/{}.meta.json",
-        config.device.layout_id
-    ));
-    let meta: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&meta_path).context("read meta")?)?;
+    let compiled_dir = compiled_dir(&config)?;
+    let meta_path = compiled_dir.join(format!("{}.meta.json", config.device.layout_id));
+    let meta_raw = std::fs::read_to_string(&meta_path)
+        .with_context(|| format!("read {}", meta_path.display()))?;
+    let meta: serde_json::Value = serde_json::from_str(&meta_raw).context("parse meta json")?;
     let led_count = meta["ledCount"].as_u64().context("ledCount")? as u16;
+    let expected_layout_hash = meta
+        .get("layoutHash")
+        .and_then(|v| v.as_u64())
+        .map(|x| x as u32);
 
-    let state: SharedState = new_shared(
+    let app: SharedState = new_shared(
         config.device.layout_id.clone(),
         led_count,
         config.modes.default.clone(),
+        expected_layout_hash,
     );
 
     let bind: SocketAddr = config.server.bind.parse().context("server.bind")?;
-    let app = api::router(state.clone());
+    let router = api::router(app.clone());
     let listener = TcpListener::bind(bind).await.context("bind http")?;
     info!("http {bind}");
 
     let cfg = config.clone();
+    let app_out = app.clone();
     let output_handle = tokio::spawn(async move {
-        if let Err(e) = output::run(cfg, state, meta_path).await {
+        if let Err(e) = output::run(cfg, app_out, meta_path).await {
             tracing::error!("output loop ended: {e:#}");
         }
     });
 
-    axum::serve(listener, app)
-        .await
-        .context("http serve")?;
+    axum::serve(listener, router).await.context("http serve")?;
     output_handle.abort();
     Ok(())
+}
+
+fn compiled_dir(config: &config::Config) -> Result<PathBuf> {
+    if let Some(ref p) = config.assets.compiled_dir {
+        let pb = PathBuf::from(p);
+        if pb.is_absolute() {
+            return Ok(pb);
+        }
+        return Ok(std::env::current_dir().context("cwd")?.join(pb));
+    }
+    find_repo_root().map(|r| r.join("assets/compiled"))
 }
 
 fn find_repo_root() -> Result<PathBuf> {
@@ -69,7 +84,7 @@ fn find_repo_root() -> Result<PathBuf> {
             return Ok(dir);
         }
         if !dir.pop() {
-            anyhow::bail!("could not find repo root (assets/compiled)");
+            anyhow::bail!("could not find repo root (assets/compiled); set [assets].compiled_dir in config.toml");
         }
     }
 }

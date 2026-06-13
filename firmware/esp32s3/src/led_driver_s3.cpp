@@ -18,12 +18,14 @@ void glowbe_led_init() {
   GLOWBE_FASTLED_REGISTER_PARALLEL(leds);
   FastLED.setBrightness(255);
   FastLED.setDither(0);
+  // TODO: set budget (mA) from PCB / supply rating; prevents brownout on all-white.
+  FastLED.setMaxPowerInVoltsAndMilliamps(5, 4000);
 }
 
 void glowbe_led_set_rgb(const uint8_t* rgb) {
   for (int i = 0; i < GLOWBE_LED_COUNT; i++) {
     const size_t o = static_cast<size_t>(i) * 3;
-    CRGB c(rgb[o + 1], rgb[o], rgb[o + 2]);
+    CRGB c(rgb[o], rgb[o + 1], rgb[o + 2]);
     glowbe_led_dim(c);
     leds[i] = c;
   }

@@ -4,7 +4,8 @@ pub const VERSION: u8 = 1;
 pub const MSG_FRAME: u8 = 1;
 pub const MSG_STATUS: u8 = 3;
 pub const HEADER_SIZE: usize = 16;
-pub const MAX_CHUNK_PAYLOAD: usize = 1020;
+/// Max RGB bytes per UDP datagram (MTU-friendly; must match firmware `kMaxChunkPayload`).
+pub const MAX_CHUNK_PAYLOAD: usize = 1472;
 
 /// Build one or more UDP datagrams for a full RGB frame.
 pub fn encode_frame(led_count: u16, frame_id: u32, rgb: &[u8]) -> Vec<Vec<u8>> {
@@ -17,7 +18,7 @@ pub fn encode_frame(led_count: u16, frame_id: u32, rgb: &[u8]) -> Vec<Vec<u8>> {
 
     while offset < total {
         let chunk_len = (total - offset).min(MAX_CHUNK_PAYLOAD);
-        let chunk_count = ((total + MAX_CHUNK_PAYLOAD - 1) / MAX_CHUNK_PAYLOAD) as u16;
+        let chunk_count = total.div_ceil(MAX_CHUNK_PAYLOAD) as u16;
 
         let mut pkt = vec![0u8; HEADER_SIZE + chunk_len];
         pkt[0] = MAGIC0;
@@ -50,11 +51,17 @@ pub fn parse_status(data: &[u8]) -> Option<Status> {
     let fps_rx_x10 = u16::from_le_bytes(data[8..10].try_into().ok()?);
     let drops = u16::from_le_bytes(data[10..12].try_into().ok()?);
     let rssi = data[12] as i8;
+    let layout_hash = if data.len() >= 20 {
+        Some(u32::from_le_bytes(data[16..20].try_into().ok()?))
+    } else {
+        None
+    };
     Some(Status {
         frames_complete,
         fps_rx_x10,
         drops,
         rssi,
+        layout_hash,
     })
 }
 
@@ -65,6 +72,8 @@ pub struct Status {
     /// Discarded/dropped packets (low 16 bits), per Glowbe Wire v1 STATUS offset 10.
     pub drops: u16,
     pub rssi: i8,
+    /// Layout fingerprint from ESP (bytes 16–19 LE); `None` if packet is legacy 16-byte STATUS.
+    pub layout_hash: Option<u32>,
 }
 
 impl Status {
@@ -107,5 +116,28 @@ mod tests {
         assert!((st.fps_rx() - 60.2).abs() < 0.01);
         assert_eq!(st.drops, 3);
         assert_eq!(st.rssi, -55);
+        assert!(st.layout_hash.is_none());
+    }
+
+    #[test]
+    fn parse_status_with_layout_hash() {
+        let mut pkt = [0u8; 20];
+        pkt[0] = MAGIC0;
+        pkt[1] = MAGIC1;
+        pkt[2] = VERSION;
+        pkt[3] = MSG_STATUS;
+        pkt[16..20].copy_from_slice(&0x7c501117u32.to_le_bytes());
+        let st = parse_status(&pkt).unwrap();
+        assert_eq!(st.layout_hash, Some(0x7c501117));
+    }
+
+    #[test]
+    fn encode_multi_chunk_when_payload_exceeds_max() {
+        let led_count = 500u16;
+        let rgb: Vec<u8> = vec![0; led_count as usize * 3];
+        let pkts = encode_frame(led_count, 1, &rgb);
+        assert!(pkts.len() > 1);
+        let total_payload: usize = pkts.iter().map(|p| p.len() - HEADER_SIZE).sum();
+        assert_eq!(total_payload, rgb.len());
     }
 }

@@ -11,7 +11,7 @@ constexpr uint8_t kMagic1 = 0x42;
 constexpr uint8_t kVersion = 1;
 constexpr uint8_t kMsgFrame = 1;
 constexpr uint8_t kHeaderSize = 16;
-constexpr size_t kMaxChunkPayload = 1020;
+constexpr size_t kMaxChunkPayload = 1472;
 
 struct FrameHeader {
   uint32_t frame_id;
@@ -105,7 +105,7 @@ class FrameAssembler {
   size_t received_bytes_ = 0;
   uint16_t chunk_sizes_[64] = {};
   bool received_mask_[64] = {};
-  uint8_t buffer_[768];
+  uint8_t buffer_[4096];
 };
 
 }  // namespace glowbe::wire

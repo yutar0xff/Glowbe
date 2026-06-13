@@ -1,4 +1,4 @@
-/// Prototype loop pattern — matches firmware CHSV layout (GRB wire order).
+/// Prototype loop pattern — matches firmware CHSV layout; wire buffer is **logical RGB** (R,G,B order).
 pub fn fill_loop_rgb(led_count: usize, t_ms: u32, rgb: &mut [u8]) {
     const LEDS_PER_LINE: usize = 45;
     let t = t_ms;
@@ -9,8 +9,8 @@ pub fn fill_loop_rgb(led_count: usize, t_ms: u32, rgb: &mut [u8]) {
         let hue = (t / 8 + (line as u32) * 40 + (i as u32) * 2) as u8;
         let (r, gr, b) = hsv_to_rgb(hue, 220, 180);
         let o = g * 3;
-        rgb[o] = gr;
-        rgb[o + 1] = r;
+        rgb[o] = r;
+        rgb[o + 1] = gr;
         rgb[o + 2] = b;
     }
 }
