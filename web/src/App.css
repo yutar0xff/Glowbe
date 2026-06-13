@@ -140,6 +140,33 @@
   margin: 0;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+button {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: rgba(103, 232, 249, 0.12);
+  color: var(--text);
+  font: 700 14px/1 var(--mono);
+}
+
+button:hover:not(:disabled),
+button:focus-visible:not(:disabled) {
+  border-color: rgba(103, 232, 249, 0.7);
+  outline: none;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 pre {
   margin: 0;
   overflow: auto;

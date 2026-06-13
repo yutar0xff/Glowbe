@@ -14,7 +14,7 @@
 | ランタイム | loop パターンを 60fps 想定で UDP 送信 + 状態 API。`cargo test` **4** 件パス |
 | ファーム | UDP 受信・フレーム再構成・S3(LCD+DMA)/無印(RMT) ドライバ実装済 |
 | UDP E2E | 「成功扱い」。**60fps×5 分ベンチの合格記録は未取得**（[`BENCHMARK.md`](BENCHMARK.md)） |
-| Web | **Phase 1.5 完了**（読み取り専用 `/state` ダッシュボード） |
+| Web | **Phase 1.5 完了**（状態ダッシュボード + `idle`/`loop` 切替） |
 | メディアパイプライン | **未着手**（Phase 2） |
 
 > ハードウェア前提: ESP32-S3 が本番。S3 実機が「届いたら本番」、手元の ESP32 無印で先行検証する想定（`docs/firmware/LED-OUTPUT.md`）。
@@ -32,7 +32,7 @@
 | メディアワーカー / 変換 | `runtime/`（§7） | ⬜ | Phase 2 |
 | プレビュー（WS JPEG） | `runtime/`（§14） | ⬜ | |
 | サーバマイク（cpal） | `runtime/`（§6.1） | ⬜ | Phase 4 |
-| Web クライアント | `web/` | ✅ | Vite + React。`/api/v1/state` と `/health` を1秒ポーリングする読み取り専用ダッシュボード |
+| Web クライアント | `web/` | ✅ | Vite + React。`/api/v1/state` と `/health` を1秒ポーリングし、`idle`/`loop` を切替 |
 | ESP ファーム（共通） | `firmware/esp32s3/` | ✅ | Wi-Fi STA / UDP / 再構成 / **20 バイト STATUS**（`layout_hash`）/ idle パターン |
 | LED ドライバ S3 | `src/led_driver_s3.cpp` | ✅ | LCD+DMA、`setMaxPower`（暫定 4000mA TODO）、論理 RGB 入力 |
 | LED ドライバ 無印 | `src/led_driver_esp32.cpp` | ✅ | RMT per line、同上 |
@@ -49,7 +49,7 @@
 |----------------|------|------|
 | `GET /api/v1/state` | ✅ | `layoutId, mode, fpsOut, fpsRx, espRssi, espDrops, ledCount, loopSequenceId, uptimeSec, frameLoopStaleMs, layoutMismatch, framesSent` |
 | `GET /health` | ✅ | 出力ループ tick が **1s 超 stale** なら **503**、そうでなければ **200 ok** |
-| `POST /api/v1/mode` | ⬜ | モード機構待ち |
+| `POST /api/v1/mode` | ✅ | `idle` / `loop` の最小切替。`idle` は黒フレーム、`loop` はテストパターン |
 | `POST /api/v1/loop/select` | ⬜ | シーケンス機構待ち（Phase 2） |
 | `GET /api/v1/layout/uv` | ⬜ | UV プレビュー |
 | `GET /api/v1/ws`（ripple/preview） | ⬜ | |
@@ -87,7 +87,7 @@
 | # | 内容 | 優先 |
 |---|------|------|
 | 1 | **60fps×5 分ベンチの合格記録を取得し `BENCHMARK.md` に追記** | 高（Phase 1 完了条件） |
-| 2 | 残 API（`mode` / `loop/select` / `layout/uv` / `ws`）の実装方針確定 | 高 |
+| 2 | 残 API（`loop/select` / `layout/uv` / `ws`）の実装方針確定 | 高 |
 | 3 | `Mode` trait 導入（loop 固定からプラグイン化へ） | 中 |
 | 4 | frame-drop（チャンク欠落）カウントの実装 | 中 |
 | 5 | LICENSE 確定（README "TBD"。完全オープン方針なら明示） | 中 |
@@ -103,8 +103,8 @@
 ## 7. 次の具体タスク（Phase 1 締め）
 
 1. **実機 or ループバックでベンチ**: `tools/bench-udp.mjs` と `tools/listen-status.mjs` で送出/受信 fps を計測 → 結果を [`BENCHMARK.md`](BENCHMARK.md) に記録。
-2. **`POST /api/v1/mode` の最小実装**: まずは `idle`/`loop` の切替（`state.mode` 書き換え + フレームループの分岐）から。`Mode` trait は次段で。
-3. 上記が固まったら Phase 2（正距円筒 静止画 1 枚 → LED フレーム）の設計メモを起こす。
+2. `loop/select` / `layout/uv` / `ws` の実装方針を確定。
+3. Phase 2（正距円筒 静止画 1 枚 → LED フレーム）の最小パイプラインへ進む。
 
 ---
 
@@ -114,7 +114,7 @@
 |------|------|----------|
 | レイアウト | Node 20+ | `npx tsx tools/layout-compile.ts config/layouts/prototype.layout.json` |
 | ランタイム | Rust toolchain + C linker | `cd runtime && cargo run -- ../config.toml` |
-| Web | Node 20+ | `cd web && npm install && npm run dev`（既定で runtime `127.0.0.1:8080` へプロキシ） |
+| Web | Node 20+ | `cd web && npm install && npm run dev`（状態表示 + `idle`/`loop` 切替。既定で runtime `127.0.0.1:8080` へプロキシ） |
 | ファーム | PlatformIO（`uv`） | `cd firmware/esp32s3 && uv sync && uv run pio run -e prototype -t upload` |
 | ベンチ | Node 20+ | `docs/BENCHMARK.md` 参照 |
 

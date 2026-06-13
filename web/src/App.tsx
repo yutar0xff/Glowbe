@@ -113,6 +113,7 @@ function MetricCard({
 
 function App() {
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' })
+  const [modeBusy, setModeBusy] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -158,6 +159,37 @@ function App() {
     return 'ok'
   }, [load.kind, state])
 
+  const setMode = async (mode: 'idle' | 'loop') => {
+    setModeBusy(mode)
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 3500)
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/mode`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode }),
+        signal: controller.signal,
+      })
+      if (!res.ok) throw new Error(`POST /api/v1/mode failed: ${res.status}`)
+      setLoad({
+        kind: 'ready',
+        state: (await res.json()) as RuntimeState,
+        health: health ?? { ok: true, text: 'ok' },
+        fetchedAt: new Date(),
+      })
+    } catch (err) {
+      setLoad({
+        kind: 'error',
+        message: err instanceof Error ? err.message : String(err),
+        health,
+        fetchedAt: new Date(),
+      })
+    } finally {
+      window.clearTimeout(timeout)
+      setModeBusy(null)
+    }
+  }
+
   return (
     <main className="dashboard">
       <header className="hero">
@@ -200,6 +232,29 @@ function App() {
             <MetricCard label="Frame Loop Stale" value={`${state.frameLoopStaleMs} ms`} hint="health fails above 1000 ms" />
             <MetricCard label="LED Count" value={String(state.ledCount)} hint={state.layoutId} />
             <MetricCard label="Uptime" value={formatUptime(state.uptimeSec)} />
+          </section>
+
+          <section className="panel">
+            <div className="panel-heading">
+              <h2>Mode Control</h2>
+              <span>minimal Phase 1 API</span>
+            </div>
+            <div className="button-row">
+              <button
+                type="button"
+                onClick={() => void setMode('loop')}
+                disabled={modeBusy !== null || state.mode === 'loop'}
+              >
+                {modeBusy === 'loop' ? 'Switching...' : 'Loop'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void setMode('idle')}
+                disabled={modeBusy !== null || state.mode === 'idle'}
+              >
+                {modeBusy === 'idle' ? 'Switching...' : 'Idle / blackout'}
+              </button>
+            </div>
           </section>
 
           {state.layoutMismatch ? (

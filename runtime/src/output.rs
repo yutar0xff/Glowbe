@@ -9,7 +9,7 @@ use tracing::{debug, info, warn};
 use crate::config::Config;
 use crate::discover;
 use crate::pattern;
-use crate::state::SharedState;
+use crate::state::{OutputMode, SharedState};
 use crate::wire;
 
 async fn resolve_esp_socket(config: &Config) -> Result<SocketAddr> {
@@ -88,7 +88,10 @@ pub async fn run(config: Config, app: SharedState, meta_path: PathBuf) -> Result
             app.metrics.mark_tick();
 
             let t_ms = loop_start.elapsed().as_millis() as u32;
-            pattern::fill_loop_rgb(led_count as usize, t_ms, &mut rgb);
+            match app.output_mode() {
+                OutputMode::Idle => rgb.fill(0),
+                OutputMode::Loop => pattern::fill_loop_rgb(led_count as usize, t_ms, &mut rgb),
+            }
 
             let mut full_send_ok = true;
             for pkt in wire::encode_frame(led_count, frame_id, &rgb) {

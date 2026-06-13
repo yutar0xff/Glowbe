@@ -10,7 +10,7 @@
 | パス | 内容 |
 |------|------|
 | `runtime/` | Rust 常駐サーバ（Phase 1: ループ出力 + HTTP API） |
-| `web/` | Vite + React 読み取り専用ダッシュボード（Phase 1.5） |
+| `web/` | Vite + React ダッシュボード（Phase 1.5: 状態表示 + `idle`/`loop` 切替） |
 | `firmware/esp32s3/` | ESP32-S3 ファーム |
 | `config/layouts/` | LED レイアウト（`glowbe-layout` v1） |
 | `protocol/` | UDP・API・シーケンス仕様 |
@@ -67,7 +67,7 @@ npm run dev
 
 ## 次の開発ステップ
 
-Phase 1.5 の読み取り専用ダッシュボードまで実装済み。次は Phase 1 の締め（60fps ベンチ記録・`POST /api/v1/mode` 最小実装）を進め、その後 Phase 2 として **正距円筒の静止画 1 枚 → LED フレーム** の最小パイプラインへ。具体タスクは [`docs/STATUS.md`](docs/STATUS.md) の §7。
+Phase 1.5 の状態ダッシュボードと `idle`/`loop` 切替まで実装済み。次は Phase 1 の締め（60fps ベンチ記録）を進め、その後 Phase 2 として **正距円筒の静止画 1 枚 → LED フレーム** の最小パイプラインへ。具体タスクは [`docs/STATUS.md`](docs/STATUS.md) の §7。
 
 ## 開発要件
 
