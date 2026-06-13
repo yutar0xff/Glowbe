@@ -42,6 +42,7 @@ uint16_t fps_window_count = 0;
 uint16_t fps_rx_x10 = 0;
 IPAddress last_peer;
 bool have_last_peer = false;
+bool link_lost_blackout_sent = false;
 uint8_t latest_rgb[GLOWBE_LED_COUNT * 3] = {};
 
 void sendStatusTo(const IPAddress& ip) {
@@ -122,6 +123,7 @@ void onWifiEvent(WiFiEvent_t event) {
       }
       have_last_peer = false;
       last_udp_rx_ms = 0;
+      link_lost_blackout_sent = false;
       break;
     default:
       break;
@@ -209,11 +211,19 @@ void loop() {
   if (have_new_frame) {
     glowbe_led_set_rgb(latest_rgb);
     glowbe_led_show();
+    link_lost_blackout_sent = false;
   }
 
   const bool link_live = last_udp_rx_ms > 0 && (now - last_udp_rx_ms < kLinkTimeoutMs);
   if (!link_live && WiFi.status() == WL_CONNECTED) {
-    showIdlePattern(now);
+    if (frames_rx == 0) {
+      showIdlePattern(now);
+    } else if (!link_lost_blackout_sent) {
+      memset(latest_rgb, 0, sizeof(latest_rgb));
+      glowbe_led_set_rgb(latest_rgb);
+      glowbe_led_show();
+      link_lost_blackout_sent = true;
+    }
   }
 
   static uint32_t last_diag = 0;

@@ -290,8 +290,8 @@ function App() {
 
           <section className="panel">
             <div className="panel-heading">
-              <h2>Mode Control</h2>
-              <span>minimal Phase 1 API</span>
+              <h2>Output Mode</h2>
+              <span>blackout or playback</span>
             </div>
             <div className="button-row">
               <button

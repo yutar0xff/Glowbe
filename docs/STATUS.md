@@ -104,7 +104,7 @@
 ## 7. 次の具体タスク（Phase 1 締め）
 
 1. **実機 or ループバックでベンチ**: `tools/bench-udp.mjs` と `tools/listen-status.mjs` で送出/受信 fps を計測 → 結果を [`BENCHMARK.md`](BENCHMARK.md) に記録。
-2. Web から `loop/select` できるシーケンス選択 UI を追加。
+2. ファームを再フラッシュし、blackout / sequence 選択の実機挙動を確認。
 3. Phase 2 を拡張（動画/複数フレーム変換、Web アップロード、変換進捗）。
 
 ---
@@ -115,7 +115,7 @@
 |------|------|----------|
 | レイアウト | Node 20+ | `npx tsx tools/layout-compile.ts config/layouts/prototype.layout.json` |
 | ランタイム | Rust toolchain + C linker | `cd runtime && cargo run -- ../config.toml` |
-| Web | Node 20+ | `cd web && npm install && npm run dev`（状態表示 + `idle`/`loop` 切替。既定で runtime `127.0.0.1:8080` へプロキシ） |
+| Web | Node 20+ | `cd web && npm install && npm run dev`（状態表示 + `idle`/`loop` 切替 + シーケンス選択。既定で runtime `127.0.0.1:8080` へプロキシ） |
 | 静止画変換 | Rust + PNG/JPEG | `cargo run --manifest-path runtime/Cargo.toml -- convert-image /path/to/image.png sequence-id config.toml` |
 | ファーム | PlatformIO（`uv`） | `cd firmware/esp32s3 && uv sync && uv run pio run -e prototype -t upload` |
 | ベンチ | Node 20+ | `docs/BENCHMARK.md` 参照 |
