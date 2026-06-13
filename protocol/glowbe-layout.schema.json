@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://glowbe.local/schemas/glowbe-layout-v1.json",
+  "title": "Glowbe Layout v1",
+  "type": "object",
+  "required": ["format", "version", "id", "displayName", "variant", "geometry", "face", "wiring"],
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "glowbe-layout" },
+    "version": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "displayName": { "type": "string" },
+    "variant": { "enum": ["product", "prototype"] },
+    "geometry": {
+      "type": "object",
+      "required": ["preset", "radiusMm", "units", "disabledFaceIds"],
+      "properties": {
+        "preset": { "type": "string" },
+        "radiusMm": { "type": "number" },
+        "units": { "const": "mm" },
+        "disabledFaceIds": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "face": {
+      "type": "object",
+      "required": ["ledCount", "pattern", "paddingMm", "chainMirrorLR"],
+      "properties": {
+        "ledCount": { "type": "integer", "minimum": 1 },
+        "pattern": { "enum": ["zigzag"] },
+        "paddingMm": { "type": "number", "minimum": 0 },
+        "chainMirrorLR": { "type": "boolean" },
+        "rowSizes": { "type": "array", "items": { "type": "integer", "minimum": 1 } }
+      }
+    },
+    "wiring": {
+      "type": "object",
+      "required": ["chip", "colorOrder", "dataLines"],
+      "properties": {
+        "chip": { "const": "SK6805" },
+        "colorOrder": { "const": "GRB" },
+        "dataLines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["gpio", "faceChain", "faceRotations", "reversedFaces"],
+            "properties": {
+              "gpio": { "type": "integer" },
+              "faceChain": { "type": "array", "items": { "type": "string" } },
+              "faceRotations": {
+                "type": "object",
+                "additionalProperties": { "type": "integer", "minimum": 0, "maximum": 2 }
+              },
+              "reversedFaces": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "meta": { "type": "object" }
+  }
+}

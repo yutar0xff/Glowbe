@@ -1,0 +1,30 @@
+{
+  "layoutId": "prototype-icosahedron-15",
+  "displayName": "Glowbe default — Icosahedron (15 panels)",
+  "variant": "prototype",
+  "ledCount": 225,
+  "dataLineCount": 5,
+  "gpios": [
+    16,
+    17,
+    18,
+    19,
+    21
+  ],
+  "ledsPerLine": [
+    45,
+    45,
+    45,
+    45,
+    45
+  ],
+  "lineGlobalOffset": [
+    0,
+    45,
+    90,
+    135,
+    180
+  ],
+  "chip": "SK6805",
+  "colorOrder": "GRB"
+}

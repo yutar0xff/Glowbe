@@ -1,0 +1,16 @@
+[project]
+name = "glowbe-esp32s3-pio"
+version = "0.0.0"
+description = "Pinned PlatformIO CLI for Glowbe ESP32-S3 firmware (uv-managed .venv)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "platformio>=6.1.0,<7",
+  # PlatformIO spawns `python -m pip install` for contrib tools (e.g. esptool); uv's
+  # default venv may not include pip unless declared.
+  "pip>=24.0",
+  "pyserial>=3.5,<4",
+]
+
+[tool.uv]
+package = false

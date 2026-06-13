@@ -1,0 +1,109 @@
+# Glowbe 制御 API v1
+
+ベース URL: `http://<runtime-host>:8080`（`config.toml` の `server.bind`）
+
+認証: **なし**（完全オープン）
+
+JSON フィールド名は外部 API として **camelCase** に統一する。
+
+## REST
+
+### `GET /api/v1/state`
+
+```json
+{
+  "layoutId": "prototype-icosahedron-15",
+  "mode": "loop",
+  "fpsOut": 60.1,
+  "fpsRx": 59.8,
+  "espRssi": -55,
+  "espDrops": 0,
+  "ledCount": 225,
+  "loopSequenceId": null,
+  "uptimeSec": 3600
+}
+```
+
+### `POST /api/v1/mode`
+
+```json
+{ "mode": "idle" | "loop" | "interactive" | "mic" | "clock_digital" | "clock_analog" }
+```
+
+→ `200` + 更新後 `state` オブジェクト。
+
+### `POST /api/v1/loop/select`
+
+```json
+{ "sequenceId": "sunset-01" }
+```
+
+### `GET /api/v1/layout/uv`
+
+UV プレビュー用（間引き可）。
+
+```json
+{
+  "layoutId": "prototype-icosahedron-15",
+  "ledCount": 225,
+  "points": [{ "i": 0, "u": 0.42, "v": 0.18 }, "..."]
+}
+```
+
+`points` は全 LED または `?sparse=64` で間引き（実装時）。
+
+### `GET /health`
+
+ヘルスチェック。`200 OK` + 本文 `ok`（プレーンテキスト）。監視・起動確認用。
+
+### `GET /api/v1/sequences`
+
+変換済みシーケンス一覧。
+
+### `POST /api/v1/media/upload`
+
+`multipart/form-data`: `file`（正距円筒画像/動画/ZIP）。
+
+→ `{ "uploadId": "uuid", "status": "stored" }`
+
+### `POST /api/v1/media/:uploadId/convert`
+
+```json
+{ "fps": 30, "layoutId": "prototype-icosahedron-15" }
+```
+
+→ `{ "jobId": "uuid", "status": "queued" }`
+
+### `GET /api/v1/media/:uploadId`
+
+変換進捗・`sequenceId`（完了時）。
+
+## WebSocket `GET /api/v1/ws`
+
+### クライアント → サーバ
+
+```json
+{ "type": "ripple", "u": 0.42, "v": 0.71, "amplitude": 1.0 }
+{ "type": "subscribe_preview", "quality": 70 }
+```
+
+### サーバ → クライアント
+
+```json
+{ "type": "state", "..." }
+{ "type": "preview_frame", "format": "jpeg", "seq": 12004, "data": "<base64>" }
+```
+
+## Phase 対応 / 実装状況
+
+| エンドポイント | Phase | 実装 |
+|----------------|-------|------|
+| `GET /api/v1/state` | 1 | ✅ 実装済 |
+| `GET /health` | 1 | ✅ 実装済 |
+| `POST /api/v1/mode`, `POST /api/v1/loop/select`, `GET /api/v1/layout/uv`, `GET /api/v1/ws`（ripple/preview） | 1–2 | ⬜ 未実装（設計のみ） |
+| `media/*`, `GET /api/v1/sequences` | 2（最初は静止画1枚→LEDフレームから） | ⬜ 未実装 |
+| clock modes 関連 | 4 | ⬜ 未実装 |
+
+> 進捗の正本は [`docs/STATUS.md`](../docs/STATUS.md)。本表はスナップショットであり、ズレた場合は STATUS を優先。
+
+OpenAPI 化は Phase 1 着手時に `protocol/control-api.openapi.yaml` へ移行可。

@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+target/
+dist/
+.pio/
+.venv/
+
+# Build / assets
+assets/uploads/
+assets/sequences/
+
+# Secrets / local config
+wifi_config.h
+config.toml
+.env
+.env.local
+
+# OS / IDE
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Legacy / local exports (use config/layouts/)
+docs/Glowbe-Product-Geodesic-2V-60-panels.json
+docs/icosahedron.json

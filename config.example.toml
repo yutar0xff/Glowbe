@@ -1,0 +1,16 @@
+# Glowbe runtime — copy to config.toml and edit esp_ip (2.4 GHz LAN)
+
+[device]
+esp_ip = "192.168.x.x"
+layout_id = "prototype-icosahedron-15"
+
+[output]
+udp_port = 49152
+status_port = 49153
+target_fps = 60
+
+[modes]
+default = "loop"
+
+[server]
+bind = "0.0.0.0:8080"
