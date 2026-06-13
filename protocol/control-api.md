@@ -16,8 +16,11 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
   "mode": "loop",
   "fpsOut": 60.1,
   "fpsRx": 59.8,
+  "espFramesComplete": 216000,
   "espRssi": -55,
   "espDrops": 0,
+  "espStatusAddr": "192.168.0.42:49152",
+  "outputTargetAddr": "192.168.0.42:49152",
   "ledCount": 225,
   "loopSequenceId": null,
   "uptimeSec": 3600,
@@ -30,6 +33,8 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 - `frameLoopStaleMs`: 直近のフレームループ tick からの経過時間（ms）。出力タスクが停止すると急増する。
 - `layoutMismatch`: ESP STATUS の `layout_hash` とランタイムの `meta.layoutHash` が食い違うとき `true`（いずれか欠損時は照合しない）。
 - `framesSent`: 完全送信に成功したフレーム数（累計）。
+- `outputTargetAddr`: runtime が FRAME を送信している宛先。`espStatusAddr` と IP が違う場合、`config.toml` の `device.esp_ip` が古い可能性が高い。
+- `espStatusAddr`: ESP STATUS パケットの送信元。
 
 ### `POST /api/v1/brightness`（草案・未実装）
 
@@ -45,7 +50,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 { "mode": "idle" | "loop" | "interactive" | "mic" | "clock_digital" | "clock_analog" }
 ```
 
-→ 実装済み: `idle` / `loop`。`200` + 更新後 `state` オブジェクト。その他のモードは現時点では `400`。
+→ 実装済み: `idle` / `loop`。`idle` は選択中シーケンスを解除する。`200` + 更新後 `state` オブジェクト。その他のモードは現時点では `400`。
 
 ### `POST /api/v1/loop/select`
 

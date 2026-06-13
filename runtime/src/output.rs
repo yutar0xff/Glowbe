@@ -75,6 +75,7 @@ pub async fn run(config: Config, app: SharedState, meta_path: PathBuf) -> Result
             "output -> {} @ {} fps ({} LEDs)",
             esp_addr, config.output.target_fps, led_count
         );
+        app.set_output_target_addr(esp_addr.to_string()).await;
         reconnect_backoff = Duration::from_millis(500);
 
         let mut sent_window = 0u64;
@@ -152,8 +153,8 @@ async fn status_listener(port: u16, app: SharedState) {
     let expected = app.expected_layout_hash;
     let mut buf = [0u8; 128];
     loop {
-        match sock.recv(&mut buf).await {
-            Ok(n) => {
+        match sock.recv_from(&mut buf).await {
+            Ok((n, from)) => {
                 if let Some(st) = wire::parse_status(&buf[..n]) {
                     debug!(
                         frames = st.frames_complete,
@@ -184,8 +185,10 @@ async fn status_listener(port: u16, app: SharedState) {
 
                     let mut s = app.state.write().await;
                     s.fps_rx = Some(st.fps_rx());
+                    s.esp_frames_complete = Some(st.frames_complete);
                     s.esp_rssi = Some(st.rssi);
                     s.esp_drops = Some(st.drops);
+                    s.esp_status_addr = Some(from.to_string());
                     s.layout_mismatch = mismatch;
                 }
             }

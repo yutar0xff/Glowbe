@@ -16,8 +16,11 @@ struct StateResponse {
     mode: String,
     fps_out: f64,
     fps_rx: Option<f64>,
+    esp_frames_complete: Option<u32>,
     esp_rssi: Option<i8>,
     esp_drops: Option<u16>,
+    esp_status_addr: Option<String>,
+    output_target_addr: Option<String>,
     led_count: u16,
     loop_sequence_id: Option<String>,
     uptime_sec: u64,
@@ -112,6 +115,9 @@ async fn post_mode(app: SharedState, Json(req): Json<ModeRequest>) -> impl IntoR
             .into_response();
     };
 
+    if mode == OutputMode::Idle {
+        app.clear_sequence().await;
+    }
     app.set_output_mode(mode).await;
     let s = app.state.read().await;
     (StatusCode::OK, Json(state_response(&app, &s))).into_response()
@@ -123,8 +129,11 @@ fn state_response(app: &SharedState, s: &RuntimeState) -> StateResponse {
         mode: s.mode.clone(),
         fps_out: app.metrics.fps_out(),
         fps_rx: s.fps_rx,
+        esp_frames_complete: s.esp_frames_complete,
         esp_rssi: s.esp_rssi,
         esp_drops: s.esp_drops,
+        esp_status_addr: s.esp_status_addr.clone(),
+        output_target_addr: s.output_target_addr.clone(),
         led_count: s.led_count,
         loop_sequence_id: s.loop_sequence_id.clone(),
         uptime_sec: s.uptime_sec(),

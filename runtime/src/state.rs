@@ -54,8 +54,11 @@ pub struct RuntimeState {
     pub led_count: u16,
     pub mode: String,
     pub fps_rx: Option<f64>,
+    pub esp_frames_complete: Option<u32>,
     pub esp_rssi: Option<i8>,
     pub esp_drops: Option<u16>,
+    pub esp_status_addr: Option<String>,
+    pub output_target_addr: Option<String>,
     pub layout_mismatch: bool,
     pub loop_sequence_id: Option<String>,
     pub started_at: Instant,
@@ -68,8 +71,11 @@ impl RuntimeState {
             led_count,
             mode,
             fps_rx: None,
+            esp_frames_complete: None,
             esp_rssi: None,
             esp_drops: None,
+            esp_status_addr: None,
+            output_target_addr: None,
             layout_mismatch: false,
             loop_sequence_id: None,
             started_at: Instant::now(),
@@ -138,5 +144,18 @@ impl SharedApp {
         }
         let mut state = self.state.write().await;
         state.loop_sequence_id = Some(id);
+    }
+
+    pub async fn clear_sequence(&self) {
+        if let Ok(mut slot) = self.sequence.write() {
+            *slot = None;
+        }
+        let mut state = self.state.write().await;
+        state.loop_sequence_id = None;
+    }
+
+    pub async fn set_output_target_addr(&self, addr: String) {
+        let mut state = self.state.write().await;
+        state.output_target_addr = Some(addr);
     }
 }

@@ -6,8 +6,11 @@ type RuntimeState = {
   mode: string
   fpsOut: number
   fpsRx: number | null
+  espFramesComplete: number | null
   espRssi: number | null
   espDrops: number | null
+  espStatusAddr: string | null
+  outputTargetAddr: string | null
   ledCount: number
   loopSequenceId: string | null
   uptimeSec: number
@@ -180,6 +183,8 @@ function App() {
     return 'ok'
   }, [load.kind, state])
 
+  const playingSequenceId = state?.mode === 'loop' ? state.loopSequenceId : null
+
   const setMode = async (mode: 'idle' | 'loop') => {
     setModeBusy(mode)
     const controller = new AbortController()
@@ -278,11 +283,14 @@ function App() {
       {state ? (
         <>
           <section className="grid">
-            <MetricCard label="Mode" value={state.mode} hint={state.loopSequenceId ?? 'test pattern / no sequence'} />
+            <MetricCard label="Mode" value={state.mode} hint={playingSequenceId ?? 'test pattern / no sequence'} />
             <MetricCard label="FPS Out" value={formatNumber(state.fpsOut)} hint={`${state.framesSent} frames sent`} />
             <MetricCard label="FPS Rx" value={formatNumber(state.fpsRx)} hint="from ESP STATUS" />
+            <MetricCard label="ESP Frames" value={state.espFramesComplete === null ? '-' : String(state.espFramesComplete)} />
             <MetricCard label="ESP RSSI" value={state.espRssi === null ? '-' : `${state.espRssi} dBm`} />
             <MetricCard label="ESP Drops" value={state.espDrops === null ? '-' : String(state.espDrops)} />
+            <MetricCard label="ESP Status From" value={state.espStatusAddr ?? '-'} />
+            <MetricCard label="Output Target" value={state.outputTargetAddr ?? '-'} />
             <MetricCard label="Frame Loop Stale" value={`${state.frameLoopStaleMs} ms`} hint="health fails above 1000 ms" />
             <MetricCard label="LED Count" value={String(state.ledCount)} hint={state.layoutId} />
             <MetricCard label="Uptime" value={formatUptime(state.uptimeSec)} />
@@ -334,11 +342,11 @@ function App() {
                     <button
                       type="button"
                       onClick={() => void selectSequence(seq.id)}
-                      disabled={sequenceBusy !== null || state.loopSequenceId === seq.id}
+                      disabled={sequenceBusy !== null || playingSequenceId === seq.id}
                     >
                       {sequenceBusy === seq.id
                         ? 'Selecting...'
-                        : state.loopSequenceId === seq.id
+                        : playingSequenceId === seq.id
                           ? 'Selected'
                           : 'Select'}
                     </button>
