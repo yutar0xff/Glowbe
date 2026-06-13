@@ -10,7 +10,7 @@
 | パス | 内容 |
 |------|------|
 | `runtime/` | Rust 常駐サーバ（Phase 1: ループ出力 + HTTP API） |
-| `web/` | Vite + React 制御 UI（未実装） |
+| `web/` | Vite + React 読み取り専用ダッシュボード（Phase 1.5） |
 | `firmware/esp32s3/` | ESP32-S3 ファーム |
 | `config/layouts/` | LED レイアウト（`glowbe-layout` v1） |
 | `protocol/` | UDP・API・シーケンス仕様 |
@@ -52,17 +52,26 @@ cd runtime && cargo run -- ../config.toml
 - `GET /health` — 出力ループが 1s 以上止まっていると **503**
 - ESP から STATUS **49153** を受信（20 バイト推奨、`layout_hash` 含む）
 
-### 4. ベンチ
+### 4. Web ダッシュボード（Phase 1.5）
+
+```bash
+cd web && npm install
+npm run dev
+```
+
+既定では Vite dev server が `/api` と `/health` を `http://127.0.0.1:8080` にプロキシします。別ホストの場合は `GLOWBE_RUNTIME_URL=http://<runtime-host>:8080 npm run dev`、またはビルド時に `VITE_GLOWBE_API_BASE` を設定します。
+
+### 5. ベンチ
 
 [`docs/BENCHMARK.md`](docs/BENCHMARK.md) 参照。最低 **60 fps × 5 分**（プロトタイプ・2.4 GHz）。
 
 ## 次の開発ステップ
 
-Phase 1 は UDP E2E 成功扱い。次は Phase 1 の締め（60fps ベンチ記録・残 API）を進め、その後 Phase 2 として **正距円筒の静止画 1 枚 → LED フレーム** の最小パイプラインへ。具体タスクは [`docs/STATUS.md`](docs/STATUS.md) の §7。
+Phase 1.5 の読み取り専用ダッシュボードまで実装済み。次は Phase 1 の締め（60fps ベンチ記録・`POST /api/v1/mode` 最小実装）を進め、その後 Phase 2 として **正距円筒の静止画 1 枚 → LED フレーム** の最小パイプラインへ。具体タスクは [`docs/STATUS.md`](docs/STATUS.md) の §7。
 
 ## 開発要件
 
-- Node 20+（`layout-compile`）
+- Node 20+（`layout-compile` / `web`）
 - Rust toolchain（ランタイム）
 - PlatformIO（ファーム）
 

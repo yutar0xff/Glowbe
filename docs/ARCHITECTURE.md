@@ -171,7 +171,7 @@ Glowbe/
 │   ├── glowseq.md
 │   └── compiled-layout.md
 ├── runtime/                     # Rust（Phase 1: loop 出力 + 状態 API）
-├── web/                         # Vite + React（未着手）
+├── web/                         # Vite + React（Phase 1.5: 読み取り専用ダッシュボード）
 ├── firmware/esp32s3/
 ├── hardware/pcb/                # 未追加
 ├── tools/
@@ -183,7 +183,7 @@ Glowbe/
 │   ├── uploads/                 # 生メディア（gitignore）
 │   ├── sequences/               # 変換済みフレーム列（gitignore）
 │   └── compiled/                # レイアウトバイナリ（コミット対象）
-├── .github/workflows/ci.yml     # Rust fmt / clippy / test
+├── .github/workflows/ci.yml     # Rust fmt/clippy/test + Web lint/build
 ├── config.example.toml
 └── README.md
 ```
@@ -578,7 +578,7 @@ LAN 到達者が制御・UDP 送信可能。展示は閉じた AP を運用で�
 |-------|------|------|
 | **0** | プロトコル文書、プロトタイプ layout-compile（225 LED）、ESP スパイクファーム、UDP ベンチツール | 完了 |
 | **1** | Rust ランタイム、ループ E2E、**60 fps ベンチ合格** | UDP E2E 成功扱い。送信耐性・mDNS・レイアウトハッシュ等を実装済 |
-| **1.5** | 最小 Web（`/api/v1/state` ポーリングのみ）— API のドッグフーディング | 未着手 |
+| **1.5** | 最小 Web（`/api/v1/state` + `/health` ポーリング）— API のドッグフーディング | 完了 |
 | **2** | メディアパイプライン（正距円筒→シーケンス） | 次: 静止画1枚→LEDフレームから |
 | **3** | インタラクティブ（リップル） | 未着手 |
 | **4a** | デジタル/アナログ時計（依存が軽く先行しやすい） | 未着手 |

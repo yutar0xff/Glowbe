@@ -10,11 +10,11 @@
 
 | 指標 | 現在地 |
 |------|--------|
-| フェーズ | **Phase 1（締め作業中）** |
+| フェーズ | **Phase 1.5（最小 Web ダッシュボード完了、Phase 1 締め作業中）** |
 | ランタイム | loop パターンを 60fps 想定で UDP 送信 + 状態 API。`cargo test` **4** 件パス |
 | ファーム | UDP 受信・フレーム再構成・S3(LCD+DMA)/無印(RMT) ドライバ実装済 |
 | UDP E2E | 「成功扱い」。**60fps×5 分ベンチの合格記録は未取得**（[`BENCHMARK.md`](BENCHMARK.md)） |
-| Web | **未着手** |
+| Web | **Phase 1.5 完了**（読み取り専用 `/state` ダッシュボード） |
 | メディアパイプライン | **未着手**（Phase 2） |
 
 > ハードウェア前提: ESP32-S3 が本番。S3 実機が「届いたら本番」、手元の ESP32 無印で先行検証する想定（`docs/firmware/LED-OUTPUT.md`）。
@@ -32,7 +32,7 @@
 | メディアワーカー / 変換 | `runtime/`（§7） | ⬜ | Phase 2 |
 | プレビュー（WS JPEG） | `runtime/`（§14） | ⬜ | |
 | サーバマイク（cpal） | `runtime/`（§6.1） | ⬜ | Phase 4 |
-| Web クライアント | `web/` | ⬜ | ディレクトリ未作成 |
+| Web クライアント | `web/` | ✅ | Vite + React。`/api/v1/state` と `/health` を1秒ポーリングする読み取り専用ダッシュボード |
 | ESP ファーム（共通） | `firmware/esp32s3/` | ✅ | Wi-Fi STA / UDP / 再構成 / **20 バイト STATUS**（`layout_hash`）/ idle パターン |
 | LED ドライバ S3 | `src/led_driver_s3.cpp` | ✅ | LCD+DMA、`setMaxPower`（暫定 4000mA TODO）、論理 RGB 入力 |
 | LED ドライバ 無印 | `src/led_driver_esp32.cpp` | ✅ | RMT per line、同上 |
@@ -92,12 +92,11 @@
 | 4 | frame-drop（チャンク欠落）カウントの実装 | 中 |
 | 5 | LICENSE 確定（README "TBD"。完全オープン方針なら明示） | 中 |
 | 6 | 製品レイアウト `product-geodesic-2v-60` のコンパイル・検証 | 中 |
-| 7 | Web クライアント雛形（Phase 1.5 読み取り専用ダッシュボード） | 低〜中 |
 | 8 | `hardware/pcb/glowbe-revA/` の追加 | 低 |
 | 9 | **判断待ち:** `SK6805` と FastLED `WS2812` テンプレの組み合わせ／`SK6812` 等への切替 | 低 |
 | 10 | PlatformIO ファームの `pio run` を CI に追加（キャッシュ設定含む） | 低 |
 
-**直近の実装反映:** UDP 送信失敗耐性、`/health` stale、atomics ホットパス、論理 RGB 統一、`setMaxPower`、layout hash、chunk 1472、mDNS、`[assets].compiled_dir`、シーケンス形式方針（`glowseq.md`）、ロードマップ 4a/4b 分離、GitHub Actions（Rust）。
+**直近の実装反映:** UDP 送信失敗耐性、`/health` stale、atomics ホットパス、論理 RGB 統一、`setMaxPower`、layout hash、chunk 1472、mDNS、`[assets].compiled_dir`、シーケンス形式方針（`glowseq.md`）、ロードマップ 4a/4b 分離、GitHub Actions（Rust + Web）。
 
 ---
 
@@ -115,6 +114,7 @@
 |------|------|----------|
 | レイアウト | Node 20+ | `npx tsx tools/layout-compile.ts config/layouts/prototype.layout.json` |
 | ランタイム | Rust toolchain + C linker | `cd runtime && cargo run -- ../config.toml` |
+| Web | Node 20+ | `cd web && npm install && npm run dev`（既定で runtime `127.0.0.1:8080` へプロキシ） |
 | ファーム | PlatformIO（`uv`） | `cd firmware/esp32s3 && uv sync && uv run pio run -e prototype -t upload` |
 | ベンチ | Node 20+ | `docs/BENCHMARK.md` 参照 |
 
