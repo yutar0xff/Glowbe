@@ -43,6 +43,20 @@ struct SequenceSource {
     height: u32,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SequenceSummary {
+    pub id: String,
+    pub layout_id: String,
+    pub led_count: usize,
+    pub frame_count: u32,
+    pub fps: u32,
+    pub source_kind: String,
+    pub source_width: u32,
+    pub source_height: u32,
+    pub created_at_unix_sec: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct LoadedSequence {
     pub id: String,
@@ -143,18 +157,7 @@ pub fn load_sequence(sequence_dir: &Path, sequence_id: &str) -> Result<LoadedSeq
         anyhow::bail!("sequence id must be non-empty and must not contain path separators");
     }
     let dir = sequence_dir.join(sequence_id);
-    let manifest_path = dir.join("manifest.json");
-    let manifest_raw = fs::read_to_string(&manifest_path)
-        .with_context(|| format!("read {}", manifest_path.display()))?;
-    let manifest: SequenceManifest = serde_json::from_str(&manifest_raw)
-        .with_context(|| format!("parse {}", manifest_path.display()))?;
-    if manifest.format != "glowbe-sequence" || manifest.version != 1 {
-        anyhow::bail!(
-            "unsupported sequence format/version: {} v{}",
-            manifest.format,
-            manifest.version
-        );
-    }
+    let manifest = read_manifest(&dir)?;
 
     let frames_path = dir.join("frames.bin");
     let frames =
@@ -179,6 +182,54 @@ pub fn load_sequence(sequence_dir: &Path, sequence_id: &str) -> Result<LoadedSeq
         fps: manifest.fps,
         frames,
     })
+}
+
+pub fn list_sequences(sequence_dir: &Path) -> Result<Vec<SequenceSummary>> {
+    if !sequence_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut out = Vec::new();
+    for entry in
+        fs::read_dir(sequence_dir).with_context(|| format!("read {}", sequence_dir.display()))?
+    {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let dir = entry.path();
+        if let Ok(manifest) = read_manifest(&dir) {
+            out.push(SequenceSummary {
+                id: manifest.id,
+                layout_id: manifest.layout_id,
+                led_count: manifest.led_count,
+                frame_count: manifest.frame_count,
+                fps: manifest.fps,
+                source_kind: manifest.source.kind,
+                source_width: manifest.source.width,
+                source_height: manifest.source.height,
+                created_at_unix_sec: manifest.created_at_unix_sec,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(out)
+}
+
+fn read_manifest(dir: &Path) -> Result<SequenceManifest> {
+    let manifest_path = dir.join("manifest.json");
+    let manifest_raw = fs::read_to_string(&manifest_path)
+        .with_context(|| format!("read {}", manifest_path.display()))?;
+    let manifest: SequenceManifest = serde_json::from_str(&manifest_raw)
+        .with_context(|| format!("parse {}", manifest_path.display()))?;
+    if manifest.format != "glowbe-sequence" || manifest.version != 1 {
+        anyhow::bail!(
+            "unsupported sequence format/version: {} v{}",
+            manifest.format,
+            manifest.version
+        );
+    }
+    Ok(manifest)
 }
 
 impl LoadedSequence {

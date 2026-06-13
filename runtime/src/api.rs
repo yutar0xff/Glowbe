@@ -68,6 +68,13 @@ pub fn router(app: SharedState) -> Router {
             }),
         )
         .route(
+            "/api/v1/sequences",
+            get({
+                let app = app.clone();
+                move || get_sequences(app.clone())
+            }),
+        )
+        .route(
             "/health",
             get({
                 let app = app_health.clone();
@@ -79,6 +86,19 @@ pub fn router(app: SharedState) -> Router {
 async fn get_state(app: SharedState) -> Json<StateResponse> {
     let s = app.state.read().await;
     Json(state_response(&app, &s))
+}
+
+async fn get_sequences(app: SharedState) -> impl IntoResponse {
+    match media::list_sequences(&app.sequences_dir) {
+        Ok(sequences) => (StatusCode::OK, Json(sequences)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("list sequences failed: {e:#}"),
+            }),
+        )
+            .into_response(),
+    }
 }
 
 async fn post_mode(app: SharedState, Json(req): Json<ModeRequest>) -> impl IntoResponse {

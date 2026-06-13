@@ -167,6 +167,31 @@ button:disabled {
   opacity: 0.45;
 }
 
+.sequence-list {
+  display: grid;
+  gap: 12px;
+}
+
+.sequence-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(2, 6, 23, 0.35);
+  text-align: left;
+}
+
+.sequence-card h3 {
+  margin: 0 0 6px;
+}
+
+.sequence-card p {
+  margin: 0 0 4px;
+}
+
 pre {
   margin: 0;
   overflow: auto;

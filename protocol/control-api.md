@@ -80,7 +80,23 @@ UV プレビュー用（間引き可）。
 
 ### `GET /api/v1/sequences`
 
-変換済みシーケンス一覧。
+変換済みシーケンス一覧。実装済み。
+
+```json
+[
+  {
+    "id": "anim10003",
+    "layoutId": "prototype-icosahedron-15",
+    "ledCount": 225,
+    "frameCount": 1,
+    "fps": 1,
+    "sourceKind": "equirectangular-image",
+    "sourceWidth": 1024,
+    "sourceHeight": 512,
+    "createdAtUnixSec": 1781332800
+  }
+]
+```
 
 ### `POST /api/v1/media/upload`
 
@@ -125,7 +141,8 @@ UV プレビュー用（間引き可）。
 | `POST /api/v1/mode` (`idle` / `loop`) | 1 | ✅ 実装済 |
 | `POST /api/v1/loop/select` | 2 | ✅ 実装済 |
 | `GET /api/v1/layout/uv`, `GET /api/v1/ws`（ripple/preview） | 1–2 | ⬜ 未実装（設計のみ） |
-| `media/*`, `GET /api/v1/sequences` | 2（最初は静止画1枚→LEDフレームから） | ⬜ 未実装 |
+| `GET /api/v1/sequences` | 2 | ✅ 実装済 |
+| `media/*`（upload/convert 等） | 2 | ⬜ 未実装 |
 | clock modes 関連 | 4 | ⬜ 未実装 |
 
 > 進捗の正本は [`docs/STATUS.md`](../docs/STATUS.md)。本表はスナップショットであり、ズレた場合は STATUS を優先。

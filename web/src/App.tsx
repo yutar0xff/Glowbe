@@ -16,6 +16,18 @@ type RuntimeState = {
   framesSent: number
 }
 
+type SequenceSummary = {
+  id: string
+  layoutId: string
+  ledCount: number
+  frameCount: number
+  fps: number
+  sourceKind: string
+  sourceWidth: number
+  sourceHeight: number
+  createdAtUnixSec: number
+}
+
 type Health = {
   ok: boolean
   text: string
@@ -23,7 +35,7 @@ type Health = {
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'ready'; state: RuntimeState; health: Health; fetchedAt: Date }
+  | { kind: 'ready'; state: RuntimeState; health: Health; sequences: SequenceSummary[]; fetchedAt: Date }
   | { kind: 'error'; message: string; health?: Health; fetchedAt?: Date }
 
 const API_BASE = import.meta.env.VITE_GLOWBE_API_BASE ?? ''
@@ -39,13 +51,14 @@ async function fetchText(path: string, signal: AbortSignal): Promise<{
 }
 
 async function fetchState(signal: AbortSignal): Promise<LoadState> {
-  const [stateRes, healthRes] = await Promise.all([
+  const [stateRes, healthRes, sequencesRes] = await Promise.all([
     fetch(`${API_BASE}/api/v1/state`, { signal }),
     fetchText('/health', signal).catch((err: unknown) => ({
       ok: false,
       status: 0,
       text: err instanceof Error ? err.message : String(err),
     })),
+    fetch(`${API_BASE}/api/v1/sequences`, { signal }).catch(() => undefined),
   ])
 
   const health: Health = {
@@ -66,6 +79,7 @@ async function fetchState(signal: AbortSignal): Promise<LoadState> {
     kind: 'ready',
     state: (await stateRes.json()) as RuntimeState,
     health,
+    sequences: sequencesRes?.ok ? ((await sequencesRes.json()) as SequenceSummary[]) : [],
     fetchedAt: new Date(),
   }
 }
@@ -81,6 +95,11 @@ function formatUptime(sec: number): string {
   return h > 0
     ? `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`
     : `${m}m ${s.toString().padStart(2, '0')}s`
+}
+
+function formatDate(sec: number): string {
+  if (!Number.isFinite(sec) || sec <= 0) return '-'
+  return new Date(sec * 1000).toLocaleString()
 }
 
 function StatusPill({
@@ -114,6 +133,7 @@ function MetricCard({
 function App() {
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' })
   const [modeBusy, setModeBusy] = useState<string | null>(null)
+  const [sequenceBusy, setSequenceBusy] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -148,6 +168,7 @@ function App() {
   }, [])
 
   const state = load.kind === 'ready' ? load.state : undefined
+  const sequences = load.kind === 'ready' ? load.sequences : []
   const health = load.kind === 'ready' || load.kind === 'error' ? load.health : undefined
   const fetchedAt = load.kind !== 'loading' ? load.fetchedAt : undefined
 
@@ -174,6 +195,7 @@ function App() {
       setLoad({
         kind: 'ready',
         state: (await res.json()) as RuntimeState,
+        sequences,
         health: health ?? { ok: true, text: 'ok' },
         fetchedAt: new Date(),
       })
@@ -187,6 +209,38 @@ function App() {
     } finally {
       window.clearTimeout(timeout)
       setModeBusy(null)
+    }
+  }
+
+  const selectSequence = async (sequenceId: string) => {
+    setSequenceBusy(sequenceId)
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 3500)
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/loop/select`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sequenceId }),
+        signal: controller.signal,
+      })
+      if (!res.ok) throw new Error(`POST /api/v1/loop/select failed: ${res.status}`)
+      setLoad({
+        kind: 'ready',
+        state: (await res.json()) as RuntimeState,
+        sequences,
+        health: health ?? { ok: true, text: 'ok' },
+        fetchedAt: new Date(),
+      })
+    } catch (err) {
+      setLoad({
+        kind: 'error',
+        message: err instanceof Error ? err.message : String(err),
+        health,
+        fetchedAt: new Date(),
+      })
+    } finally {
+      window.clearTimeout(timeout)
+      setSequenceBusy(null)
     }
   }
 
@@ -255,6 +309,43 @@ function App() {
                 {modeBusy === 'idle' ? 'Switching...' : 'Idle / blackout'}
               </button>
             </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-heading">
+              <h2>Sequences</h2>
+              <span>{sequences.length} available</span>
+            </div>
+            {sequences.length === 0 ? (
+              <p className="muted">
+                No sequences found. Generate one with <code>convert-image</code>.
+              </p>
+            ) : (
+              <div className="sequence-list">
+                {sequences.map((seq) => (
+                  <article className="sequence-card" key={seq.id}>
+                    <div>
+                      <h3>{seq.id}</h3>
+                      <p className="muted">
+                        {seq.frameCount} frame(s) @ {seq.fps} fps / {seq.sourceWidth}x{seq.sourceHeight} / {seq.sourceKind}
+                      </p>
+                      <p className="muted">created: {formatDate(seq.createdAtUnixSec)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void selectSequence(seq.id)}
+                      disabled={sequenceBusy !== null || state.loopSequenceId === seq.id}
+                    >
+                      {sequenceBusy === seq.id
+                        ? 'Selecting...'
+                        : state.loopSequenceId === seq.id
+                          ? 'Selected'
+                          : 'Select'}
+                    </button>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
 
           {state.layoutMismatch ? (

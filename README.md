@@ -68,7 +68,7 @@ cargo run --manifest-path runtime/Cargo.toml -- \
   convert-image /path/to/equirectangular.png sequence-id config.toml
 ```
 
-生成後、runtime 起動中に `POST /api/v1/loop/select` で `sequenceId` を選択すると loop モードで再生します。
+生成後、runtime 起動中に Web ダッシュボードの Sequences から選択するか、`POST /api/v1/loop/select` で `sequenceId` を選択すると loop モードで再生します。
 
 ### 6. ベンチ
 
@@ -76,7 +76,7 @@ cargo run --manifest-path runtime/Cargo.toml -- \
 
 ## 次の開発ステップ
 
-Phase 2 の最小パイプライン（正距円筒静止画 → 1フレームシーケンス → `loop/select` 再生）まで実装済み。次は 60fps ベンチ記録、Web からのシーケンス選択 UI、`GET /api/v1/sequences` / アップロード API へ進む。具体タスクは [`docs/STATUS.md`](docs/STATUS.md) の §7。
+Phase 2 の最小パイプライン（正距円筒静止画 → 1フレームシーケンス → Web/API から選択再生）まで実装済み。次は 60fps ベンチ記録、アップロード API、動画/複数フレーム変換へ進む。具体タスクは [`docs/STATUS.md`](docs/STATUS.md) の §7。
 
 ## 開発要件
 
