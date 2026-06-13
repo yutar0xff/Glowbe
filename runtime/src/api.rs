@@ -6,6 +6,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::media;
 use crate::state::{OutputMode, RuntimeState, SharedState};
 
 #[derive(Serialize)]
@@ -30,6 +31,12 @@ struct ModeRequest {
     mode: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LoopSelectRequest {
+    sequence_id: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ErrorResponse {
@@ -51,6 +58,13 @@ pub fn router(app: SharedState) -> Router {
             post({
                 let app = app.clone();
                 move |body| post_mode(app.clone(), body)
+            }),
+        )
+        .route(
+            "/api/v1/loop/select",
+            post({
+                let app = app.clone();
+                move |body| post_loop_select(app.clone(), body)
             }),
         )
         .route(
@@ -92,12 +106,52 @@ fn state_response(app: &SharedState, s: &RuntimeState) -> StateResponse {
         esp_rssi: s.esp_rssi,
         esp_drops: s.esp_drops,
         led_count: s.led_count,
-        loop_sequence_id: None,
+        loop_sequence_id: s.loop_sequence_id.clone(),
         uptime_sec: s.uptime_sec(),
         frame_loop_stale_ms: app.metrics.frame_loop_stale_ms(),
         layout_mismatch: s.layout_mismatch,
         frames_sent: app.metrics.frames_sent(),
     }
+}
+
+async fn post_loop_select(
+    app: SharedState,
+    Json(req): Json<LoopSelectRequest>,
+) -> impl IntoResponse {
+    let sequence = match media::load_sequence(&app.sequences_dir, &req.sequence_id) {
+        Ok(sequence) => sequence,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("load sequence failed: {e:#}"),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let (layout_id, led_count) = {
+        let s = app.state.read().await;
+        (s.layout_id.clone(), s.led_count)
+    };
+    if sequence.layout_id != layout_id || sequence.led_count != led_count as usize {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!(
+                    "sequence layout mismatch: {} / {} LEDs, runtime expects {} / {} LEDs",
+                    sequence.layout_id, sequence.led_count, layout_id, led_count
+                ),
+            }),
+        )
+            .into_response();
+    }
+
+    app.set_sequence(sequence).await;
+    app.set_output_mode(OutputMode::Loop).await;
+    let s = app.state.read().await;
+    (StatusCode::OK, Json(state_response(&app, &s))).into_response()
 }
 
 async fn health(app: SharedState) -> impl IntoResponse {

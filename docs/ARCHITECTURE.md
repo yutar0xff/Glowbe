@@ -232,8 +232,9 @@ esp_ip = "192.168.0.42"
 layout_id = "prototype-icosahedron-15"
 
 [assets]
-# 省略時: リポジトリルートの `assets/compiled`（カレントから上位探索）
+# 省略時: リポジトリルートの `assets/compiled` / `assets/sequences`
 # compiled_dir = "/var/lib/glowbe/compiled"
+# sequences_dir = "/var/lib/glowbe/sequences"
 
 [output]
 udp_port = 49152
@@ -579,7 +580,7 @@ LAN 到達者が制御・UDP 送信可能。展示は閉じた AP を運用で�
 | **0** | プロトコル文書、プロトタイプ layout-compile（225 LED）、ESP スパイクファーム、UDP ベンチツール | 完了 |
 | **1** | Rust ランタイム、ループ E2E、**60 fps ベンチ合格** | UDP E2E 成功扱い。送信耐性・mDNS・レイアウトハッシュ等を実装済 |
 | **1.5** | 最小 Web（`/api/v1/state` + `/health` ポーリング、`idle`/`loop` 切替）— API のドッグフーディング | 完了 |
-| **2** | メディアパイプライン（正距円筒→シーケンス） | 次: 静止画1枚→LEDフレームから |
+| **2** | メディアパイプライン（正距円筒→シーケンス） | 静止画1枚→1フレームシーケンス + `loop/select` 実装済。次: 一覧/API/UI/複数フレーム |
 | **3** | インタラクティブ（リップル） | 未着手 |
 | **4a** | デジタル/アナログ時計（依存が軽く先行しやすい） | 未着手 |
 | **4b** | サーバマイク（cpal・プラットフォーム差） | 未着手 |

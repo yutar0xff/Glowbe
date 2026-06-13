@@ -61,13 +61,22 @@ npm run dev
 
 既定では Vite dev server が `/api` と `/health` を `http://127.0.0.1:8080` にプロキシします。別ホストの場合は `GLOWBE_RUNTIME_URL=http://<runtime-host>:8080 npm run dev`、またはビルド時に `VITE_GLOWBE_API_BASE` を設定します。
 
-### 5. ベンチ
+### 5. 静止画からシーケンス生成（Phase 2）
+
+```bash
+cargo run --manifest-path runtime/Cargo.toml -- \
+  convert-image /path/to/equirectangular.png sequence-id config.toml
+```
+
+生成後、runtime 起動中に `POST /api/v1/loop/select` で `sequenceId` を選択すると loop モードで再生します。
+
+### 6. ベンチ
 
 [`docs/BENCHMARK.md`](docs/BENCHMARK.md) 参照。最低 **60 fps × 5 分**（プロトタイプ・2.4 GHz）。
 
 ## 次の開発ステップ
 
-Phase 1.5 の状態ダッシュボードと `idle`/`loop` 切替まで実装済み。次は Phase 1 の締め（60fps ベンチ記録）を進め、その後 Phase 2 として **正距円筒の静止画 1 枚 → LED フレーム** の最小パイプラインへ。具体タスクは [`docs/STATUS.md`](docs/STATUS.md) の §7。
+Phase 2 の最小パイプライン（正距円筒静止画 → 1フレームシーケンス → `loop/select` 再生）まで実装済み。次は 60fps ベンチ記録、Web からのシーケンス選択 UI、`GET /api/v1/sequences` / アップロード API へ進む。具体タスクは [`docs/STATUS.md`](docs/STATUS.md) の §7。
 
 ## 開発要件
 

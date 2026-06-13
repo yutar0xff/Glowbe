@@ -8,6 +8,8 @@ layout_id = "prototype-icosahedron-15"
 [assets]
 # 省略時: リポジトリの assets/compiled（カレントから上位に `assets/compiled` を探索）
 # compiled_dir = "/var/lib/glowbe/compiled"
+# 省略時: リポジトリの assets/sequences
+# sequences_dir = "/var/lib/glowbe/sequences"
 
 [output]
 udp_port = 49152

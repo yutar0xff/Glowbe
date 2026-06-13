@@ -29,7 +29,7 @@ assets/sequences/<id>/
     "width": 2048,
     "height": 1024
   },
-  "createdAt": "2026-06-13T12:00:00Z"
+  "createdAtUnixSec": 1781332800
 }
 ```
 
@@ -57,6 +57,15 @@ frame_offset = frame_index * ledCount * 3
 
 フレームループの tick 内で **ディスク read をブロックしない**。事前に次フレームを **プリフェッチ / ダブルバッファ** し、tick ではメモリ上のバッファだけを UDP 送出に回す。変換ジョブ（オフライン）とは別の、**再生専用の読み取り戦略**として設計する。
 
+## 生成 CLI（Phase 2 最小）
+
+```bash
+cargo run --manifest-path runtime/Cargo.toml -- \
+  convert-image /path/to/equirectangular.png sequence-id config.toml
+```
+
+現在の最小実装は **静止画 1 枚 → `frameCount = 1`** のシーケンスを生成する。
+
 ## ループモードでの利用（ランタイム）
 
-ランタイムは `manifest.json` を読み、`frames.bin` をメモリマップまたはストリーミング読み込みし、`frame_index = floor(t * fps) % frameCount`（ホールド規則に従って出力レートへマップ）でサンプリングする。
+ランタイムは `manifest.json` を読み、`frames.bin` をメモリに読み込み、`frame_index = floor(t * fps) % frameCount`（ホールド規則に従って出力レートへマップ）でサンプリングする。`POST /api/v1/loop/select` で生成済みシーケンスを選択する。

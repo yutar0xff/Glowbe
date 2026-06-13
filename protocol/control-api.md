@@ -53,6 +53,8 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 { "sequenceId": "sunset-01" }
 ```
 
+→ 実装済み: `assets/sequences/<sequenceId>/manifest.json` と `frames.bin` を読み込み、ランタイムの `layoutId` / `ledCount` と一致すれば loop モードで再生する。失敗時は `400`。
+
 ### `GET /api/v1/layout/uv`
 
 UV プレビュー用（間引き可）。
@@ -121,7 +123,8 @@ UV プレビュー用（間引き可）。
 | `GET /api/v1/state` | 1 | ✅ 実装済 |
 | `GET /health` | 1 | ✅ 実装済 |
 | `POST /api/v1/mode` (`idle` / `loop`) | 1 | ✅ 実装済 |
-| `POST /api/v1/loop/select`, `GET /api/v1/layout/uv`, `GET /api/v1/ws`（ripple/preview） | 1–2 | ⬜ 未実装（設計のみ） |
+| `POST /api/v1/loop/select` | 2 | ✅ 実装済 |
+| `GET /api/v1/layout/uv`, `GET /api/v1/ws`（ripple/preview） | 1–2 | ⬜ 未実装（設計のみ） |
 | `media/*`, `GET /api/v1/sequences` | 2（最初は静止画1枚→LEDフレームから） | ⬜ 未実装 |
 | clock modes 関連 | 4 | ⬜ 未実装 |
 

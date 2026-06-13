@@ -90,7 +90,16 @@ pub async fn run(config: Config, app: SharedState, meta_path: PathBuf) -> Result
             let t_ms = loop_start.elapsed().as_millis() as u32;
             match app.output_mode() {
                 OutputMode::Idle => rgb.fill(0),
-                OutputMode::Loop => pattern::fill_loop_rgb(led_count as usize, t_ms, &mut rgb),
+                OutputMode::Loop => {
+                    if let Some(sequence) = app.selected_sequence() {
+                        if let Err(e) = sequence.copy_frame_at(loop_start.elapsed(), &mut rgb) {
+                            warn!("sequence frame copy failed; falling back to pattern: {e:#}");
+                            pattern::fill_loop_rgb(led_count as usize, t_ms, &mut rgb);
+                        }
+                    } else {
+                        pattern::fill_loop_rgb(led_count as usize, t_ms, &mut rgb);
+                    }
+                }
             }
 
             let mut full_send_ok = true;

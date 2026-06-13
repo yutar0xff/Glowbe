@@ -54,6 +54,9 @@ pub struct Assets {
     /// Directory containing `<layout_id>.meta.json` etc. Relative paths are from cwd.
     #[serde(default)]
     pub compiled_dir: Option<String>,
+    /// Directory containing generated sequence directories. Relative paths are from cwd.
+    #[serde(default)]
+    pub sequences_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

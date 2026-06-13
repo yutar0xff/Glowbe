@@ -19,7 +19,17 @@ cp ../config.example.toml ../config.toml
 cargo run -- ../config.toml
 ```
 
-任意 `[assets].compiled_dir` で `assets/compiled` の場所を指定可能（リポジトリ外デプロイ）。
+任意 `[assets].compiled_dir` / `[assets].sequences_dir` で `assets/compiled` と `assets/sequences` の場所を指定可能（リポジトリ外デプロイ）。
+
+## Phase 2: 静止画 → 1フレームシーケンス
+
+```bash
+# リポジトリルートから
+cargo run --manifest-path runtime/Cargo.toml -- \
+  convert-image /path/to/equirectangular.png sequence-id config.toml
+```
+
+出力: `assets/sequences/<sequence-id>/manifest.json` と `frames.bin`。生成後は runtime 起動中に `POST /api/v1/loop/select` で選択できる。
 
 ## エンドポイント
 
@@ -29,6 +39,8 @@ cargo run -- ../config.toml
 | STATUS 受信 | UDP 49153 ← ESP |
 | `GET /api/v1/state` | HTTP 8080 |
 | `GET /health` | HTTP 8080（出力ループ停止時 503） |
+| `POST /api/v1/mode` | HTTP 8080（`idle` / `loop`） |
+| `POST /api/v1/loop/select` | HTTP 8080（生成済みシーケンス選択） |
 
 `/api/v1/state` の JSON は camelCase（`frameLoopStaleMs`, `layoutMismatch`, `framesSent` 等）。
 
@@ -43,4 +55,5 @@ cargo run -- ../config.toml
 | `discover.rs` | mDNS `_glowbe._udp` |
 | `output.rs` | フレームループ（送信失敗耐性・再接続）+ STATUS |
 | `api.rs` | axum HTTP |
+| `media.rs` | 正距円筒画像→シーケンス変換 / シーケンス読み込み |
 | `state.rs` | `SharedApp`（metrics + RwLock 状態） |

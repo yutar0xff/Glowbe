@@ -8,6 +8,7 @@ description = "Glowbe server-authoritative LED runtime"
 anyhow = "1"
 axum = "0.8"
 flume = "0.11"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 mdns-sd = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
