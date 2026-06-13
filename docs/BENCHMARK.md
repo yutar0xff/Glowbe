@@ -41,6 +41,24 @@
 
 - 225 LED × 3 = **675 バイト/フレーム**
 - 60 fps → **40.5 KB/s** ペイロード（ヘッダ込みでも 2.4 GHz では十分小さい）
-- ボトルネックは帯域より **ESP の LED 出力時間（S3: LCD+DMA / 無印: RMT）+ Wi-Fi スタック遅延** になりやすい
+- ボトルネックは帯域より **ESP の LED 出力時間（S3: LCD+DMA / 無印: FastLED I2S-parallel）+ Wi-Fi スタック遅延** になりやすい
 
 製品版（`product-geodesic-2v-60`）はコンパイル後に同様の表を追記する。
+
+## 合格記録（暫定）
+
+### ESP32 無印（`prototype-esp32`）— 2026-06-14
+
+| 項目 | 記録 |
+|------|------|
+| レイアウト | `prototype-icosahedron-15`（225 LED、5 線） |
+| LED 出力 | **FastLED I2S-parallel**（`FASTLED_ESP32_I2S`、`FASTLED_ESP32_I2S_NUM_DMA_BUFFERS=4`）。本変更後は再フラッシュして再計測すること。 |
+| 条件 | 60 fps ターゲット、`loop` / テストパターン、**連続 5 分**、`espDrops` 増分 **0**（運用確認） |
+| 参考ログ | シリアル `diag`: `fps_x10≈600`（≈60 fps）、`drops=0`、`udp_err=0`（例: `frames` が 5 秒あたり **+300** 程度で増加） |
+
+**注意:** 本番ターゲットの **ESP32-S3**（`prototype` env、LCD+DMA）では同条件の記録を別途取ること。
+
+### 今後の追記
+
+- ファームの **git SHA**、AP 型番、Rust バイナリ版を上表に追記する。
+- `docs/benchmarks/` に JSON エクスポートを置く場合は、この節からリンクする。

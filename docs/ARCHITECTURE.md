@@ -103,7 +103,7 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
 2. **3 プレーン分離:** 制御 / ピクセル / プレビュー。
 3. **メディアはサーバで前処理:** ブラウザはアップロードとパラメータのみ。重い変換は常駐プロセス。
 4. **レイアウトはデータ駆動:** `glowbe-layout` v1 → コンパイル済みテーブル。
-5. **LED 出力はチップ世代で分ける:** ESP32-S3 は **LCD（I8080）+ DMA マルチピン並列**、ESP32 無印プロトは **RMT 1 線 1 チャンネル**（§11、[`firmware/LED-OUTPUT.md`](firmware/LED-OUTPUT.md)）。
+5. **LED 出力はチップ世代で分ける:** ESP32-S3 は **LCD（I8080）+ DMA マルチピン並列**、ESP32 無印プロトは **FastLED I2S-parallel**（同一 WS2812 タイミングの複数線。§11、[`firmware/LED-OUTPUT.md`](firmware/LED-OUTPUT.md)）。
 
 ---
 
@@ -438,12 +438,12 @@ POST /api/v1/mode
 
 **ESP32-S3（製品・本番）:** I2S ペリフェラルのハック（無印時代の定石）ではなく、**LCD ペリフェラル（Intel 8080 / I8080）+ DMA** によるパラレル転送で複数データ線を同時出力する。実装は FastLED `FASTLED_USES_ESP32S3_I2S`（内部は `esp_lcd` / LCD HAL）。マクロ名の `I2S` は歴史的命名であり、無印の I2S 並列とは別物。
 
-**ESP32 無印（手元プロトタイプ）:** データ線ごとに **通常の RMT**（FastLED WS2812 コントローラ 1 本 1 チャンネル）。archived-glowbe の I2S パラレルは使わない。
+**ESP32 無印（手元プロトタイプ）:** **FastLED の I2S-parallel backend**（`FASTLED_ESP32_I2S`）で 5 本のデータ線を同一タイミングで送出。S3 の LCD+DMA とは別実装だが、いずれも「DMA 寄りの並列ビットストリーム」という意味で Wi-Fi 下の安定性を優先する。
 
 | ターゲット | PlatformIO env | 方式 |
 |------------|----------------|------|
 | ESP32-S3 | `prototype` | LCD + DMA マルチピン並列 |
-| ESP32 無印 | `prototype-esp32` | RMT per line |
+| ESP32 無印 | `prototype-esp32` | FastLED I2S-parallel |
 
 **設計方針:**
 
@@ -461,7 +461,7 @@ main
 ├── glowbe_wire.h         # FRAME パーサ・再構成
 ├── glowbe_layout.h       # layout-compile 自動生成
 ├── led_driver_s3.cpp     # S3: LCD DMA parallel
-├── led_driver_esp32.cpp  # 無印: RMT per line
+├── led_driver_esp32.cpp  # 無印: FastLED I2S-parallel
 ├── main.cpp              # Wi-Fi + UDP + LED ドライバ
 └── http_status.cpp       # 将来
 ```
@@ -555,7 +555,7 @@ ESP 経路とプレビューは分離し、プレビュー負荷で UDP を落�
 |------|------|
 | モード tick | < 2 ms |
 | UDP 送信 | < 2 ms |
-| ESP 再構成 + **LED 出力**（S3: LCD+DMA 並列 / 無印プロト: RMT） | ベンチで計測 |
+| ESP 再構成 + **LED 出力**（S3: LCD+DMA 並列 / 無印プロト: FastLED I2S-parallel） | ベンチで計測 |
 
 メディア変換ジョブは **オフライン** のためリアルタイム fps の対象外。
 
@@ -594,7 +594,7 @@ LAN 到達者が制御・UDP 送信可能。展示は閉じた AP を運用で�
 |----|-----|
 | ブラウザ中心 | **Rust ランタイム中心** |
 | GU チャンク UDP | **Glowbe Wire UDP v1** |
-| 無印 I2S パラレル | **S3: LCD+DMA 並列 / 無印プロト: RMT** |
+| 無印 I2S パラレル（旧 Glowbe） | **S3: LCD+DMA 並列 / 無印プロト: FastLED I2S-parallel** |
 | Studio オーサリング | **サーバメディア変換 + 薄い Web UI** |
 | TouchDesigner / Relay | **廃止** |
 
@@ -609,7 +609,7 @@ LAN 到達者が制御・UDP 送信可能。展示は閉じた AP を運用で�
 | 正距円筒図法 | Equirectangular。横長 2:1 が球面全体のテクスチャ |
 | glowbe-layout | LED 配線・幾何プリセットの JSON 形式 v1 |
 | シーケンス | メディア変換後の LED フレーム列（`assets/sequences/`） |
-| RMT | ESP32 のリモートコントロール周辺機器。WS2812 系のビットバンギングに利用（無印プロトの LED 出力） |
+| RMT | ESP32 のリモートコントロール周辺機器。WS2812 系のビットバンギングに利用可能。本リポジトリの **無印プロト**では FastLED **I2S-parallel** を既定とし、RMT per line はフォールバック検討用 |
 | LCD / I8080 | ESP32-S3 内蔵の LCD ペリフェラル（Intel 8080 バス互換）。DMA で複数 GPIO へ同時ビットストリーム出力し、S3 本番の LED 並列駆動に使う（詳細は `docs/firmware/LED-OUTPUT.md`） |
 | DMA パラレル | DMA がメモリ上のバッファを LCD ペリフェラルへ転送し、複数データ線を低 CPU 負荷で同時駆動する方式 |
 

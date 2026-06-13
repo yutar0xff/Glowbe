@@ -173,7 +173,7 @@ function writeHeader(
     "",
     "// ESP32-S3: contiguous buffer + LCD DMA parallel (FastLED FASTLED_USES_ESP32S3_I2S).",
     ...macro("GLOWBE_FASTLED_REGISTER_PARALLEL", "leds", parallelLines),
-    "// ESP32 (classic): per-line buffers + RMT per data pin.",
+    "// ESP32 (classic): per-line buffers; `prototype-esp32` は FastLED I2S-parallel（platformio.ini）。",
     ...macro("GLOWBE_FASTLED_REGISTER_RMT", "strips", rmtLines),
   ];
   writeFileSync(path, lines.join("\n"), "utf8");

@@ -15,7 +15,7 @@ static const uint16_t GLOWBE_LINE_LED_COUNTS[5] = { 45, 45, 45, 45, 45 };
   FastLED.addLeds<WS2812, 19, GRB>((leds) + 135, 45); \
   FastLED.addLeds<WS2812, 21, GRB>((leds) + 180, 45);
 
-// ESP32 (classic): per-line buffers + RMT per data pin.
+// ESP32 (classic): per-line buffers; `prototype-esp32` は FastLED I2S-parallel（platformio.ini）。
 #define GLOWBE_FASTLED_REGISTER_RMT(strips) \
   FastLED.addLeds<WS2812, 16, GRB>((strips)[0], 45); \
   FastLED.addLeds<WS2812, 17, GRB>((strips)[1], 45); \

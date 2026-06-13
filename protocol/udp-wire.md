@@ -10,7 +10,7 @@
 
 ## メッセージ: FRAME（ランタイム → ESP）
 
-複数 UDP ダタグラムに分割する。ESP は `chunk_index == chunk_count - 1` まで揃った時点で LED 出力を更新する（S3: LCD+DMA 並列、無印プロト: RMT per line。詳細は [`docs/firmware/LED-OUTPUT.md`](../docs/firmware/LED-OUTPUT.md)）。
+複数 UDP ダタグラムに分割する。ESP は `chunk_index == chunk_count - 1` まで揃った時点で LED 出力を更新する（S3: LCD+DMA 並列、無印プロト: FastLED I2S-parallel。詳細は [`docs/firmware/LED-OUTPUT.md`](../docs/firmware/LED-OUTPUT.md)）。
 
 ### ヘッダ（16 バイト）
 

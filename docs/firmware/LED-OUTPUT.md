@@ -23,12 +23,13 @@ ESP32-S3 で多ピンを低 CPU 負荷で駆動するには、内蔵 **LCD ペ�
 | ターゲット | PlatformIO env | 実装 | ソース |
 |------------|----------------|------|--------|
 | **ESP32-S3** | `prototype` | LCD + DMA パラレル（FastLED `FASTLED_USES_ESP32S3_I2S`） | `src/led_driver_s3.cpp` |
-| **ESP32 無印** | `prototype-esp32` | **通常の RMT**（データ線ごと 1 チャンネル） | `src/led_driver_esp32.cpp` |
+| **ESP32 無印** | `prototype-esp32` | **FastLED I2S-parallel**（`FASTLED_ESP32_I2S`、DMA、`FASTLED_ESP32_I2S_NUM_DMA_BUFFERS=4`） | `src/led_driver_esp32.cpp` + [`platformio.ini`](../firmware/esp32s3/platformio.ini) |
 
 ### ESP32 無印でチラつきが出る場合
 
 - **時間ディザー**: `FastLED.setDither(0)`（本リポジトリで `glowbe_led_init` に設定済み）
 - **UDP**: `main.cpp` で受信キューをドレインし、**最新の完了フレーム**を 1 回だけ `show()` する
+- **I2S DMA バッファ**: Wi-Fi 割り込みが重い場合は `FASTLED_ESP32_I2S_NUM_DMA_BUFFERS` を 4〜8 で調整（既定 4）。
 - **補足**: FastLED 3.10 系は ESP32 で `FASTLED_ALLOW_INTERRUPTS=0` をビルド拒否するため、割り込み抑止マクロは使わない（Wi-Fi 共存はドレイン＋単回 `show` と電源で調整）
 
 共通: UDP 受信・フレーム組み立ては `main.cpp` + `glowbe_wire.h`。  
@@ -53,3 +54,4 @@ uv run pio run -e prototype-esp32 -t upload
 
 - FastLED 例: `Esp32S3I2SDemo`（`FASTLED_USES_ESP32S3_I2S`）
 - 内包ドライバ: `I2SClockLessLedDriveresp32s3`（LCD HAL / `esp_lcd`）
+- ESP32 classic I2S-parallel: FastLED `clockless_i2s_esp32.h`（`FASTLED_ESP32_I2S`、PlatformIO フラグは `firmware/esp32s3/platformio.ini` の `prototype-esp32`）

@@ -26,6 +26,7 @@ uv run pio device monitor
 ## 動作
 
 - **UDP FRAME 受信:** ワイヤ RGB を LED に適用
+- **ESP32 無印 (`prototype-esp32`):** FastLED **I2S-parallel**（`FASTLED_ESP32_I2S`、DMA バッファ数は `platformio.ini` 参照）
 - **初回フレーム受信前の 3 秒無受信:** 待機テストパターン（50ms、正回転）
 - **初回フレーム受信後のリンク切れ:** 最後の表示を残さず黒へフォールバック
 - ポート **49152**（[`protocol/udp-wire.md`](../../protocol/udp-wire.md)）

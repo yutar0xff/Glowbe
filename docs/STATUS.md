@@ -2,7 +2,7 @@
 
 > **役割:** 本書は「いま何ができていて、次に何をやるか」の**正本**。  
 > 設計の「あるべき姿」は [`ARCHITECTURE.md`](ARCHITECTURE.md)、各仕様は [`../protocol/`](../protocol/)。  
-> 最終更新: 2026-06-14（堅牢性・プロトコル・計画ドキュメントの一括反映）
+> 最終更新: 2026-06-14（ESP32 無印: FastLED I2S-parallel、`BENCHMARK.md` 暫定記録）
 
 ---
 
@@ -12,8 +12,8 @@
 |------|--------|
 | フェーズ | **Phase 2（静止画→シーケンス最小パイプライン実装中）** |
 | ランタイム | loop パターン / 選択シーケンス再生 + 状態 API。`cargo test` **5** 件パス |
-| ファーム | UDP 受信・フレーム再構成・S3(LCD+DMA)/無印(RMT) ドライバ実装済 |
-| UDP E2E | 「成功扱い」。**60fps×5 分ベンチの合格記録は未取得**（[`BENCHMARK.md`](BENCHMARK.md)） |
+| ファーム | UDP 受信・フレーム再構成・S3(LCD+DMA)/無印(FastLED I2S-parallel) ドライバ実装済 |
+| UDP E2E | ESP32 **無印**で 60fps×5 分ベンチ通過を確認（記録: [`BENCHMARK.md`](BENCHMARK.md)）。**ESP32-S3 本番ボードでは未再計測** |
 | Web | **Phase 2 UI 一部実装**（状態/モード/シーケンス一覧・選択） |
 | メディアパイプライン | **Phase 2 最小実装**（正距円筒静止画→1フレームシーケンス） |
 
@@ -35,10 +35,10 @@
 | Web クライアント | `web/` | ✅ | Vite + React。状態表示、`idle`/`loop`、シーケンス一覧・選択 |
 | ESP ファーム（共通） | `firmware/esp32s3/` | ✅ | Wi-Fi STA / UDP / 再構成 / **20 バイト STATUS**（`layout_hash`）/ idle パターン |
 | LED ドライバ S3 | `src/led_driver_s3.cpp` | ✅ | LCD+DMA、`setMaxPower`（暫定 4000mA TODO）、論理 RGB 入力 |
-| LED ドライバ 無印 | `src/led_driver_esp32.cpp` | ✅ | RMT per line、同上 |
+| LED ドライバ 無印 | `src/led_driver_esp32.cpp` | ✅ | FastLED I2S-parallel（`prototype-esp32` の build_flags）、論理 RGB 入力 |
 | レイアウト v1 + コンパイル | `config/layouts/`, `tools/layout-compile.ts` | ✅ | **`layoutHash` / `GLOWBE_LAYOUT_HASH`** を出力。プロトタイプ 225 LED コンパイル済 |
 | プロトコル文書 | `protocol/` | ✅ | udp-wire / control-api / glowseq / compiled-layout |
-| ベンチツール | `tools/bench-udp.mjs`, `tools/listen-status.mjs` | ✅ | 合格記録は未取得 |
+| ベンチツール | `tools/bench-udp.mjs`, `tools/listen-status.mjs` | ✅ | 無印で合格記録あり（[`BENCHMARK.md`](BENCHMARK.md)） |
 | PCB / hardware | `hardware/pcb/` | ⬜ | ディレクトリ未追加 |
 
 ---
@@ -87,7 +87,7 @@
 
 | # | 内容 | 優先 |
 |---|------|------|
-| 1 | **60fps×5 分ベンチの合格記録を取得し `BENCHMARK.md` に追記** | 高（Phase 1 完了条件） |
+| 1 | **ESP32-S3 で 60fps×5 分ベンチを再計測し `BENCHMARK.md` に追記** | 高（本番ハード検証） |
 | 2 | 残 API（`layout/uv` / `ws`）の実装方針確定 | 高 |
 | 3 | `Mode` trait 導入（loop 固定からプラグイン化へ） | 中 |
 | 4 | frame-drop（チャンク欠落）カウントの実装 | 中 |
@@ -97,13 +97,13 @@
 | 9 | **判断待ち:** `SK6805` と FastLED `WS2812` テンプレの組み合わせ／`SK6812` 等への切替 | 低 |
 | 10 | PlatformIO ファームの `pio run` を CI に追加（キャッシュ設定含む） | 低 |
 
-**直近の実装反映:** Phase 2 最小（`convert-image` CLI、`GET /api/v1/sequences`、`POST /api/v1/loop/select`、Web 選択 UI、選択シーケンス再生）、Phase 1.5 Web、UDP 送信失敗耐性、layout hash、mDNS、GitHub Actions（Rust + Web）。
+**直近の実装反映:** Phase 2 最小（`convert-image` CLI、`GET /api/v1/sequences`、`POST /api/v1/loop/select`、Web 選択 UI、選択シーケンス再生）、Phase 1.5 Web、UDP 送信失敗耐性、layout hash、mDNS、GitHub Actions（Rust + Web）、**無印: FastLED I2S-parallel LED 出力**。
 
 ---
 
 ## 7. 次の具体タスク（Phase 1 締め）
 
-1. **実機 or ループバックでベンチ**: `tools/bench-udp.mjs` と `tools/listen-status.mjs` で送出/受信 fps を計測 → 結果を [`BENCHMARK.md`](BENCHMARK.md) に記録。
+1. **ESP32-S3 実機でベンチ再計測**: 無印と同条件で 5 分 → [`BENCHMARK.md`](BENCHMARK.md) に追記。
 2. ファームを再フラッシュし、blackout / sequence 選択の実機挙動を確認。
 3. Phase 2 を拡張（動画/複数フレーム変換、Web アップロード、変換進捗）。
 

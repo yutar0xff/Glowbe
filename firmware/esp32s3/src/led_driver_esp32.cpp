@@ -1,8 +1,8 @@
 /**
- * ESP32（無印）— RMT per data line.
+ * ESP32（無印）— FastLED I2S-parallel（`prototype-esp32` で `FASTLED_ESP32_I2S` 有効）。
  *
- * Wi-Fi 受信と RMT 送出が同時に走るため、UDP 経路ではチラつき対策は main の
- * 受信ドレイン + 単回 show、および FastLED.setDither(0) で行う。
+ * 5 本の WS2812 線は同一タイミングのため I2S 並列出力に適する。UDP 経路のチラつき対策は
+ * main の受信ドレイン + 単回 show、および FastLED.setDither(0) で行う。
  */
 #include <Arduino.h>
 #include <FastLED.h>
@@ -74,5 +74,5 @@ void glowbe_led_test_pattern(uint32_t t_ms) {
 }
 
 const char* glowbe_led_driver_name() {
-  return "esp32-rmt-per-line";
+  return "esp32-i2s-parallel-fastled";
 }
