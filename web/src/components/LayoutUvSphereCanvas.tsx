@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import {
   TAP_HIGHLIGHT_DECAY_MS,
+  deviceEquirectUToSphereU,
   sphereHitUvToDeviceEquirectUv,
   unitDirYUpToUv,
   uvToUnitDirYUp,
@@ -34,6 +35,8 @@ const ROTATE_SPEED = 0.85
 
 const SPHERE_ORBIT_MIN_R = 1.55
 const SPHERE_ORBIT_MAX_R = 5
+/** Default camera distance from origin (matches initial camera direction). */
+const DEFAULT_SPHERE_ORBIT_R = 3
 
 function clampOrbitRadius(r: number): number {
   return Math.min(SPHERE_ORBIT_MAX_R, Math.max(SPHERE_ORBIT_MIN_R, r))
@@ -58,16 +61,21 @@ function firstPointerId(m: Map<number, PointerEntry>): number | null {
   return it.done ? null : it.value
 }
 
-function LedInstanced({ uv }: { uv: LayoutUvResponse }) {
+function LedInstanced({ uv, liveLedRgb }: { uv: LayoutUvResponse; liveLedRgb?: Uint8Array | null }) {
   const ref = useRef<THREE.InstancedMesh>(null)
   const dummy = useMemo(() => new THREE.Object3D(), [])
+  const count = uv.leds.length
+  const useLive = liveLedRgb != null && liveLedRgb.length === count * 3
+  /** 同一参照のまま中身だけ更新されても追従する（WS 受信は React を回さない最適化のため） */
+  const liveRgbRef = useRef(liveLedRgb)
+  liveRgbRef.current = liveLedRgb
 
   useLayoutEffect(() => {
     const mesh = ref.current
     if (!mesh) return
     mesh.raycast = () => {}
     uv.leds.forEach((led, i) => {
-      const [x, y, z] = uvToUnitDirYUp(led.u, led.v)
+      const [x, y, z] = uvToUnitDirYUp(deviceEquirectUToSphereU(led.u), led.v)
       const s = LED_SURFACE_OFFSET
       dummy.position.set(x * s, y * s, z * s)
       dummy.scale.setScalar(1)
@@ -78,9 +86,36 @@ function LedInstanced({ uv }: { uv: LayoutUvResponse }) {
     mesh.instanceMatrix.needsUpdate = true
   }, [uv, dummy])
 
-  const count = uv.leds.length
+  useFrame(() => {
+    if (!useLive) return
+    const mesh = ref.current
+    const buf = liveRgbRef.current
+    if (!mesh || !buf || buf.length !== count * 3) return
+    if (!mesh.instanceColor) {
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3)
+    }
+    const attr = mesh.instanceColor as THREE.InstancedBufferAttribute
+    const arr = attr.array as Float32Array
+    for (let i = 0; i < count; i++) {
+      const o = i * 3
+      arr[o] = buf[o]! / 255
+      arr[o + 1] = buf[o + 1]! / 255
+      arr[o + 2] = buf[o + 2]! / 255
+    }
+    attr.needsUpdate = true
+  })
+
+  if (useLive) {
+    return (
+      <instancedMesh key="live-led" ref={ref} args={[undefined, undefined, count]} frustumCulled={false}>
+        <sphereGeometry args={[0.018, 10, 10]} />
+        <meshBasicMaterial color="#ffffff" toneMapped={false} />
+      </instancedMesh>
+    )
+  }
+
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, count]} frustumCulled={false}>
+    <instancedMesh key="std-led" ref={ref} args={[undefined, undefined, count]} frustumCulled={false}>
       <sphereGeometry args={[0.018, 10, 10]} />
       <meshStandardMaterial
         color="#0e7490"
@@ -118,10 +153,10 @@ function UvWorldAxes() {
 
 function TapHighlight3D({ pulse }: { pulse: TapUvHighlight }) {
   const meshRef = useRef<THREE.Mesh>(null)
-  const uOnSphere = pulse.uSphere ?? pulse.u
+  const uForSphere = pulse.uSphere ?? deviceEquirectUToSphereU(pulse.u)
   const [x, y, z] = useMemo(
-    () => uvToUnitDirYUp(uOnSphere, pulse.v).map((c) => c * HI_SURFACE) as [number, number, number],
-    [uOnSphere, pulse.v],
+    () => uvToUnitDirYUp(uForSphere, pulse.v).map((c) => c * HI_SURFACE) as [number, number, number],
+    [uForSphere, pulse.v],
   )
 
   useLayoutEffect(() => {
@@ -354,6 +389,7 @@ function Scene({
   bridge,
   onSphereTap,
   orbitRadius,
+  liveLedRgb,
 }: {
   uv: LayoutUvResponse
   disabled: boolean
@@ -361,6 +397,7 @@ function Scene({
   bridge: RefObject<SphereTapBridge>
   onSphereTap: (u: number, v: number, uSphere?: number) => void
   orbitRadius: number
+  liveLedRgb?: Uint8Array | null
 }) {
   const hitSphereRef = useRef<THREE.Mesh>(null)
 
@@ -393,7 +430,7 @@ function Scene({
         />
       </mesh>
 
-      <LedInstanced uv={uv} />
+      <LedInstanced uv={uv} liveLedRgb={liveLedRgb} />
 
       <UvWorldAxes />
 
@@ -419,16 +456,17 @@ export function LayoutUvSphereCanvas({
   onSphereTap,
   pulseHighlights,
   className,
+  liveLedRgb,
 }: {
   uv: LayoutUvResponse
   disabled: boolean
   onSphereTap: (u: number, v: number, uSphere?: number) => void
   pulseHighlights: TapUvHighlight[]
   className?: string
+  /** Raw RGB per LED (`leds.length * 3`). When set, each sphere instance uses these colors. */
+  liveLedRgb?: Uint8Array | null
 }) {
-  const [orbitRadius, setOrbitRadius] = useState(() =>
-    clampOrbitRadius(Math.hypot(0, 0.15, 2.55)),
-  )
+  const [orbitRadius, setOrbitRadius] = useState(() => clampOrbitRadius(DEFAULT_SPHERE_ORBIT_R))
 
   const bridge = useRef<SphereTapBridge>({
     camera: null,
@@ -450,7 +488,17 @@ export function LayoutUvSphereCanvas({
       <div className="relative h-[min(62vw,620px)] w-full min-h-[380px] md:min-h-[460px] lg:min-h-[500px]">
         <Canvas
           className="absolute inset-0 block h-full w-full"
-          camera={{ position: [0, 0.15, 2.55], fov: 48, near: 0.1, far: 40 }}
+          camera={{
+            position: (() => {
+              const y = 0.15
+              const z = 2.55
+              const s = DEFAULT_SPHERE_ORBIT_R / Math.hypot(0, y, z)
+              return [0, y * s, z * s] as [number, number, number]
+            })(),
+            fov: 48,
+            near: 0.1,
+            far: 40,
+          }}
           gl={{ antialias: true, alpha: false }}
         >
           <Suspense fallback={null}>
@@ -461,6 +509,7 @@ export function LayoutUvSphereCanvas({
               bridge={bridge}
               onSphereTap={onSphereTap}
               orbitRadius={orbitRadius}
+              liveLedRgb={liveLedRgb}
             />
           </Suspense>
         </Canvas>

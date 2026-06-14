@@ -10,7 +10,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time;
@@ -22,6 +22,9 @@ use crate::state::{
     InteractiveEffectKind, InteractivePulse, MediaUploadEntry, MediaUploadPhase, OutputMode,
     RuntimeState, SharedState,
 };
+
+/// WebSocket バイナリ LED プレビュー（ビッグエンディアン）。ASCII `GBP1`。
+const PREVIEW_FRAME_MAGIC: u32 = 0x4742_5031;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +50,7 @@ struct StateResponse {
     loop_source_frame: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     mate: Option<mate::MateSummary>,
+    loop_playback_paused: bool,
 }
 
 #[derive(Serialize)]
@@ -67,6 +71,12 @@ struct ModeRequest {
 #[serde(rename_all = "camelCase")]
 struct LoopSelectRequest {
     sequence_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LoopPauseRequest {
+    paused: bool,
 }
 
 #[derive(Deserialize)]
@@ -464,6 +474,20 @@ pub fn router(app: SharedState) -> Router {
             }),
         )
         .route(
+            "/api/v1/loop/clear-selection",
+            post({
+                let app = app.clone();
+                move || post_loop_clear_selection(app.clone())
+            }),
+        )
+        .route(
+            "/api/v1/loop/pause",
+            post({
+                let app = app.clone();
+                move |body| post_loop_pause(app.clone(), body)
+            }),
+        )
+        .route(
             "/api/v1/master-tone",
             post({
                 let app = app.clone();
@@ -556,13 +580,21 @@ async fn ws_loop(mut socket: WebSocket, app: SharedState) {
         return;
     }
 
+    let preview_wanted = Arc::new(AtomicBool::new(false));
     let mut ticker = time::interval(Duration::from_secs(1));
     ticker.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    let mut preview_ticker = time::interval(Duration::from_secs_f64(1.0 / 30.0));
+    preview_ticker.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
     loop {
         tokio::select! {
             _ = ticker.tick() => {
                 if send_ws_state(&mut socket, &app).await.is_err() {
+                    return;
+                }
+            }
+            _ = preview_ticker.tick(), if preview_wanted.load(Ordering::Relaxed) => {
+                if send_preview_frame(&mut socket, &app).await.is_err() {
                     return;
                 }
             }
@@ -572,7 +604,7 @@ async fn ws_loop(mut socket: WebSocket, app: SharedState) {
                 };
                 match msg {
                     Message::Text(text) => {
-                        if handle_ws_text(&mut socket, &text, &app).await.is_err() {
+                        if handle_ws_text(&mut socket, &text, &app, &preview_wanted).await.is_err() {
                             return;
                         }
                     }
@@ -589,6 +621,29 @@ async fn ws_loop(mut socket: WebSocket, app: SharedState) {
     }
 }
 
+async fn send_preview_frame(socket: &mut WebSocket, app: &SharedState) -> Result<(), axum::Error> {
+    let led_count = { app.state.read().await.led_count };
+    let expected = led_count as usize * 3;
+    let (seq, rgb) = {
+        let guard = match app.preview_frame.read() {
+            Ok(g) => g,
+            Err(_) => return Ok(()),
+        };
+        if guard.len() != expected {
+            return Ok(());
+        }
+        let seq = app.preview_seq.load(Ordering::Acquire);
+        (seq, guard.clone())
+    };
+    let mut buf = Vec::with_capacity(12 + rgb.len());
+    buf.extend_from_slice(&PREVIEW_FRAME_MAGIC.to_be_bytes());
+    buf.extend_from_slice(&seq.to_be_bytes());
+    buf.extend_from_slice(&led_count.to_be_bytes());
+    buf.extend_from_slice(&0u16.to_be_bytes());
+    buf.extend_from_slice(&rgb);
+    socket.send(Message::Binary(buf.into())).await
+}
+
 async fn send_ws_state(socket: &mut WebSocket, app: &SharedState) -> Result<(), axum::Error> {
     let s = app.state.read().await;
     let msg = WsStateMessage {
@@ -603,6 +658,7 @@ async fn handle_ws_text(
     socket: &mut WebSocket,
     text: &str,
     app: &SharedState,
+    preview_wanted: &Arc<AtomicBool>,
 ) -> Result<(), axum::Error> {
     let v: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -650,6 +706,17 @@ async fn handle_ws_text(
         }
         "ping" => {
             let reply = json!({ "type": "pong" });
+            socket.send(Message::Text(reply.to_string().into())).await?;
+        }
+        "previewSubscribe" => {
+            let enable = v.get("enable").and_then(|x| x.as_bool()).unwrap_or(true);
+            preview_wanted.store(enable, Ordering::Relaxed);
+            let reply = json!({
+                "type": "event_status",
+                "event": "previewSubscribe",
+                "status": "ok",
+                "enable": enable
+            });
             socket.send(Message::Text(reply.to_string().into())).await?;
         }
         "masterSettings" => {
@@ -1258,6 +1325,7 @@ fn state_response(app: &SharedState, s: &RuntimeState) -> StateResponse {
         master_gamma: f64::from(app.master_gamma()),
         loop_source_frame: app.metrics.loop_source_frame(),
         mate,
+        loop_playback_paused: app.loop_playback_paused(),
     }
 }
 
@@ -1297,6 +1365,26 @@ async fn post_loop_select(
 
     app.set_sequence(sequence).await;
     app.set_output_mode(OutputMode::Loop).await;
+    let s = app.state.read().await;
+    (StatusCode::OK, Json(state_response(&app, &s))).into_response()
+}
+
+async fn post_loop_clear_selection(app: SharedState) -> impl IntoResponse {
+    app.clear_sequence().await;
+    app.set_output_mode(OutputMode::Loop).await;
+    let s = app.state.read().await;
+    (StatusCode::OK, Json(state_response(&app, &s))).into_response()
+}
+
+async fn post_loop_pause(
+    app: SharedState,
+    Json(req): Json<LoopPauseRequest>,
+) -> impl IntoResponse {
+    if req.paused {
+        app.pause_loop_playback();
+    } else {
+        app.resume_loop_playback();
+    }
     let s = app.state.read().await;
     (StatusCode::OK, Json(state_response(&app, &s))).into_response()
 }

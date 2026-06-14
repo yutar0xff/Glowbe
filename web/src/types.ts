@@ -37,8 +37,10 @@ export type RuntimeState = {
   outputTargetAddr: string | null
   ledCount: number
   loopSequenceId: string | null
-  /** Loop 再生中のソースフレーム番号（0 始まり）。テストパターン等で無いときは null。 */
+  /** Source frame index while a sequence frame is copied to the output buffer; null otherwise. */
   loopSourceFrame: number | null
+  /** When true, loop timeline is frozen (sequence frame does not advance). */
+  loopPlaybackPaused: boolean
   uptimeSec: number
   frameLoopStaleMs: number
   layoutMismatch: boolean
@@ -58,8 +60,8 @@ export type SequenceSummary = {
   sourceWidth: number
   sourceHeight: number
   createdAtUnixSec: number
-  /** 任意。未設定時は一覧から省略されることがある。 */
-  displayName?: string | null
+  /** Optional. When omitted, summaries may drop this field in list responses. */
+  displayName?: string
 }
 
 export type Health = {

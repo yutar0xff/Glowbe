@@ -7,6 +7,7 @@ import {
 import { Loader2, Wifi } from 'lucide-react'
 import type { InteractiveEffectKind } from '@/types'
 import { resolveGlowbeWsUrl } from '@/api'
+import { parsePreviewRgbFrame } from '@/lib/preview-frame'
 import { useLayoutUv } from '@/hooks/use-layout-uv'
 import { LayoutUvSheet, type TapUvHighlight } from '@/components/LayoutUvMap'
 import { LayoutUvSphereCanvas } from '@/components/LayoutUvSphereCanvas'
@@ -55,11 +56,13 @@ export function LiveControls({
   const [pulseDurationMs, setPulseDurationMs] = useState(450)
   const [pulseSigmaDeg, setPulseSigmaDeg] = useState(8)
   const [interactiveEffect, setInteractiveEffect] = useState<InteractiveEffectKind>('expandingRingDiagonal')
-  const [colorRandom, setColorRandom] = useState(false)
+  const [colorRandom, setColorRandom] = useState(true)
   const [colorHex, setColorHex] = useState('#c8f0ff')
   const [ringSpeed, setRingSpeed] = useState(1)
   const [ringThicknessDeg, setRingThicknessDeg] = useState(0)
   const [pulseHighlights, setPulseHighlights] = useState<TapUvHighlight[]>([])
+  const liveRgbBufRef = useRef<Uint8Array | null>(null)
+  const [liveRgbRevision, setLiveRgbRevision] = useState(0)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<number | undefined>(undefined)
 
@@ -75,12 +78,14 @@ export function LiveControls({
       const url = resolveGlowbeWsUrl()
       setWsPhase('connecting')
       const ws = new WebSocket(url)
+      ws.binaryType = 'arraybuffer'
       wsRef.current = ws
 
       ws.onopen = () => {
         setWsPhase('open')
         // ブラウザは接続が成立したあとも onerror を送ることがあり、文言が残り続けるためここで掃除する。
         setLastWsNote(null)
+        ws.send(JSON.stringify({ type: 'previewSubscribe', enable: true }))
       }
       ws.onclose = () => {
         setWsPhase('closed')
@@ -95,7 +100,18 @@ export function LiveControls({
         console.warn('Live WebSocket error event (connection may still recover via onclose/onopen).')
       }
       ws.onmessage = (ev) => {
-        if (typeof ev.data !== 'string') return
+        if (typeof ev.data !== 'string') {
+          const parsed = parsePreviewRgbFrame(ev.data as ArrayBuffer)
+          if (!parsed || parsed.rgb.length !== ledCount * 3) return
+          const prev = liveRgbBufRef.current
+          if (prev?.length === parsed.rgb.length) {
+            prev.set(parsed.rgb)
+          } else {
+            liveRgbBufRef.current = new Uint8Array(parsed.rgb)
+          }
+          setLiveRgbRevision((n) => n + 1)
+          return
+        }
         let msg: Record<string, unknown>
         try {
           msg = JSON.parse(ev.data) as Record<string, unknown>
@@ -110,7 +126,7 @@ export function LiveControls({
       }
     }
     openWebSocket()
-  }, [])
+  }, [ledCount])
 
   useEffect(() => {
     mountedRef.current = true
@@ -119,10 +135,20 @@ export function LiveControls({
       mountedRef.current = false
       if (reconnectTimer.current !== undefined) window.clearTimeout(reconnectTimer.current)
       reconnectTimer.current = undefined
-      wsRef.current?.close()
+      const w = wsRef.current
+      if (w && w.readyState === WebSocket.OPEN) {
+        try {
+          w.send(JSON.stringify({ type: 'previewSubscribe', enable: false }))
+        } catch {
+          /* ignore */
+        }
+      }
+      w?.close()
       wsRef.current = null
+      liveRgbBufRef.current = null
+      setLiveRgbRevision(0)
     }
-  }, [connectWs, layoutId])
+  }, [connectWs, layoutId, ledCount])
 
   useEffect(() => {
     if (wsPhase !== 'open') return
@@ -205,7 +231,8 @@ export function LiveControls({
       </CardHeader>
       <CardContent className="space-y-6">
         <p className="text-sm text-muted-foreground">
-          2:1 マップと 3D 球は同じデバイス UV。主指でドラッグすると回転、他指でパルスタップ可。球下のスライダーで距離（ズーム）。
+          The 2:1 map and 3D sphere share device UV. Drag with one finger to orbit; tap with another finger for
+          pulses. Use the slider under the sphere for camera distance (zoom).
         </p>
 
           {uvLoading ? (
@@ -353,6 +380,8 @@ export function LiveControls({
                 uv={uv}
                 disabled={!canInteractive}
                 pulseHighlights={pulseHighlights}
+                liveLedRgb={liveRgbBufRef.current}
+                liveLedRevision={liveRgbRevision}
                 onEquirectClick={canInteractive ? handleInteractiveTapUv : undefined}
               />
             </div>
@@ -362,6 +391,7 @@ export function LiveControls({
                 uv={uv}
                 disabled={!canInteractive}
                 pulseHighlights={pulseHighlights}
+                liveLedRgb={liveRgbBufRef.current ?? undefined}
                 onSphereTap={handleInteractiveTapUv}
               />
             </div>

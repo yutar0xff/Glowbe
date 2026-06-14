@@ -10,10 +10,14 @@ export type GlowbeRuntimeContextValue = {
   mediaConvertBusy: boolean
   setMode: (mode: OutputMode) => Promise<void>
   selectSequence: (sequenceId: string) => Promise<void>
+  /** Clears the selected sequence and stays in loop mode (built-in test pattern). */
+  clearLoopSelection: () => Promise<void>
+  /** Pause or resume loop sequence timeline (no-op if output is not looping). */
+  setLoopPlaybackPaused: (paused: boolean) => Promise<void>
   setMasterTone: (brightness: number, gamma: number) => Promise<void>
-  /** `POST /api/v1/media/upload` のみ（multipart `file`）。 */
+  /** Upload only (`POST /api/v1/media/upload`, multipart `file`). */
   uploadMediaFile: (file: File) => Promise<{ uploadId: string }>
-  /** アップロード済み ID に対して `POST …/convert` と進捗ポーリング。完了後に一覧を更新。 */
+  /** Convert an uploaded asset by ID; polls until done, then refreshes the list. */
   convertMediaUpload: (
     uploadId: string,
     layoutId: string,
@@ -22,7 +26,7 @@ export type GlowbeRuntimeContextValue = {
   ) => Promise<void>
   /** Empty string clears the display name in manifest.json. */
   setSequenceDisplayName: (sequenceId: string, displayName: string) => Promise<void>
-  /** シーケンスをディスクから削除（再生中ならサーバが選択解除）。 */
+  /** Remove a sequence from disk (server clears selection if it was playing). */
   deleteSequence: (sequenceId: string) => Promise<void>
   /** Refetch runtime state (e.g. after mate updates). */
   refreshLoad: () => Promise<void>

@@ -29,6 +29,15 @@ export function uvToUnitDirYUp(u: number, v: number): [number, number, number] {
 }
 
 /**
+ * Device / ledmap equirect `u` → longitude parameter for {@link uvToUnitDirYUp} on the 3D sphere (inverse of
+ * {@link sphereHitUvToDeviceEquirectUv} on `u`).
+ */
+export function deviceEquirectUToSphereU(u: number): number {
+  const uu = ((u % 1) + 1) % 1
+  return 1 - uu
+}
+
+/**
  * 球面レイの u を {@link equirectDisplayPointerToUv} と同じデバイス用 u に合わせる（v はそのまま）。
  */
 export function sphereHitUvToDeviceEquirectUv(u: number, v: number): { u: number; v: number } {

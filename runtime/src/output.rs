@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -125,7 +126,10 @@ pub async fn run(config: Config, app: SharedState, meta_path: PathBuf) -> Result
             app.metrics.mark_tick();
             app.clear_expired_interactive_pulses();
 
-            let t_ms = loop_start.elapsed().as_millis() as u32;
+            let raw_elapsed = loop_start.elapsed();
+            app.record_loop_raw_tick(raw_elapsed);
+            let seq_elapsed = app.sequence_elapsed_for_loop(raw_elapsed);
+            let t_ms = raw_elapsed.as_millis() as u32;
             match app.output_mode() {
                 OutputMode::Idle | OutputMode::Interactive => {
                     app.metrics.set_loop_source_frame(None);
@@ -133,9 +137,9 @@ pub async fn run(config: Config, app: SharedState, meta_path: PathBuf) -> Result
                 }
                 OutputMode::Loop => {
                     if let Some(sequence) = app.selected_sequence() {
-                        match sequence.copy_frame_at(loop_start.elapsed(), &mut rgb) {
+                        match sequence.copy_frame_at(seq_elapsed, &mut rgb) {
                             Ok(()) => {
-                                let idx = sequence.frame_index_at(loop_start.elapsed()) as u32;
+                                let idx = sequence.frame_index_at(seq_elapsed) as u32;
                                 app.metrics.set_loop_source_frame(Some(idx));
                             }
                             Err(e) => {
@@ -161,6 +165,13 @@ pub async fn run(config: Config, app: SharedState, meta_path: PathBuf) -> Result
             }
 
             apply_master_tone(&app, &mut rgb);
+
+            if let Ok(mut w) = app.preview_frame.try_write() {
+                if w.len() == rgb.len() {
+                    w.copy_from_slice(&rgb);
+                    app.preview_seq.fetch_add(1, Ordering::Release);
+                }
+            }
 
             let mut full_send_ok = true;
             for pkt in wire::encode_frame(led_count, frame_id, &rgb) {

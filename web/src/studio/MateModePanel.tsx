@@ -7,6 +7,7 @@ import {
 import { Loader2, Wifi } from 'lucide-react'
 import type { MateSummary, RuntimeState } from '@/types'
 import { API_BASE, resolveGlowbeWsUrl } from '@/api'
+import { parsePreviewRgbFrame } from '@/lib/preview-frame'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { useLayoutUv } from '@/hooks/use-layout-uv'
 import { LayoutUvSheet, type TapUvHighlight } from '@/components/LayoutUvMap'
@@ -110,7 +111,11 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
   const [wsPhase, setWsPhase] = useState<'idle' | 'connecting' | 'open' | 'closed'>('idle')
   const [lastNote, setLastNote] = useState<string | null>(null)
   const [pulseHighlights, setPulseHighlights] = useState<TapUvHighlight[]>([])
+  const liveRgbBufRef = useRef<Uint8Array | null>(null)
+  const [liveRgbRevision, setLiveRgbRevision] = useState(0)
   const wsRef = useRef<WebSocket | null>(null)
+  const stateRef = useRef(state)
+  stateRef.current = state
   const reconnectTimer = useRef<number | undefined>(undefined)
   const mountedRef = useRef(true)
 
@@ -145,11 +150,13 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
       const url = resolveGlowbeWsUrl()
       setWsPhase('connecting')
       const ws = new WebSocket(url)
+      ws.binaryType = 'arraybuffer'
       wsRef.current = ws
 
       ws.onopen = () => {
         setWsPhase('open')
         setLastNote(null)
+        ws.send(JSON.stringify({ type: 'previewSubscribe', enable: true }))
       }
       ws.onclose = () => {
         setWsPhase('closed')
@@ -163,7 +170,18 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
         console.warn('Mate WebSocket error event.')
       }
       ws.onmessage = (ev) => {
-        if (typeof ev.data !== 'string') return
+        if (typeof ev.data !== 'string') {
+          const parsed = parsePreviewRgbFrame(ev.data as ArrayBuffer)
+          if (!parsed || parsed.rgb.length !== stateRef.current.ledCount * 3) return
+          const prev = liveRgbBufRef.current
+          if (prev?.length === parsed.rgb.length) {
+            prev.set(parsed.rgb)
+          } else {
+            liveRgbBufRef.current = new Uint8Array(parsed.rgb)
+          }
+          setLiveRgbRevision((n) => n + 1)
+          return
+        }
         let msg: Record<string, unknown>
         try {
           msg = JSON.parse(ev.data) as Record<string, unknown>
@@ -188,8 +206,18 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
       mountedRef.current = false
       if (reconnectTimer.current !== undefined) window.clearTimeout(reconnectTimer.current)
       reconnectTimer.current = undefined
-      wsRef.current?.close()
+      const w = wsRef.current
+      if (w && w.readyState === WebSocket.OPEN) {
+        try {
+          w.send(JSON.stringify({ type: 'previewSubscribe', enable: false }))
+        } catch {
+          /* ignore */
+        }
+      }
+      w?.close()
       wsRef.current = null
+      liveRgbBufRef.current = null
+      setLiveRgbRevision(0)
     }
   }, [connectWs, state.layoutId])
 
@@ -499,6 +527,8 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
                   uv={uv}
                   disabled={!canMate}
                   pulseHighlights={pulseHighlights}
+                  liveLedRgb={liveRgbBufRef.current}
+                  liveLedRevision={liveRgbRevision}
                   onEquirectClick={canMate ? handleGazeTap : undefined}
                 />
               </div>
@@ -510,6 +540,7 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
                   uv={uv}
                   disabled={!canMate}
                   pulseHighlights={pulseHighlights}
+                  liveLedRgb={liveRgbBufRef.current ?? undefined}
                   onSphereTap={handleGazeTap}
                 />
               </div>

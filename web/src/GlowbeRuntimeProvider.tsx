@@ -119,6 +119,75 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const clearLoopSelection = useCallback(async () => {
+    setSequenceBusy('__clear__')
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 3500)
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/loop/clear-selection`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
+      })
+      if (!res.ok) throw new Error(`Could not clear loop selection (error ${res.status}).`)
+      const newState = (await res.json()) as RuntimeState
+      setLoad((prev) => {
+        if (prev.kind === 'ready') {
+          return { ...prev, state: newState, fetchedAt: new Date() }
+        }
+        return {
+          kind: 'ready',
+          state: newState,
+          health: { ok: true, text: 'ok' },
+          sequences: [],
+          fetchedAt: new Date(),
+        }
+      })
+    } catch (err) {
+      setLoad((prev) => ({
+        kind: 'error',
+        message: err instanceof Error ? err.message : String(err),
+        health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
+        fetchedAt: new Date(),
+      }))
+    } finally {
+      window.clearTimeout(timeout)
+      setSequenceBusy(null)
+    }
+  }, [])
+
+  const setLoopPlaybackPaused = useCallback(async (paused: boolean) => {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 3500)
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/loop/pause`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ paused }),
+        signal: controller.signal,
+      })
+      if (!res.ok) {
+        throw new Error(`Could not ${paused ? 'pause' : 'resume'} loop playback (error ${res.status}).`)
+      }
+      const newState = (await res.json()) as RuntimeState
+      setLoad((prev) => {
+        if (prev.kind === 'ready') {
+          return { ...prev, state: newState, fetchedAt: new Date() }
+        }
+        return prev
+      })
+    } catch (err) {
+      setLoad((prev) => ({
+        kind: 'error',
+        message: err instanceof Error ? err.message : String(err),
+        health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
+        fetchedAt: new Date(),
+      }))
+    } finally {
+      window.clearTimeout(timeout)
+    }
+  }, [])
+
   const selectSequence = useCallback(async (sequenceId: string) => {
     setSequenceBusy(sequenceId)
     const controller = new AbortController()
@@ -312,6 +381,8 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       mediaConvertBusy,
       setMode,
       selectSequence,
+      clearLoopSelection,
+      setLoopPlaybackPaused,
       setMasterTone,
       uploadMediaFile,
       convertMediaUpload,
@@ -328,6 +399,8 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       mediaConvertBusy,
       setMode,
       selectSequence,
+      clearLoopSelection,
+      setLoopPlaybackPaused,
       setMasterTone,
       uploadMediaFile,
       convertMediaUpload,

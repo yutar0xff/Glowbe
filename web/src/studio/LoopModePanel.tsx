@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { CalendarClock, Play, Pencil, Trash2, Upload } from 'lucide-react'
+import { CalendarClock, Pause, Play, Pencil, Square, Trash2, Upload } from 'lucide-react'
 import { LiveMetricsRow } from '@/components/LiveMetricsRow'
+import { LayoutUvSheet } from '@/components/LayoutUvMap'
+import { LayoutUvSphereCanvas } from '@/components/LayoutUvSphereCanvas'
 import { formatDate } from '@/format'
 import { API_BASE } from '@/api'
+import { useGlowbeStandaloneLedPreview } from '@/hooks/use-glowbe-standalone-led-preview'
+import { useLayoutUv } from '@/hooks/use-layout-uv'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import type { RuntimeState, SequenceSummary } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -22,19 +26,36 @@ function SequenceGridCard({
   seq: SequenceSummary
   playingSequenceId: string | null
 }) {
-  const { selectSequence, deleteSequence, sequenceBusy, setSequenceDisplayName } = useGlowbeRuntime()
+  const {
+    load,
+    selectSequence,
+    deleteSequence,
+    sequenceBusy,
+    setSequenceDisplayName,
+    setLoopPlaybackPaused,
+    clearLoopSelection,
+  } = useGlowbeRuntime()
+  const loopPlaybackPaused = load.kind === 'ready' && load.state.loopPlaybackPaused
   const [draft, setDraft] = useState(seq.displayName ?? '')
   const [saving, setSaving] = useState(false)
   const [renameErr, setRenameErr] = useState<string | null>(null)
   const [thumbErr, setThumbErr] = useState(false)
+  const [labelEditing, setLabelEditing] = useState(false)
 
   useEffect(() => {
     setDraft(seq.displayName ?? '')
     setRenameErr(null)
     setThumbErr(false)
+    setLabelEditing(false)
   }, [seq.id, seq.displayName])
 
   const title = seq.displayName?.trim() ? seq.displayName.trim() : seq.id
+
+  const onCancelLabelEdit = () => {
+    setDraft(seq.displayName ?? '')
+    setRenameErr(null)
+    setLabelEditing(false)
+  }
 
   const onSaveDisplayName = () => {
     void (async () => {
@@ -42,6 +63,7 @@ function SequenceGridCard({
       setSaving(true)
       try {
         await setSequenceDisplayName(seq.id, draft)
+        setLabelEditing(false)
       } catch (e) {
         setRenameErr(e instanceof Error ? e.message : String(e))
       } finally {
@@ -72,15 +94,73 @@ function SequenceGridCard({
         )}
         {playingSequenceId === seq.id ? (
           <span className="absolute left-2 top-2 rounded bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
-            Playing
+            {loopPlaybackPaused ? 'Paused' : 'Playing'}
           </span>
         ) : null}
       </div>
       <CardContent className="flex flex-1 flex-col gap-3 p-4">
+        {labelEditing ? (
+          <div className="space-y-2">
+            <Input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Display name"
+              className="h-8 font-mono text-xs"
+              disabled={saving || sequenceBusy !== null}
+              autoFocus
+              aria-label="Sequence display name"
+            />
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 flex-1 text-xs"
+                onClick={onSaveDisplayName}
+                disabled={saving || sequenceBusy !== null}
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 flex-1 text-xs"
+                onClick={onCancelLabelEdit}
+                disabled={saving || sequenceBusy !== null}
+              >
+                Cancel
+              </Button>
+            </div>
+            {renameErr ? (
+              <p className="text-[10px] text-destructive" role="alert">
+                {renameErr}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex min-w-0 items-start gap-1">
+            <h3 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight" title={title}>
+              {title}
+            </h3>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setRenameErr(null)
+                setDraft(seq.displayName ?? '')
+                setLabelEditing(true)
+              }}
+              disabled={sequenceBusy !== null}
+              aria-label="Edit label"
+            >
+              <Pencil className="size-3.5" aria-hidden />
+            </Button>
+          </div>
+        )}
+
         <div className="space-y-1">
-          <h3 className="truncate text-sm font-semibold tracking-tight" title={title}>
-            {title}
-          </h3>
           {seq.displayName?.trim() ? (
             <p className="truncate font-mono text-[10px] text-muted-foreground">id: {seq.id}</p>
           ) : null}
@@ -94,60 +174,69 @@ function SequenceGridCard({
           </p>
         </div>
 
-        <div className="space-y-1.5">
-          <label className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
-            <Pencil className="size-2.5" aria-hidden />
-            Label
-          </label>
-          <Input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Display name"
-            className="h-8 font-mono text-xs"
-            disabled={saving || sequenceBusy !== null}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 w-full text-xs"
-            onClick={onSaveDisplayName}
-            disabled={saving || sequenceBusy !== null}
-          >
-            {saving ? 'Saving…' : 'Save label'}
-          </Button>
-        </div>
-        {renameErr ? (
-          <p className="text-[10px] text-destructive" role="alert">
-            {renameErr}
-          </p>
-        ) : null}
-
-        <div className="mt-auto flex gap-2">
-          <Button
-            type="button"
-            className="h-9 flex-1 gap-1 text-xs"
-            onClick={() => void selectSequence(seq.id)}
-            disabled={sequenceBusy !== null || playingSequenceId === seq.id}
-          >
-            <Play className="size-3.5 shrink-0" aria-hidden />
-            {sequenceBusy === seq.id
-              ? '…'
-              : playingSequenceId === seq.id
-                ? 'Active'
-                : 'Play'}
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            size="icon"
-            className="h-9 shrink-0"
-            aria-label="Delete sequence"
-            onClick={onDelete}
-            disabled={sequenceBusy !== null}
-          >
-            <Trash2 className="size-4" />
-          </Button>
+        <div className="mt-auto flex flex-col gap-2">
+          {playingSequenceId === seq.id ? (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-9 min-h-9 flex-1 justify-center gap-0 px-3"
+                onClick={() => void setLoopPlaybackPaused(!loopPlaybackPaused)}
+                disabled={sequenceBusy !== null}
+                aria-label={loopPlaybackPaused ? 'Resume' : 'Pause'}
+              >
+                {loopPlaybackPaused ? (
+                  <Play className="size-4" aria-hidden />
+                ) : (
+                  <Pause className="size-4" aria-hidden />
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 min-h-9 flex-1 justify-center gap-0 px-3"
+                onClick={() => void clearLoopSelection()}
+                disabled={sequenceBusy !== null}
+                aria-label="End playback"
+              >
+                <Square className="size-4" aria-hidden />
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="icon"
+                className="h-9 shrink-0"
+                aria-label="Delete sequence"
+                onClick={onDelete}
+                disabled={sequenceBusy !== null}
+              >
+                <Trash2 className="size-4" aria-hidden />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                className="h-9 flex-1 gap-1 text-xs"
+                onClick={() => void selectSequence(seq.id)}
+                disabled={sequenceBusy !== null}
+              >
+                <Play className="size-3.5 shrink-0" aria-hidden />
+                {sequenceBusy === seq.id ? '…' : 'Play'}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="icon"
+                className="h-9 shrink-0"
+                aria-label="Delete sequence"
+                onClick={onDelete}
+                disabled={sequenceBusy !== null}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -197,6 +286,11 @@ export function LoopModePanel({
     sequenceBusy,
   } = useGlowbeRuntime()
   const playingSequenceId = state.mode === 'loop' ? state.loopSequenceId : null
+  const { uv, uvError, uvLoading } = useLayoutUv(state.layoutId, state.ledCount)
+  const showSourcePreview =
+    state.mode === 'loop' && playingSequenceId != null && state.loopSourceFrame != null
+  const ledPreviewStream = Boolean(showSourcePreview && uv && !uvError)
+  const { liveRgbBuf, liveRgbRevision } = useGlowbeStandaloneLedPreview(ledPreviewStream, state.ledCount)
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploadErr, setUploadErr] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -251,9 +345,6 @@ export function LoopModePanel({
     })()
   }
 
-  const showSourcePreview =
-    state.mode === 'loop' && playingSequenceId != null && state.loopSourceFrame != null
-
   return (
     <div className="space-y-6">
       <LiveMetricsRow state={state} />
@@ -261,14 +352,55 @@ export function LoopModePanel({
       {showSourcePreview ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Source preview</CardTitle>
+            <CardTitle className="text-lg">Source preview & live LEDs</CardTitle>
             <CardDescription>
-              Equirectangular frame matching loop playback (frame {state.loopSourceFrame} of the
-              selected sequence).
+              Top row: sequence source frame and equirectangular LED map (frame {state.loopSourceFrame}). Bottom: 3D
+              sphere with the same live RGB as sent to the device.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <LoopSourcePreview sequenceId={playingSequenceId!} frameIndex={state.loopSourceFrame!} />
+          <CardContent className="space-y-6">
+            <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+              <div className="min-w-0 space-y-2">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Sequence frame</p>
+                <LoopSourcePreview sequenceId={playingSequenceId!} frameIndex={state.loopSourceFrame!} />
+              </div>
+              <div className="min-w-0 space-y-2">
+                {uvLoading ? (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">Loading layout UV…</p>
+                ) : uvError ? (
+                  <p className="max-w-full break-words text-sm text-destructive" role="alert">
+                    {uvError}
+                  </p>
+                ) : uv ? (
+                  <>
+                    <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Equirect (2D)
+                    </p>
+                    <LayoutUvSheet
+                      uv={uv}
+                      disabled
+                      pulseHighlights={[]}
+                      liveLedRgb={liveRgbBuf.current}
+                      liveLedRevision={liveRgbRevision}
+                    />
+                  </>
+                ) : null}
+              </div>
+              {uv && !uvLoading && !uvError ? (
+                <div className="min-w-0 space-y-2 lg:col-span-2">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Sphere (Three.js)
+                  </p>
+                  <LayoutUvSphereCanvas
+                    uv={uv}
+                    disabled={false}
+                    pulseHighlights={[]}
+                    liveLedRgb={liveRgbBuf.current ?? undefined}
+                    onSphereTap={() => {}}
+                  />
+                </div>
+              ) : null}
+            </div>
           </CardContent>
         </Card>
       ) : null}

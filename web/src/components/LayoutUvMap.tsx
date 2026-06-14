@@ -18,12 +18,18 @@ export function LayoutUvSheet({
   disabled,
   className,
   pulseHighlights,
+  liveLedRgb,
+  liveLedRevision = 0,
 }: {
   uv: LayoutUvResponse
   onEquirectClick?: (u: number, v: number) => void
   disabled?: boolean
   className?: string
   pulseHighlights?: TapUvHighlight[] | null
+  /** LED 順の RGB（`ledCount * 3`）。指定時は各点の色に使う。 */
+  liveLedRgb?: Uint8Array | null
+  /** `liveLedRgb` の内容更新のたびに増やすと再描画される。 */
+  liveLedRevision?: number
 }) {
   const [, setAnim] = useState(0)
   const pointersDown = useRef(
@@ -67,6 +73,7 @@ export function LayoutUvSheet({
         disabled && 'pointer-events-none opacity-50',
         className,
       )}
+      data-live-led-rev={liveLedRevision}
       onContextMenu={(e) => e.preventDefault()}
     >
       <svg
@@ -93,15 +100,30 @@ export function LayoutUvSheet({
         }}
       >
         <rect x={0} y={0} width={2} height={1} className="fill-muted/40" />
-        {uv.leds.map((led) => (
-          <circle
-            key={led.i}
-            cx={led.u * 2}
-            cy={led.v}
-            r={0.028}
-            className="fill-cyan-400/85 stroke-background/50 stroke-[0.006]"
-          />
-        ))}
+        {uv.leds.map((led) => {
+          const o = led.i * 3
+          const rgb = liveLedRgb
+          const hasLive =
+            rgb != null && rgb.length >= o + 3 && rgb.length === uv.leds.length * 3
+          return (
+            <circle
+              key={led.i}
+              cx={led.u * 2}
+              cy={led.v}
+              r={0.028}
+              fill={
+                hasLive
+                  ? `rgb(${rgb[o]!},${rgb[o + 1]!},${rgb[o + 2]!})`
+                  : undefined
+              }
+              className={
+                hasLive
+                  ? 'stroke-background/50 stroke-[0.006]'
+                  : 'fill-cyan-400/85 stroke-background/50 stroke-[0.006]'
+              }
+            />
+          )
+        })}
         {highlights.map((h) => {
           const hiPhase = Math.max(0, 1 - (performance.now() - h.t0) / TAP_HIGHLIGHT_DECAY_MS)
           if (hiPhase <= 0) return null

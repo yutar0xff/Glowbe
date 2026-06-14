@@ -24,6 +24,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
   "ledCount": 225,
   "loopSequenceId": null,
   "loopSourceFrame": null,
+  "loopPlaybackPaused": false,
   "uptimeSec": 3600,
   "frameLoopStaleMs": 12,
   "layoutMismatch": false,
@@ -40,6 +41,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 - `framesSent`: 完全送信に成功したフレーム数（累計）。
 - `outputTargetAddr`: runtime が FRAME を送信している宛先。`espStatusAddr` と IP が違う場合、`config.toml` の `device.esp_ip` が古い可能性が高い。
 - `loopSourceFrame`: **`loop` かつシーケンスのフレームが実際に出力バッファへコピーできているとき**、そのソース上のフレーム index（0 始まり）。テストパターンへフォールバック中や `idle` / `interactive` では省略または `null`。
+- `loopPlaybackPaused`: **`loop` でシーケンス選択中**にタイムラインが一時停止のとき `true`（`POST /api/v1/loop/pause`）。それ以外は `false`。
 - `espStatusAddr`: ESP STATUS パケットの送信元。
 
 ### `POST /api/v1/brightness`（草案・未実装）
@@ -88,6 +90,20 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 ```
 
 → 実装済み: `assets/sequences/<sequenceId>/manifest.json` と `frames.bin` を読み込み、ランタイムの `layoutId` / `ledCount` と一致すれば loop モードで再生する。失敗時は `400`。
+
+### `POST /api/v1/loop/clear-selection`
+
+ボディ不要。
+
+→ 実装済み: 選択中のシーケンスを解除し（`loopSequenceId` を `null`）、出力モードを **`loop`** にする。シーケンス無しのテストパターンへ移行する。`200` + 更新後 `state`。
+
+### `POST /api/v1/loop/pause`
+
+```json
+{ "paused": true }
+```
+
+→ 実装済み: **`loop` かつシーケンス選択中**のとき、シーケンスのタイムラインを一時停止（`paused: true`）または再開（`paused: false`）。`idle` / `interactive` / `mate` では状態のみ更新され、出力の見え方はモードに従う。`200` + 更新後 `state`（`loopPlaybackPaused` を含む）。
 
 ### `POST /api/v1/master-tone`
 
@@ -198,7 +214,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 
 ## WebSocket `GET /api/v1/ws`
 
-→ 実装済み: 接続直後と約 1 秒ごとに `state` を送る。`ping` → `pong`。**`masterSettings`** は任意モードでマスター補正を更新（`POST /api/v1/master-tone` と同等）。**`interactive`**（および後方互換の **`ripple`**）メッセージは、出力モードが **`interactive`** のときだけ合成（それ以外は `event_status` `error`）。**`mate`** メッセージは、出力モードが **`mate`** のときだけ `mate` 状態へ反映（それ以外は `event_status` `error`）。
+→ 実装済み: 接続直後と約 1 秒ごとに `state` を送る。`ping` → `pong`。**`masterSettings`** は任意モードでマスター補正を更新（`POST /api/v1/master-tone` と同等）。**`interactive`**（および後方互換の **`ripple`**）メッセージは、出力モードが **`interactive`** のときだけ合成（それ以外は `event_status` `error`）。**`mate`** メッセージは、出力モードが **`mate`** のときだけ `mate` 状態へ反映（それ以外は `event_status` `error`）。**`previewSubscribe`** で有効化した接続には、約 **30fps** で **バイナリ** LED フレーム（UDP 直前と同一の最終 RGB）が送られる。
 
 ### クライアント → サーバ
 
@@ -210,6 +226,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 { "type": "interactive", "action": "pulse", "u": 0.42, "v": 0.71, "effect": "expandingRingDiagonal", "colorRgb": [255, 120, 40], "ringSpeed": 1.2, "ringThicknessRad": 0.09 }
 { "type": "ripple", "u": 0.42, "v": 0.71, "amplitude": 1.0, "durationMs": 450, "sigmaRad": 0.14 }
 { "type": "ping" }
+{ "type": "previewSubscribe", "enable": true }
 { "type": "mate", "action": "setExpression", "expression": "happy" }
 { "type": "mate", "action": "setGaze", "u": 0.42, "v": 0.71, "gazePull": 0.6 }
 { "type": "mate", "action": "setDynamics", "stiffness": 8.0, "damping": 0.65 }
@@ -219,6 +236,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 ```
 
 - **`masterSettings`** … `brightness` / `gamma` を任意指定（未指定のキーは**変更しない**）。全モードで有効。
+- **`previewSubscribe`** … `enable`（既定 `true`）で、その WebSocket 接続への **バイナリ LED プレビュー**（約 30fps）を開始／停止する。成功時は `event_status`（`event`: `previewSubscribe`, `status`: `ok`）。出力モードは問わない。
 - **`getLayoutUv`** … 現在のランタイム `layoutId` の UV マップを返す（`GET /api/v1/layout/uv` と同一 JSON に **`"type": "layoutUv"`** を付与）。失敗時は `event_status`（`event`: `getLayoutUv`, `status`: `error`）。
 - **`interactive` + `action: "setEffect"`** … 以降のパルスで省略したときに使う既定エフェクトを設定（`effect`: `sphereGaussian` | `expandingRingDiagonal`）。`ripple` 型メッセージでは不可。
 - **`interactive` + `action: "pulse"`**（または `action` 省略でパルス扱い）… パルスは **最大 32 本**まで保持し、それを超えると古いものから破棄する。アクティブな全パルスを **線形光（sRGB デコード）で加算**し、合成後に **最大チャンネルが 1 を超える場合だけ線形空間で RGB を一様に縮小**してから sRGB に戻す。残光トレイルが重なるため、赤と緑のリップルが重なった所は **黄に加算混色**される。
@@ -242,6 +260,20 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 
 **エフェクト:** `sphereGaussian` は球面上ガウス（大円距離）。`expandingRingDiagonal` はタップ中心から**等方に拡大する球面波面**（大円角 θ に対する到達時刻 `θ/c`）と、通過後の指数トレイル。立ち上がりは波面幅に依存しない短い時間フェザーで**点始まり**。トレイルは角度方向にも狭いガウスでゲートし、球全体を埋めない。
 
+### バイナリ LED プレビュー（`previewSubscribe` 有効時）
+
+WebSocket の **Binary** メッセージ。ビッグエンディアン。
+
+| オフセット | 型 | 内容 |
+|-----------|-----|------|
+| 0 | `u32` | マジック `0x47425031`（ASCII `GBP1`） |
+| 4 | `u32` | フレーム更新シーケンス（単調増加、ラップ可） |
+| 8 | `u16` | `ledCount`（`state` / `meta` と一致） |
+| 10 | `u16` | 予約（0） |
+| 12 | `u8[ledCount*3]` | LED 順の R,G,B（UDP 送信直前と同一：マスター輝度・ガンマ適用後） |
+
+クライアントは `ledCount` とバッファ長を検証すること。
+
 ## Phase 対応 / 実装状況
 
 | エンドポイント | Phase | 実装 |
@@ -251,6 +283,9 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 | `POST /api/v1/mode` (`idle` / `loop` / `interactive`、別名 `ripple`、`mate`) | 1 | ✅ 実装済 |
 | `POST /api/v1/mate/state` | 2 | ✅ 実装済 |
 | `POST /api/v1/master-tone` | 1 | ✅ 実装済 |
+| `POST /api/v1/loop/select` | 2 | ✅ 実装済 |
+| `POST /api/v1/loop/clear-selection` | 2 | ✅ 実装済 |
+| `POST /api/v1/loop/pause` | 2 | ✅ 実装済 |
 | `GET /api/v1/layout/uv` | 1–2 | ✅ 実装済 |
 | `GET /api/v1/ws`（state 配信） | 1–2 | ✅ 実装済 |
 | `GET /api/v1/ws`（interactive） | 1–2 | ✅ interactive UV 合成・複数エフェクト |
@@ -258,6 +293,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 | `GET /api/v1/sequences`（任意 `displayName`） | 2 | ✅ 実装済 |
 | `PATCH /api/v1/sequences/:id`（`displayName`） | 2 | ✅ 実装済 |
 | `media/*`（upload / convert / GET 進捗） | 2 | 🟡 画像+ZIP 連番。**動画**は未 |
+| `GET /api/v1/ws`（`previewSubscribe` + バイナリ RGB、約 30fps） | 2 | ✅ 実装済 |
 | `GET /api/v1/ws`（`getLayoutUv` → `layoutUv`） | 2 | ✅ 実装済 |
 | clock modes 関連 | 4 | ⬜ 未実装 |
 

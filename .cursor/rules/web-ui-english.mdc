@@ -1,0 +1,10 @@
+---
+description: Glowbe web UI copy and labels must be in English.
+globs: projects/Glowbe/web/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Glowbe web UI language
+
+- All **user-visible** strings in the Glowbe web app (`projects/Glowbe/web/`) must be **English**: button labels, headings, descriptions, placeholders, `aria-label`, tooltips, empty states, and error messages shown in the UI.
+- Prefer clear, concise UI copy. Avoid mixing languages in the same view.

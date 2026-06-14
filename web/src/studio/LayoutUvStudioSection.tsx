@@ -2,7 +2,7 @@ import { Loader2 } from 'lucide-react'
 import { useLayoutUv } from '@/hooks/use-layout-uv'
 import { LayoutUvSheet } from '@/components/LayoutUvMap'
 
-/** Loop 用: `useLayoutUv` + 2:1 散布図（Live map と同一 SVG 座標系）。 */
+/** Loop: `useLayoutUv` plus a 2:1 scatter plot (same SVG coordinates as the live map). */
 export function LayoutUvStudioSection({
   layoutId,
   ledCount,

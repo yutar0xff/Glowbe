@@ -214,6 +214,21 @@ pub struct SharedApp {
     master_brightness_bits: AtomicU32,
     /// 全モード共通: ガンマ（0.5–3.5、1 が線形に近い）。
     master_gamma_bits: AtomicU32,
+    /// UDP 直前と同一の最終 RGB（`led_count * 3`）。`try_write` で出力ループから更新。
+    pub(crate) preview_frame: StdRwLock<Vec<u8>>,
+    /// `preview_frame` が更新されるたびに増分（WebSocket プレビュー用）。
+    pub(crate) preview_seq: AtomicU32,
+    /// 出力ループが毎フレーム書き込む `loop_start` からの経過（一時停止 API が参照）。
+    pub(crate) loop_raw_elapsed_tick: StdRwLock<Duration>,
+    pub(crate) loop_playback_timing: StdRwLock<LoopPlaybackTiming>,
+}
+
+/// Loop シーケンスのタイムライン（一時停止で `frozen_effective` を固定、再開で `skew` を補正）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LoopPlaybackTiming {
+    pub paused: bool,
+    pub skew: Duration,
+    pub frozen_effective: Duration,
 }
 
 pub type SharedState = Arc<SharedApp>;
@@ -228,6 +243,7 @@ pub fn new_shared(
     uploads_dir: std::path::PathBuf,
 ) -> SharedState {
     let initial_mode = OutputMode::parse(&mode).unwrap_or(OutputMode::Loop);
+    let preview_len = led_count as usize * 3;
     Arc::new(SharedApp {
         metrics: Arc::new(OutputMetrics::new()),
         state: RwLock::new(RuntimeState::new(
@@ -248,6 +264,10 @@ pub fn new_shared(
         interactive_default_effect: AtomicU8::new(InteractiveEffectKind::ExpandingRingDiagonal.code()),
         master_brightness_bits: AtomicU32::new(f32::to_bits(1.0)),
         master_gamma_bits: AtomicU32::new(f32::to_bits(1.0)),
+        preview_frame: StdRwLock::new(vec![0u8; preview_len]),
+        preview_seq: AtomicU32::new(0),
+        loop_raw_elapsed_tick: StdRwLock::new(Duration::ZERO),
+        loop_playback_timing: StdRwLock::new(LoopPlaybackTiming::default()),
     })
 }
 
@@ -257,6 +277,7 @@ impl SharedApp {
     }
 
     pub async fn set_output_mode(&self, mode: OutputMode) {
+        self.reset_loop_playback_timing();
         self.mode_code.store(mode.code(), Ordering::Relaxed);
         let mut state = self.state.write().await;
         state.mode = mode.as_str().to_string();
@@ -281,6 +302,66 @@ impl SharedApp {
         }
         let mut state = self.state.write().await;
         state.loop_sequence_id = None;
+        self.reset_loop_playback_timing();
+    }
+
+    pub fn reset_loop_playback_timing(&self) {
+        if let Ok(mut g) = self.loop_playback_timing.write() {
+            *g = LoopPlaybackTiming::default();
+        }
+    }
+
+    pub fn record_loop_raw_tick(&self, raw: Duration) {
+        if let Ok(mut w) = self.loop_raw_elapsed_tick.write() {
+            *w = raw;
+        }
+    }
+
+    pub fn sequence_elapsed_for_loop(&self, raw: Duration) -> Duration {
+        let Ok(g) = self.loop_playback_timing.read() else {
+            return raw;
+        };
+        if g.paused {
+            g.frozen_effective
+        } else {
+            raw.saturating_sub(g.skew)
+        }
+    }
+
+    pub fn pause_loop_playback(&self) {
+        let raw = self
+            .loop_raw_elapsed_tick
+            .read()
+            .map(|r| *r)
+            .unwrap_or_else(|e| *e.into_inner());
+        if let Ok(mut g) = self.loop_playback_timing.write() {
+            let eff = raw.saturating_sub(g.skew);
+            g.frozen_effective = eff;
+            g.paused = true;
+        }
+    }
+
+    pub fn resume_loop_playback(&self) {
+        let raw = self
+            .loop_raw_elapsed_tick
+            .read()
+            .map(|r| *r)
+            .unwrap_or_else(|e| *e.into_inner());
+        if let Ok(mut g) = self.loop_playback_timing.write() {
+            if !g.paused {
+                return;
+            }
+            g.skew = raw.saturating_sub(g.frozen_effective);
+            g.paused = false;
+        }
+    }
+
+    pub fn loop_playback_paused(&self) -> bool {
+        self.loop_playback_timing
+            .read()
+            .ok()
+            .map(|g| g.paused)
+            .unwrap_or(false)
     }
 
     pub async fn set_output_target_addr(&self, addr: String) {
