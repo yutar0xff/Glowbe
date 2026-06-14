@@ -123,7 +123,7 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
 ```
                     ┌─────────────────────────────────────┐
    Wi-Fi 2.4 GHz    │  Ubuntu Server（有線 LAN 推奨）      │
-                    │  glowbe-runtime :8080  制御/プレビュー │
+                    │  glowbe-runtime :8748  制御/プレビュー │
                     │                 :49152 UDP ピクセル    │
                     │  assets/         メディア・ループ保存    │
                     └──────────────┬──────────────────────┘
@@ -228,7 +228,7 @@ Glowbe/
 ```toml
 [device]
 # esp_ip を省略（または空）→ 同一 LAN で mDNS `_glowbe._udp` を探索
-esp_ip = "192.168.0.42"
+esp_ip = "192.168.1.10"
 layout_id = "prototype-icosahedron-15"
 
 [assets]
@@ -245,7 +245,7 @@ target_fps = 60
 default = "loop"
 
 [server]
-bind = "0.0.0.0:8080"
+bind = "0.0.0.0:8748"
 ```
 
 ### 6.5 電力・輝度・ガンマ

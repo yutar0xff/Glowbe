@@ -4,6 +4,7 @@
 
 - 設計（あるべき姿）: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - 実装状況・引き継ぎ（正本）: [`docs/STATUS.md`](docs/STATUS.md)
+- 環境変数: [`docs/ENV.md`](docs/ENV.md)
 
 ## リポジトリ構成
 
@@ -13,6 +14,8 @@
 | `web/` | Vite + React（`/` ステータス、`/mode` で Idle トグル + 各モード、`/mode/loop`・`/mode/interactive`、英語 UI） |
 | `firmware/esp32s3/` | ESP32-S3 ファーム |
 | `config/layouts/` | LED レイアウト（`glowbe-layout` v1） |
+| `docs/DEV.md` | 開発時の注意（ランタイム+Web、ESP、ポート） |
+| `docs/ENV.md` | 環境変数（Web / systemd） |
 | `protocol/` | UDP・API・シーケンス仕様 |
 | `tools/` | レイアウトコンパイル等 |
 
@@ -48,7 +51,7 @@ cd runtime && cargo run -- ../config.toml
 ```
 
 - UDP **49152** で FRAME 送信（60 fps、**論理 RGB**）
-- HTTP **8080** — `GET /api/v1/state`（`fpsOut`, `fpsRx`, `frameLoopStaleMs`, `layoutMismatch` 等）
+- HTTP **`config.toml` の `[server] bind` ポート**（既定例 **8748**）— `GET /api/v1/state`（`fpsOut`, `fpsRx`, `frameLoopStaleMs`, `layoutMismatch` 等）
 - `GET /health` — 出力ループが 1s 以上止まっていると **503**
 - ESP から STATUS **49153** を受信（20 バイト推奨、`layout_hash` 含む）
 
@@ -59,7 +62,9 @@ cd web && npm install
 npm run dev
 ```
 
-既定では Vite dev server が `/api` と `/health` を `http://127.0.0.1:8080` にプロキシします。別ホストの場合は `GLOWBE_RUNTIME_URL=http://<runtime-host>:8080 npm run dev`、またはビルド時に `VITE_GLOWBE_API_BASE` を設定します。
+- 環境変数: [`docs/ENV.md`](docs/ENV.md) · 開発の注意: [`docs/DEV.md`](docs/DEV.md)
+
+既定では `web/.env.development` の `GLOWBE_RUNTIME_URL`（`http://127.0.0.1:8748`）へプロキシします。上書きは `web/.env.development.local` か、一時的に `GLOWBE_RUNTIME_URL=... npm run dev`。静的ビルドで別オリジンへ API がある場合はビルド時に `VITE_GLOWBE_API_BASE`（[`docs/ENV.md`](docs/ENV.md)）。
 
 ### 5. 静止画からシーケンス生成（Phase 2）
 

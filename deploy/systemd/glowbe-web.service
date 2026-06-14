@@ -1,0 +1,18 @@
+[Unit]
+Description=Glowbe Studio (static UI + API proxy to runtime)
+After=network-online.target glowbe-runtime.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=main
+Group=main
+WorkingDirectory=%h/projects/Glowbe
+Environment=NODE_ENV=production
+EnvironmentFile=-/etc/glowbe/web.env
+ExecStart=%h/projects/Glowbe/deploy/systemd/glowbe-web-preview.sh
+Restart=on-failure
+RestartSec=4
+
+[Install]
+WantedBy=multi-user.target

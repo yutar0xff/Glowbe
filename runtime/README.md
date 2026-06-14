@@ -37,14 +37,14 @@ cargo run --manifest-path runtime/Cargo.toml -- \
 |------|--------|
 | FRAME 送信 | UDP 49152 → ESP |
 | STATUS 受信 | UDP 49153 ← ESP |
-| `GET /api/v1/state` | HTTP 8080 |
-| `GET /health` | HTTP 8080（出力ループ停止時 503） |
-| `POST /api/v1/mode` | HTTP 8080（`idle` / `loop` / `interactive`、別名 `ripple`） |
-| `POST /api/v1/master-tone` | HTTP 8080（全モード共通の最終輝度・ガンマ） |
-| `POST /api/v1/loop/select` | HTTP 8080（生成済みシーケンス選択） |
-| `GET /api/v1/sequences` | HTTP 8080（生成済みシーケンス一覧） |
-| `GET /api/v1/layout/uv` | HTTP 8080（LED UV マップ） |
-| `GET /api/v1/ws` | WebSocket 8080（`state` 約 1s、`ping`/`pong`、`interactive`（および `ripple` 型）UV パルスを送出フレームに合成） |
+| `GET /api/v1/state` | HTTP（`config.toml` の `[server] bind`、既定例 8748） |
+| `GET /health` | 同上（出力ループ停止時 503） |
+| `POST /api/v1/mode` | 同上（`idle` / `loop` / `interactive`、別名 `ripple`） |
+| `POST /api/v1/master-tone` | 同上（全モード共通の最終輝度・ガンマ） |
+| `POST /api/v1/loop/select` | 同上（生成済みシーケンス選択） |
+| `GET /api/v1/sequences` | 同上（生成済みシーケンス一覧） |
+| `GET /api/v1/layout/uv` | 同上（LED UV マップ） |
+| `GET /api/v1/ws` | WebSocket 同上（`state` 約 1s、`ping`/`pong`、`interactive`（および `ripple` 型）UV パルスを送出フレームに合成） |
 
 `/api/v1/state` の JSON は camelCase（`frameLoopStaleMs`, `layoutMismatch`, `framesSent` 等）。
 

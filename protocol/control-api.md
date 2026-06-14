@@ -1,6 +1,6 @@
 # Glowbe 制御 API v1
 
-ベース URL: `http://<runtime-host>:8080`（`config.toml` の `server.bind`）
+ベース URL: `http://<runtime-host>:<port>`（`config.toml` の `[server] bind`。リポジトリ既定例は **8748**）
 
 認証: **なし**（完全オープン）
 
@@ -19,8 +19,8 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
   "espFramesComplete": 216000,
   "espRssi": -55,
   "espDrops": 0,
-  "espStatusAddr": "192.168.0.42:49152",
-  "outputTargetAddr": "192.168.0.42:49152",
+  "espStatusAddr": "192.168.1.10:49152",
+  "outputTargetAddr": "192.168.1.10:49152",
   "ledCount": 225,
   "loopSequenceId": null,
   "uptimeSec": 3600,

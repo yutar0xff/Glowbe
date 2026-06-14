@@ -1,0 +1,16 @@
+[Unit]
+Description=Glowbe runtime (HTTP API, WebSocket, UDP frame output)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=main
+Group=main
+WorkingDirectory=%h/projects/Glowbe
+ExecStart=%h/projects/Glowbe/runtime/target/release/glowbe-runtime %h/projects/Glowbe/config.toml
+Restart=on-failure
+RestartSec=4
+
+[Install]
+WantedBy=multi-user.target

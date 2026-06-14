@@ -10,21 +10,23 @@ Single-page UI at **`/`** (scroll: mode badges → mode-specific controls → ru
 
 ## Development
 
+Defaults: **`.env.development`** / **`.env.production`** (committed). Local overrides: **`.env.development.local`** / **`.env.production.local`** (gitignored). Keys: **`.env.example`**, full table: [`docs/ENV.md`](../docs/ENV.md).
+
 ```bash
 npm install
 npm run dev
 ```
 
-The Vite dev server proxies `/api` and `/health` to `http://127.0.0.1:8080` by default. For a runtime on another host:
+Proxies `/api` and `/health` using **`GLOWBE_RUNTIME_URL`** from **`.env.development`** (default `http://127.0.0.1:8748`). Prefer editing **`.env.development.local`** for machine-specific overrides. For a one-off:
 
 ```bash
-GLOWBE_RUNTIME_URL=http://192.168.0.10:8080 npm run dev
+GLOWBE_RUNTIME_URL=http://192.168.0.10:8748 npm run dev
 ```
 
-For a static build that talks to another origin, set `VITE_GLOWBE_API_BASE` at build time:
+For a static build that talks to another origin, set **`VITE_GLOWBE_API_BASE`** at build time (or **`web/.env.production.local`**):
 
 ```bash
-VITE_GLOWBE_API_BASE=http://192.168.0.10:8080 npm run build
+VITE_GLOWBE_API_BASE=http://192.168.0.10:8748 npm run build
 ```
 
 ## UI stack

@@ -12,8 +12,11 @@ assets/sequences/
 # Secrets / local config
 wifi_config.h
 config.toml
+# dotenv: リポジトリに載せない個人用・機密用
 .env
 .env.local
+# 例: web/.env.development.local, web/.env.production.local
+.env.*.local
 
 # OS / IDE
 .DS_Store

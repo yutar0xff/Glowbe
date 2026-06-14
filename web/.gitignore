@@ -10,7 +10,10 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# Vite: `.env.*.local` など（ルート `.gitignore` の `.env.*.local` と併用）
 *.local
+# `cp .env.example .env` した場合のみ除外（`.env.development` 等はコミット対象）
+.env
 
 # Editor directories and files
 .vscode/*
