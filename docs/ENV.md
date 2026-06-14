@@ -13,7 +13,7 @@ Vite: `.env.development`、`.env.production`、および gitignore される `.e
 
 ## systemd
 
-`glowbe-web.service` の `EnvironmentFile=-/etc/glowbe/web.env`。雛形は `deploy/systemd/glowbe-web.env.example`。配置前に `sudo mkdir -p /etc/glowbe`。
+`glowbe-runtime.service` と `glowbe-web.service` は **`EnvironmentFile=/etc/glowbe/glowbe.env`**（必須）を読みます。雛形は `deploy/systemd/glowbe.env.example`。先に `sudo mkdir -p /etc/glowbe` し、**`GLOWBE_ROOT`** に clone の絶対パスを書きます。unit の `User` / `Group` はそのマシンの実行ユーザーに合わせて編集してください。
 
 ## ランタイム
 

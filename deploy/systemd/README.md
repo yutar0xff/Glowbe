@@ -28,14 +28,26 @@ Glowbe が使う既定**例**（すべて `config.toml` や `web/.env.*` で変�
 
 ## 手順
 
-### 1. ランタイムのビルド
+### 1. 機械用設定 `/etc/glowbe/glowbe.env`
+
+`GLOWBE_ROOT` に **リポジトリの絶対パス**を書く（clone 先がどこでもよい）。`GLOWBE_RUNTIME_URL` など preview 用の変数もここにまとめます。
+
+```bash
+sudo mkdir -p /etc/glowbe
+sudo cp deploy/systemd/glowbe.env.example /etc/glowbe/glowbe.env
+sudo nano /etc/glowbe/glowbe.env
+```
+
+`*.service` の `User` / `Group` は、このマシンでランタイムと preview を動かす UNIX ユーザーに合わせて編集してください（既定は `main`）。
+
+### 2. ランタイムのビルド
 
 ```bash
 cd /path/to/Glowbe/runtime
 cargo build --release
 ```
 
-### 2. Web のビルド（preview はビルド成果物を使います）
+### 3. Web のビルド（preview はビルド成果物を使います）
 
 ```bash
 cd /path/to/Glowbe/web
@@ -43,9 +55,11 @@ npm ci
 npm run build
 ```
 
-### 3. unit をインストール
+### 4. unit をインストール
 
-リポジトリのルート（`Glowbe/`）で:
+systemd は `WorkingDirectory` と `ExecStart` の実行ファイルに **リテラルの絶対パス**を要求するため、`GLOWBE_ROOT` は unit 内の `bash -c` で展開しています（`systemd-analyze verify` で確認済み）。
+
+リポジトリのルートで:
 
 ```bash
 sudo cp deploy/systemd/glowbe-runtime.service /etc/systemd/system/
@@ -53,25 +67,13 @@ sudo cp deploy/systemd/glowbe-web.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
-`*.service` の `User` / `Group` と `WorkingDirectory` / `ExecStart` の `%h/projects/Glowbe` は、ホーム直下に `projects/Glowbe` としてクローンした場合を想定しています。別の配置の場合は unit を編集してください。
-
-（任意）ランタイムと別ホストで preview するなど、`GLOWBE_RUNTIME_URL` を変えたい場合:
-
-```bash
-sudo mkdir -p /etc/glowbe
-sudo cp deploy/systemd/glowbe-web.env.example /etc/glowbe/web.env
-sudo nano /etc/glowbe/web.env
-```
-
-`glowbe-web.service` は **`EnvironmentFile=-/etc/glowbe/web.env`** を読みます（ファイルが無くても起動します）。
-
-`glowbe-web.service` は `deploy/systemd/glowbe-web-preview.sh` を実行します（nvm を読み込み、リポジトリ内の `web` で `vite preview`）。スクリプトに実行権限を付けてください。
+`glowbe-web-preview.sh` に実行権限:
 
 ```bash
 chmod +x deploy/systemd/glowbe-web-preview.sh
 ```
 
-### 4. 有効化と起動
+### 5. 有効化と起動
 
 ```bash
 sudo systemctl enable --now glowbe-runtime.service
@@ -80,7 +82,7 @@ sudo systemctl enable --now glowbe-web.service
 
 Web だけ手元で試す場合は `glowbe-web` を無効のままにしても構いません。
 
-### 5. 状態確認
+### 6. 状態確認
 
 ```bash
 systemctl status glowbe-runtime.service

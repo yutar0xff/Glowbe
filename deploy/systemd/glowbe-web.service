@@ -7,10 +7,9 @@ Wants=network-online.target
 Type=simple
 User=main
 Group=main
-WorkingDirectory=%h/projects/Glowbe
 Environment=NODE_ENV=production
-EnvironmentFile=-/etc/glowbe/web.env
-ExecStart=%h/projects/Glowbe/deploy/systemd/glowbe-web-preview.sh
+EnvironmentFile=/etc/glowbe/glowbe.env
+ExecStart=/bin/bash -c 'exec "$GLOWBE_ROOT/deploy/systemd/glowbe-web-preview.sh"'
 Restart=on-failure
 RestartSec=4
 

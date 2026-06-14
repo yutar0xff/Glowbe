@@ -7,8 +7,9 @@ Wants=network-online.target
 Type=simple
 User=main
 Group=main
-WorkingDirectory=%h/projects/Glowbe
-ExecStart=%h/projects/Glowbe/runtime/target/release/glowbe-runtime %h/projects/Glowbe/config.toml
+EnvironmentFile=/etc/glowbe/glowbe.env
+# WorkingDirectory / ExecStart の先頭は絶対パス必須のため、GLOWBE_ROOT は bash 側で展開する
+ExecStart=/bin/bash -c 'cd -- "$GLOWBE_ROOT" && exec "$GLOWBE_ROOT/runtime/target/release/glowbe-runtime" "$GLOWBE_ROOT/config.toml"'
 Restart=on-failure
 RestartSec=4
 
