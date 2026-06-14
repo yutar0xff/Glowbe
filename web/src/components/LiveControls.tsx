@@ -8,7 +8,9 @@ import { Loader2, Wifi } from 'lucide-react'
 import type { InteractiveEffectKind } from '@/types'
 import { resolveGlowbeWsUrl } from '@/api'
 import { useLayoutUv } from '@/hooks/use-layout-uv'
-import { LayoutUvSheet } from '@/components/LayoutUvMap'
+import { LayoutUvSheet, type TapUvHighlight } from '@/components/LayoutUvMap'
+import { LayoutUvSphereCanvas } from '@/components/LayoutUvSphereCanvas'
+import { TAP_HIGHLIGHT_DECAY_MS } from '@/lib/layout-uv-geometry'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import {
@@ -57,6 +59,7 @@ export function LiveControls({
   const [colorHex, setColorHex] = useState('#c8f0ff')
   const [ringSpeed, setRingSpeed] = useState(1)
   const [ringThicknessDeg, setRingThicknessDeg] = useState(0)
+  const [pulseHighlights, setPulseHighlights] = useState<TapUvHighlight[]>([])
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<number | undefined>(undefined)
 
@@ -128,6 +131,17 @@ export function LiveControls({
     ws.send(JSON.stringify({ type: 'interactive', action: 'setEffect', effect: interactiveEffect }))
   }, [interactiveEffect, wsPhase])
 
+  useEffect(() => {
+    if (pulseHighlights.length === 0) return
+    const id = window.setInterval(() => {
+      const now = performance.now()
+      setPulseHighlights((prev) =>
+        prev.filter((h) => now - h.t0 < TAP_HIGHLIGHT_DECAY_MS + 120),
+      )
+    }, 180)
+    return () => window.clearInterval(id)
+  }, [pulseHighlights.length])
+
   const sendInteractivePulse = (u: number, v: number) => {
     const ws = wsRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -160,6 +174,20 @@ export function LiveControls({
 
   const canInteractive = outputMode === 'interactive' || outputMode === 'ripple'
 
+  const handleInteractiveTapUv = (u: number, v: number, uSphere?: number) => {
+    if (!canInteractive) return
+    const id = crypto.randomUUID()
+    const t0 = performance.now()
+    setPulseHighlights((prev) => {
+      const now = t0
+      const pruned = prev.filter((h) => now - h.t0 < TAP_HIGHLIGHT_DECAY_MS + 80)
+      const next: TapUvHighlight = { id, u, v, t0 }
+      if (uSphere !== undefined) next.uSphere = uSphere
+      return [...pruned, next]
+    })
+    sendInteractivePulse(u, v)
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-col gap-1 space-y-0 sm:flex-row sm:items-center sm:justify-between">
@@ -177,7 +205,7 @@ export function LiveControls({
       </CardHeader>
       <CardContent className="space-y-6">
         <p className="text-sm text-muted-foreground">
-          2:1 layout preview. Choose an effect and color, then tap the map; pulses add together until they fade out.
+          2:1 マップと 3D 球は同じデバイス UV。主指でドラッグすると回転、他指でパルスタップ可。球下のスライダーで距離（ズーム）。
         </p>
 
           {uvLoading ? (
@@ -318,13 +346,26 @@ export function LiveControls({
           ) : null}
 
         {uv && !uvLoading ? (
-          <LayoutUvSheet
-            uv={uv}
-            disabled={!canInteractive}
-            onEquirectClick={
-              canInteractive ? (u, v) => sendInteractivePulse(u, v) : undefined
-            }
-          />
+          <div className="flex flex-col gap-8">
+            <div className="min-w-0 space-y-2">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Equirect (2D)</p>
+              <LayoutUvSheet
+                uv={uv}
+                disabled={!canInteractive}
+                pulseHighlights={pulseHighlights}
+                onEquirectClick={canInteractive ? handleInteractiveTapUv : undefined}
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Sphere (Three.js)</p>
+              <LayoutUvSphereCanvas
+                uv={uv}
+                disabled={!canInteractive}
+                pulseHighlights={pulseHighlights}
+                onSphereTap={handleInteractiveTapUv}
+              />
+            </div>
+          </div>
         ) : null}
       </CardContent>
     </Card>
