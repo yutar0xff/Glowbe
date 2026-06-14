@@ -39,11 +39,12 @@ cargo run --manifest-path runtime/Cargo.toml -- \
 | STATUS 受信 | UDP 49153 ← ESP |
 | `GET /api/v1/state` | HTTP 8080 |
 | `GET /health` | HTTP 8080（出力ループ停止時 503） |
-| `POST /api/v1/mode` | HTTP 8080（`idle` / `loop` / `ripple`） |
+| `POST /api/v1/mode` | HTTP 8080（`idle` / `loop` / `interactive`、別名 `ripple`） |
+| `POST /api/v1/master-tone` | HTTP 8080（全モード共通の最終輝度・ガンマ） |
 | `POST /api/v1/loop/select` | HTTP 8080（生成済みシーケンス選択） |
 | `GET /api/v1/sequences` | HTTP 8080（生成済みシーケンス一覧） |
 | `GET /api/v1/layout/uv` | HTTP 8080（LED UV マップ） |
-| `GET /api/v1/ws` | WebSocket 8080（`state` 約 1s、`ping`/`pong`、`ripple` UV 波紋を送出フレームに合成、`subscribe_preview` で JPEG `preview_frame`） |
+| `GET /api/v1/ws` | WebSocket 8080（`state` 約 1s、`ping`/`pong`、`interactive`（および `ripple` 型）UV パルスを送出フレームに合成） |
 
 `/api/v1/state` の JSON は camelCase（`frameLoopStaleMs`, `layoutMismatch`, `framesSent` 等）。
 
@@ -53,7 +54,8 @@ cargo run --manifest-path runtime/Cargo.toml -- \
 |----------|------|
 | `config.rs` | `config.toml` 読み込み（`esp_ip` 任意、`[assets]`） |
 | `wire.rs` | FRAME エンコード / STATUS パース（20 バイト拡張） |
-| `pattern.rs` | ループ用テストパターン（論理 RGB） |
+| `sphere.rs` | 正距円筒 UV →単位球、大円角（リップル波面） |
+| `pattern.rs` | ループ用テストパターン（論理 RGB、`ledmap` の UV に基づく色相） |
 | `metrics.rs` | ホットパス用 atomics（fps、tick 鮮度） |
 | `discover.rs` | mDNS `_glowbe._udp` |
 | `output.rs` | フレームループ（送信失敗耐性・再接続）+ STATUS |

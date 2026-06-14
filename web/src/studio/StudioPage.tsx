@@ -1,11 +1,17 @@
 import type { OutputMode } from '../types'
 import { useGlowbeRuntime } from '../GlowbeRuntimeContext'
 import { IdleModePanel } from './IdleModePanel'
+import { InteractiveModePanel } from './InteractiveModePanel'
 import { LoopModePanel } from './LoopModePanel'
-import { RippleModePanel } from './RippleModePanel'
 import { StatusSection } from './StatusSection'
 
-const MODES: OutputMode[] = ['loop', 'ripple', 'idle']
+const MODES: OutputMode[] = ['loop', 'interactive', 'idle']
+
+function panelMode(mode: string): OutputMode {
+  if (mode === 'loop') return 'loop'
+  if (mode === 'interactive' || mode === 'ripple') return 'interactive'
+  return 'idle'
+}
 
 function ModeBadges({
   currentMode,
@@ -19,18 +25,24 @@ function ModeBadges({
   return (
     <section className="panel panel-tight" aria-label="Output mode">
       <div className="mode-badges" role="group" aria-label="Select output mode">
-        {MODES.map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            className={`mode-badge${currentMode === mode ? ' active' : ''}`}
-            onClick={() => onPick(mode)}
-            disabled={modeBusy !== null}
-            aria-pressed={currentMode === mode}
-          >
-            {mode === 'loop' ? 'Loop' : mode === 'ripple' ? 'Ripple' : 'Idle'}
-          </button>
-        ))}
+        {MODES.map((mode) => {
+          const isActive =
+            mode === 'interactive'
+              ? currentMode === 'interactive' || currentMode === 'ripple'
+              : currentMode === mode
+          return (
+            <button
+              key={mode}
+              type="button"
+              className={`mode-badge${isActive ? ' active' : ''}`}
+              onClick={() => onPick(mode)}
+              disabled={modeBusy !== null}
+              aria-pressed={isActive}
+            >
+              {mode === 'loop' ? 'Loop' : mode === 'interactive' ? 'Interactive' : 'Idle'}
+            </button>
+          )
+        })}
       </div>
       {modeBusy !== null ? <p className="muted mode-busy-note">Applying {modeBusy}…</p> : null}
     </section>
@@ -47,8 +59,7 @@ export function StudioPage() {
     void setMode(mode)
   }
 
-  const modeKey: OutputMode =
-    state.mode === 'loop' || state.mode === 'ripple' || state.mode === 'idle' ? state.mode : 'idle'
+  const modeKey = panelMode(state.mode)
 
   return (
     <div className="studio-stack">
@@ -56,8 +67,8 @@ export function StudioPage() {
 
       {modeKey === 'loop' ? (
         <LoopModePanel state={state} sequences={sequences} />
-      ) : modeKey === 'ripple' ? (
-        <RippleModePanel state={state} />
+      ) : modeKey === 'interactive' ? (
+        <InteractiveModePanel state={state} />
       ) : (
         <IdleModePanel />
       )}

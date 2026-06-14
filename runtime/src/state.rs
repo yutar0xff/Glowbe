@@ -1,51 +1,95 @@
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::sync::RwLock as StdRwLock;
 use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
-use tokio::sync::broadcast;
 
 use crate::media::{self, LoadedSequence};
 use crate::metrics::OutputMetrics;
 
-/// WebSocket プレビュー用 JPEG（`Arc` で broadcast 共有）。
-#[derive(Debug, Clone)]
-pub struct PreviewFrame {
-    pub seq: u64,
-    pub jpeg: Vec<u8>,
+/// インタラクティブ（消灯＋ WS 合成）で選べるエフェクト種別。
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InteractiveEffectKind {
+    /// 球面上ガウス（従来のソフト・リップル）。
+    SphereGaussian = 0,
+    /// タップ中心から大円角距離で等方に拡大する波面と残光トレイル。
+    ExpandingRingDiagonal = 1,
 }
 
-/// UV 空間のクリック位置からの波紋（出力ループが `rgb` に合成する）。
+impl InteractiveEffectKind {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "sphereGaussian" | "sphere_gaussian" => Some(Self::SphereGaussian),
+            "expandingRingDiagonal" | "expanding_ring_diagonal" => Some(Self::ExpandingRingDiagonal),
+            _ => None,
+        }
+    }
+
+    pub fn from_code(c: u8) -> Self {
+        match c {
+            1 => Self::ExpandingRingDiagonal,
+            _ => Self::SphereGaussian,
+        }
+    }
+
+    pub fn code(self) -> u8 {
+        self as u8
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SphereGaussian => "sphereGaussian",
+            Self::ExpandingRingDiagonal => "expandingRingDiagonal",
+        }
+    }
+}
+
+/// UV クリック起点のワンショット合成（出力ループが `rgb` に加算する）。複数パルスは重ね合わせる。
 #[derive(Debug, Clone, Copy)]
-pub struct RipplePulse {
+pub struct InteractivePulse {
     pub center_u: f32,
     pub center_v: f32,
     pub amplitude: f32,
+    /// 球面ガウス / 輪の太さの基準（ラジアン）。
+    pub sigma_rad: f32,
+    pub effect: InteractiveEffectKind,
     pub started: Instant,
     pub duration: Duration,
+    /// 加算色（0–255）。パルス生成時に固定（ランダム時もこの時点で確定）。
+    pub color_r: u8,
+    pub color_g: u8,
+    pub color_b: u8,
+    /// 輪の角方向への進み（`t` に対する係数）。既定 1。
+    pub ring_speed: f32,
+    /// 輪のガウス幅（ラジアン）。`<= 0` のとき `sigma_rad * 1.35` を使う。
+    pub ring_thickness_rad: f32,
 }
+
+/// 同時に重ねられるインタラクティブ・パルスの上限（過去分は古い順に捨てる）。
+pub const MAX_INTERACTIVE_PULSES: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
-    /// 黒フレームのみ（WS の ripple は合成しない）。
+    /// 黒フレームのみ（WS インタラクティブ合成なし）。
     Idle,
     /// シーケンスまたはテストパターン。
     Loop,
-    /// 消灯ベース。WebSocket の `ripple` だけが UDP フレームに載る。
-    Ripple,
+    /// 消灯ベース。WebSocket のインタラクティブ・パルスのみ UDP に合成。
+    Interactive,
 }
 
 impl OutputMode {
     const IDLE: u8 = 0;
     const LOOP: u8 = 1;
-    const RIPPLE: u8 = 2;
+    const INTERACTIVE: u8 = 2;
 
     pub fn parse(id: &str) -> Option<Self> {
         match id {
             "idle" => Some(Self::Idle),
             "loop" => Some(Self::Loop),
-            "ripple" => Some(Self::Ripple),
+            "interactive" | "ripple" => Some(Self::Interactive),
             _ => None,
         }
     }
@@ -54,7 +98,7 @@ impl OutputMode {
         match self {
             Self::Idle => "idle",
             Self::Loop => "loop",
-            Self::Ripple => "ripple",
+            Self::Interactive => "interactive",
         }
     }
 
@@ -62,7 +106,7 @@ impl OutputMode {
         match self {
             Self::Idle => Self::IDLE,
             Self::Loop => Self::LOOP,
-            Self::Ripple => Self::RIPPLE,
+            Self::Interactive => Self::INTERACTIVE,
         }
     }
 
@@ -70,7 +114,7 @@ impl OutputMode {
         match code {
             Self::IDLE => Self::Idle,
             Self::LOOP => Self::Loop,
-            Self::RIPPLE => Self::Ripple,
+            Self::INTERACTIVE => Self::Interactive,
             _ => Self::Loop,
         }
     }
@@ -125,11 +169,15 @@ pub struct SharedApp {
     pub expected_layout_hash: Option<u32>,
     pub compiled_dir: std::path::PathBuf,
     pub sequences_dir: std::path::PathBuf,
-    /// `assets/compiled/<layout>.ledmap.json` 由来。ripple 合成用（LED インデックス順）。
-    pub(crate) ripple_uv: StdRwLock<Option<Vec<(f32, f32)>>>,
-    pub(crate) ripple_pulse: StdRwLock<Option<RipplePulse>>,
-    pub preview_tx: broadcast::Sender<Arc<PreviewFrame>>,
-    preview_quality: AtomicU8,
+    /// `assets/compiled/<layout>.ledmap.json` 由来。インタラクティブ合成用（LED インデックス順）。
+    pub(crate) interactive_uv: StdRwLock<Option<Vec<(f32, f32)>>>,
+    pub(crate) interactive_pulses: StdRwLock<Vec<InteractivePulse>>,
+    /// WS `setEffect` またはパルス省略時に使う既定エフェクト。
+    interactive_default_effect: AtomicU8,
+    /// 全モード共通: 最終 RGB に掛ける明るさ（0–2、1 が既定）。
+    master_brightness_bits: AtomicU32,
+    /// 全モード共通: ガンマ（0.5–3.5、1 が線形に近い）。
+    master_gamma_bits: AtomicU32,
 }
 
 pub type SharedState = Arc<SharedApp>;
@@ -143,7 +191,6 @@ pub fn new_shared(
     sequences_dir: std::path::PathBuf,
 ) -> SharedState {
     let initial_mode = OutputMode::parse(&mode).unwrap_or(OutputMode::Loop);
-    let (preview_tx, _) = broadcast::channel::<Arc<PreviewFrame>>(8);
     Arc::new(SharedApp {
         metrics: Arc::new(OutputMetrics::new()),
         state: RwLock::new(RuntimeState::new(
@@ -156,10 +203,11 @@ pub fn new_shared(
         expected_layout_hash,
         compiled_dir,
         sequences_dir,
-        ripple_uv: StdRwLock::new(None),
-        ripple_pulse: StdRwLock::new(None),
-        preview_tx,
-        preview_quality: AtomicU8::new(75),
+        interactive_uv: StdRwLock::new(None),
+        interactive_pulses: StdRwLock::new(Vec::new()),
+        interactive_default_effect: AtomicU8::new(InteractiveEffectKind::SphereGaussian.code()),
+        master_brightness_bits: AtomicU32::new(f32::to_bits(1.0)),
+        master_gamma_bits: AtomicU32::new(f32::to_bits(1.0)),
     })
 }
 
@@ -200,9 +248,18 @@ impl SharedApp {
         state.output_target_addr = Some(addr);
     }
 
-    /// ripple 用 UV テーブルを読み込む（同一 `layout_id` / LED 数なら再読み込みしない）。
-    pub fn ensure_ripple_uv(&self, layout_id: &str, led_count: usize) -> anyhow::Result<()> {
-        if let Ok(guard) = self.ripple_uv.read() {
+    pub fn interactive_default_effect(&self) -> InteractiveEffectKind {
+        InteractiveEffectKind::from_code(self.interactive_default_effect.load(Ordering::Relaxed))
+    }
+
+    pub fn set_interactive_default_effect(&self, e: InteractiveEffectKind) {
+        self.interactive_default_effect
+            .store(e.code(), Ordering::Relaxed);
+    }
+
+    /// インタラクティブ用 UV テーブルを読み込む（同一 `layout_id` / LED 数なら再読み込みしない）。
+    pub fn ensure_interactive_uv(&self, layout_id: &str, led_count: usize) -> anyhow::Result<()> {
+        if let Ok(guard) = self.interactive_uv.read() {
             if let Some(v) = guard.as_ref() {
                 if v.len() == led_count {
                     return Ok(());
@@ -224,42 +281,45 @@ impl SharedApp {
             }
         }
         let mut slot = self
-            .ripple_uv
+            .interactive_uv
             .write()
-            .map_err(|e| anyhow::anyhow!("ripple_uv lock poisoned: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("interactive_uv lock poisoned: {e}"))?;
         *slot = Some(table);
         Ok(())
     }
 
-    pub fn set_preview_quality(&self, q: u8) {
-        self.preview_quality.store(q.clamp(1, 95), Ordering::Relaxed);
+    pub fn master_brightness(&self) -> f32 {
+        f32::from_bits(self.master_brightness_bits.load(Ordering::Relaxed))
     }
 
-    pub fn preview_quality(&self) -> u8 {
-        self.preview_quality.load(Ordering::Relaxed)
+    pub fn master_gamma(&self) -> f32 {
+        f32::from_bits(self.master_gamma_bits.load(Ordering::Relaxed))
     }
 
-    pub fn set_ripple_pulse(&self, center_u: f32, center_v: f32, amplitude: f32) {
-        let pulse = RipplePulse {
-            center_u,
-            center_v,
-            amplitude,
-            started: Instant::now(),
-            duration: Duration::from_millis(450),
-        };
-        if let Ok(mut g) = self.ripple_pulse.write() {
-            *g = Some(pulse);
-        }
+    pub fn set_master_tone(&self, brightness: f32, gamma: f32) {
+        let b = brightness.clamp(0.0, 2.0);
+        let g = gamma.clamp(0.45, 3.5);
+        self.master_brightness_bits
+            .store(f32::to_bits(b), Ordering::Relaxed);
+        self.master_gamma_bits
+            .store(f32::to_bits(g), Ordering::Relaxed);
     }
 
-    pub fn clear_expired_ripple(&self) {
-        let Ok(mut g) = self.ripple_pulse.write() else {
+    pub fn push_interactive_pulse(&self, pulse: InteractivePulse) {
+        let Ok(mut g) = self.interactive_pulses.write() else {
             return;
         };
-        if let Some(p) = g.as_ref() {
-            if Instant::now() >= p.started + p.duration {
-                *g = None;
-            }
+        g.push(pulse);
+        while g.len() > MAX_INTERACTIVE_PULSES {
+            g.remove(0);
         }
+    }
+
+    pub fn clear_expired_interactive_pulses(&self) {
+        let Ok(mut g) = self.interactive_pulses.write() else {
+            return;
+        };
+        let now = Instant::now();
+        g.retain(|p| now < p.started + p.duration);
     }
 }

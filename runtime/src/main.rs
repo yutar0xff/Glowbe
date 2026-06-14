@@ -5,6 +5,7 @@ mod media;
 mod metrics;
 mod output;
 mod pattern;
+mod sphere;
 mod state;
 mod wire;
 

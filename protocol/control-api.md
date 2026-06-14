@@ -26,10 +26,14 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
   "uptimeSec": 3600,
   "frameLoopStaleMs": 12,
   "layoutMismatch": false,
-  "framesSent": 216000
+  "framesSent": 216000,
+  "masterBrightness": 1,
+  "masterGamma": 1
 }
 ```
 
+- `masterBrightness`: 全モード共通の最終輝度係数（0–2、1 が既定）。UDP 直前に各チャンネルへ乗算。
+- `masterGamma`: 全モード共通のガンマ補正（約 0.45–3.5、1 が既定）。`out = clamp( ((in/255)×brightness)^(1/gamma) × 255 )`。
 - `frameLoopStaleMs`: 直近のフレームループ tick からの経過時間（ms）。出力タスクが停止すると急増する。
 - `layoutMismatch`: ESP STATUS の `layout_hash` とランタイムの `meta.layoutHash` が食い違うとき `true`（いずれか欠損時は照合しない）。
 - `framesSent`: 完全送信に成功したフレーム数（累計）。
@@ -47,10 +51,10 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 ### `POST /api/v1/mode`
 
 ```json
-{ "mode": "idle" | "loop" | "ripple" | "interactive" | "mic" | "clock_digital" | "clock_analog" }
+{ "mode": "idle" | "loop" | "interactive" | "ripple" | "mic" | "clock_digital" | "clock_analog" }
 ```
 
-→ 実装済み: **`idle`**（全消灯・**選択シーケンス解除**・WS `ripple` は無視）、**`loop`**（テストパターンまたは選択シーケンス）、**`ripple`**（消灯ベースで WebSocket の `ripple` のみ UDP に合成。シーケンス選択は保持）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
+→ 実装済み: **`idle`**（全消灯・**選択シーケンス解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択シーケンス）、**`interactive`**（消灯ベースで WebSocket のインタラクティブ・パルスのみ UDP に合成。シーケンス選択は保持）。**`ripple`** は **`interactive` と同義**（後方互換用）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
 
 ### `POST /api/v1/loop/select`
 
@@ -59,6 +63,14 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 ```
 
 → 実装済み: `assets/sequences/<sequenceId>/manifest.json` と `frames.bin` を読み込み、ランタイムの `layoutId` / `ledCount` と一致すれば loop モードで再生する。失敗時は `400`。
+
+### `POST /api/v1/master-tone`
+
+```json
+{ "brightness": 1.0, "gamma": 1.0 }
+```
+
+→ 実装済み: **全出力モード**で、フレームを UDP に送る直前に適用するマスター補正。`brightness` は 0–2（クランプ）、`gamma` は約 0.45–3.5（クランプ）。`200` + 更新後 `state` オブジェクト。
 
 ### `GET /api/v1/layout/uv`
 
@@ -125,30 +137,39 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 
 ## WebSocket `GET /api/v1/ws`
 
-→ 実装済み: 接続直後と約 1 秒ごとに `state` を送る。`ping` → `pong`。**`ripple`** メッセージはランタイムの出力モードが **`ripple`** のときだけ UV 波紋を合成（それ以外は `event_status` `error`）。`subscribe_preview` / `unsubscribe_preview` と `preview_frame` は従来どおり。
+→ 実装済み: 接続直後と約 1 秒ごとに `state` を送る。`ping` → `pong`。**`masterSettings`** は任意モードでマスター補正を更新（`POST /api/v1/master-tone` と同等）。**`interactive`**（および後方互換の **`ripple`**）メッセージは、出力モードが **`interactive`** のときだけ合成（それ以外は `event_status` `error`）。
 
 ### クライアント → サーバ
 
 ```json
-{ "type": "ripple", "u": 0.42, "v": 0.71, "amplitude": 1.0 }
-{ "type": "subscribe_preview", "quality": 70 }
-{ "type": "unsubscribe_preview" }
+{ "type": "masterSettings", "brightness": 0.85, "gamma": 1.15 }
+{ "type": "interactive", "action": "setEffect", "effect": "sphereGaussian" }
+{ "type": "interactive", "action": "pulse", "u": 0.42, "v": 0.71, "effect": "sphereGaussian", "durationMs": 450, "sigmaRad": 0.14, "colorRandom": true }
+{ "type": "interactive", "action": "pulse", "u": 0.42, "v": 0.71, "effect": "expandingRingDiagonal", "colorRgb": [255, 120, 40], "ringSpeed": 1.2, "ringThicknessRad": 0.09 }
+{ "type": "ripple", "u": 0.42, "v": 0.71, "amplitude": 1.0, "durationMs": 450, "sigmaRad": 0.14 }
 { "type": "ping" }
 ```
+
+- **`masterSettings`** … `brightness` / `gamma` を任意指定（未指定のキーは**変更しない**）。全モードで有効。
+- **`interactive` + `action: "setEffect"`** … 以降のパルスで省略したときに使う既定エフェクトを設定（`effect`: `sphereGaussian` | `expandingRingDiagonal`）。`ripple` 型メッセージでは不可。
+- **`interactive` + `action: "pulse"`**（または `action` 省略でパルス扱い）… パルスは **最大 32 本**まで保持し、それを超えると古いものから破棄する。アクティブな全パルスを **線形光（sRGB デコード）で加算**し、合成後に **最大チャンネルが 1 を超える場合だけ線形空間で RGB を一様に縮小**してから sRGB に戻す。残光トレイルが重なるため、赤と緑のリップルが重なった所は **黄に加算混色**される。
+  - 共通: **`amplitude`**（既定 1、0–4）、**`colorRandom`: true** でタップごとに鮮やかな色を自動決定、**`colorRgb`: [r,g,b]`** で固定色（`colorRandom` が true なら無視）。
+  - **`sphereGaussian`**: **`durationMs`**（既定 450、100–5000）と **`sigmaRad`**（既定約 0.14 rad、0.02–0.6）で寿命とスポット半径を指定する球面ガウス。
+  - **`expandingRingDiagonal`**（リップル）: タップ中心から **大円角距離で等方に拡大する波面**と、通過後の**狭い残光トレイル**。**`ringSpeed`**（波面速度）、**`ringThicknessRad`**（バンド幅）、寿命は速度・幅から自動算出。到達前の立ち上がりは `ringThicknessRad` に依存しない固定の短い時間フェザーでタップ点から。`durationMs` は無視。
+  - `ripple` 型メッセージはパルス（`sphereGaussian` 既定）のみで、`setEffect` 不可。
 
 ### サーバ → クライアント
 
 ```json
 { "type": "state", "layoutId": "prototype-icosahedron-15", "mode": "loop", "fpsOut": 60.0 }
 { "type": "pong" }
-{ "type": "preview_status", "status": "available", "quality": 70 }
-{ "type": "preview_status", "status": "stopped", "reason": "client unsubscribed" }
-{ "type": "event_status", "event": "ripple", "status": "ok" }
-{ "type": "event_status", "event": "ripple", "status": "error", "reason": "ripple WS events apply only in output mode \"ripple\"" }
-{ "type": "preview_frame", "format": "jpeg", "seq": 12004, "data": "<base64>" }
+{ "type": "event_status", "event": "interactive", "status": "ok", "effect": "sphereGaussian" }
+{ "type": "event_status", "event": "interactive", "status": "error", "reason": "interactive WS events apply only in output mode \"interactive\"" }
 ```
 
-`preview_status` は `available`（購読開始）・`stopped`（`unsubscribe_preview`）・将来用の `unavailable` など。`ripple` の `error` は ledmap 欠落など。
+`interactive` の `error` は ledmap 欠落など。
+
+**エフェクト:** `sphereGaussian` は球面上ガウス（大円距離）。`expandingRingDiagonal` はタップ中心から**等方に拡大する球面波面**（大円角 θ に対する到達時刻 `θ/c`）と、通過後の指数トレイル。立ち上がりは波面幅に依存しない短い時間フェザーで**点始まり**。トレイルは角度方向にも狭いガウスでゲートし、球全体を埋めない。
 
 ## Phase 対応 / 実装状況
 
@@ -156,11 +177,11 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 |----------------|-------|------|
 | `GET /api/v1/state` | 1 | ✅ 実装済 |
 | `GET /health` | 1 | ✅ 実装済 |
-| `POST /api/v1/mode` (`idle` / `loop` / `ripple`) | 1 | ✅ 実装済 |
-| `POST /api/v1/loop/select` | 2 | ✅ 実装済 |
+| `POST /api/v1/mode` (`idle` / `loop` / `interactive`、別名 `ripple`) | 1 | ✅ 実装済 |
+| `POST /api/v1/master-tone` | 1 | ✅ 実装済 |
 | `GET /api/v1/layout/uv` | 1–2 | ✅ 実装済 |
 | `GET /api/v1/ws`（state 配信） | 1–2 | ✅ 実装済 |
-| `GET /api/v1/ws`（ripple/preview） | 1–2 | ✅ ripple UV 合成・JPEG プレビュー配信 |
+| `GET /api/v1/ws`（interactive） | 1–2 | ✅ interactive UV 合成・複数エフェクト |
 | `GET /api/v1/sequences` | 2 | ✅ 実装済 |
 | `media/*`（upload/convert 等） | 2 | ⬜ 未実装 |
 | clock modes 関連 | 4 | ⬜ 未実装 |

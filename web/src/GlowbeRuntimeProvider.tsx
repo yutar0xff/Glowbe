@@ -13,6 +13,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' })
   const [modeBusy, setModeBusy] = useState<string | null>(null)
   const [sequenceBusy, setSequenceBusy] = useState<string | null>(null)
+  const [masterToneBusy, setMasterToneBusy] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -126,9 +127,44 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const setMasterTone = useCallback(async (brightness: number, gamma: number) => {
+    setMasterToneBusy(true)
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 3500)
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/master-tone`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ brightness, gamma }),
+        signal: controller.signal,
+      })
+      if (!res.ok) throw new Error(`POST /api/v1/master-tone failed: ${res.status}`)
+      const newState = (await res.json()) as RuntimeState
+      setLoad((prev) => {
+        if (prev.kind === 'ready') {
+          return { ...prev, state: newState, fetchedAt: new Date() }
+        }
+        return prev
+      })
+    } catch (err) {
+      console.warn('setMasterTone failed', err)
+    } finally {
+      window.clearTimeout(timeout)
+      setMasterToneBusy(false)
+    }
+  }, [])
+
   const value = useMemo(
-    () => ({ load, modeBusy, sequenceBusy, setMode, selectSequence }),
-    [load, modeBusy, sequenceBusy, setMode, selectSequence],
+    () => ({
+      load,
+      modeBusy,
+      sequenceBusy,
+      masterToneBusy,
+      setMode,
+      selectSequence,
+      setMasterTone,
+    }),
+    [load, modeBusy, sequenceBusy, masterToneBusy, setMode, selectSequence, setMasterTone],
   )
 
   return <GlowbeRuntimeContext.Provider value={value}>{children}</GlowbeRuntimeContext.Provider>

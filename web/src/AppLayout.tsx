@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { MasterToneDrawer } from './components/MasterToneDrawer'
 import { StatusPill } from './components/StatusPill'
 import { useGlowbeRuntime } from './GlowbeRuntimeContext'
 import { StudioPage } from './studio/StudioPage'
@@ -27,6 +28,7 @@ export function AppLayout() {
         <div className="status-row">
           <StatusPill label={health?.ok ? 'health: ok' : 'health: stale/error'} tone={health?.ok ? 'ok' : 'bad'} />
           <StatusPill label={`runtime: ${runtimeTone}`} tone={runtimeTone} />
+          {load.kind === 'ready' ? <MasterToneDrawer /> : null}
         </div>
       </header>
 

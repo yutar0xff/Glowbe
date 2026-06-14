@@ -10,7 +10,7 @@
 | パス | 内容 |
 |------|------|
 | `runtime/` | Rust 常駐サーバ（Phase 1: ループ出力 + HTTP API） |
-| `web/` | Vite + React（`/` ステータス、`/mode` で Idle トグル + 各モード、`/mode/loop`・`/mode/ripple`、英語 UI） |
+| `web/` | Vite + React（`/` ステータス、`/mode` で Idle トグル + 各モード、`/mode/loop`・`/mode/interactive`、英語 UI） |
 | `firmware/esp32s3/` | ESP32-S3 ファーム |
 | `config/layouts/` | LED レイアウト（`glowbe-layout` v1） |
 | `protocol/` | UDP・API・シーケンス仕様 |

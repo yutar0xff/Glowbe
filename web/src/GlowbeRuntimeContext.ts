@@ -5,8 +5,10 @@ export type GlowbeRuntimeContextValue = {
   load: LoadState
   modeBusy: string | null
   sequenceBusy: string | null
+  masterToneBusy: boolean
   setMode: (mode: OutputMode) => Promise<void>
   selectSequence: (sequenceId: string) => Promise<void>
+  setMasterTone: (brightness: number, gamma: number) => Promise<void>
 }
 
 export const GlowbeRuntimeContext = createContext<GlowbeRuntimeContextValue | null>(null)

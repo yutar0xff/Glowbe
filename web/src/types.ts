@@ -14,6 +14,8 @@ export type RuntimeState = {
   frameLoopStaleMs: number
   layoutMismatch: boolean
   framesSent: number
+  masterBrightness: number
+  masterGamma: number
 }
 
 export type SequenceSummary = {
@@ -52,4 +54,6 @@ export type LoadState =
   | { kind: 'ready'; state: RuntimeState; health: Health; sequences: SequenceSummary[]; fetchedAt: Date }
   | { kind: 'error'; message: string; health?: Health; fetchedAt?: Date }
 
-export type OutputMode = 'idle' | 'loop' | 'ripple'
+export type OutputMode = 'idle' | 'loop' | 'interactive'
+
+export type InteractiveEffectKind = 'sphereGaussian' | 'expandingRingDiagonal'
