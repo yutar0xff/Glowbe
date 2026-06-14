@@ -5,15 +5,45 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
-import type { LoadState, OutputMode, RuntimeState } from '@/types'
+import type { LoadState, MediaUploadStatusPayload, OutputMode, RuntimeState } from '@/types'
 import { API_BASE, fetchState, POLL_MS } from '@/api'
 import { GlowbeRuntimeContext } from '@/GlowbeRuntimeContext'
+
+async function readApiError(res: Response): Promise<string> {
+  const t = await res.text()
+  try {
+    const j = JSON.parse(t) as { error?: string }
+    if (j.error) return j.error
+  } catch {
+    /* plain text */
+  }
+  return t || `HTTP ${res.status}`
+}
 
 export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' })
   const [modeBusy, setModeBusy] = useState<string | null>(null)
   const [sequenceBusy, setSequenceBusy] = useState<string | null>(null)
   const [masterToneBusy, setMasterToneBusy] = useState(false)
+  const [mediaUploadBusy, setMediaUploadBusy] = useState(false)
+  const [mediaConvertBusy, setMediaConvertBusy] = useState(false)
+
+  const refreshLoad = useCallback(async () => {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 3500)
+    try {
+      const next = await fetchState(controller.signal)
+      setLoad(next)
+    } catch (err) {
+      setLoad({
+        kind: 'error',
+        message: err instanceof Error ? err.message : String(err),
+        fetchedAt: new Date(),
+      })
+    } finally {
+      window.clearTimeout(timeout)
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -154,17 +184,155 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const uploadMediaFile = useCallback(async (file: File) => {
+    setMediaUploadBusy(true)
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 120_000)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const up = await fetch(`${API_BASE}/api/v1/media/upload`, {
+        method: 'POST',
+        body: form,
+        signal: controller.signal,
+      })
+      if (!up.ok) throw new Error(await readApiError(up))
+      const { uploadId } = (await up.json()) as { uploadId: string }
+      return { uploadId }
+    } finally {
+      window.clearTimeout(timeout)
+      setMediaUploadBusy(false)
+    }
+  }, [])
+
+  const convertMediaUpload = useCallback(
+    async (uploadId: string, layoutId: string, fps = 30, displayName?: string) => {
+      setMediaConvertBusy(true)
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 180_000)
+      try {
+        const dn = displayName?.trim()
+        const conv = await fetch(
+          `${API_BASE}/api/v1/media/${encodeURIComponent(uploadId)}/convert`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              layoutId,
+              fps,
+              ...(dn ? { displayName: dn } : {}),
+            }),
+            signal: controller.signal,
+          },
+        )
+        if (!conv.ok) throw new Error(await readApiError(conv))
+
+        const deadline = Date.now() + 180_000
+        for (;;) {
+          if (Date.now() > deadline) throw new Error('Convert timed out waiting for completion.')
+          await new Promise((r) => window.setTimeout(r, 400))
+          const st = await fetch(`${API_BASE}/api/v1/media/${encodeURIComponent(uploadId)}`, {
+            signal: controller.signal,
+          })
+          if (!st.ok) throw new Error(await readApiError(st))
+          const j = (await st.json()) as MediaUploadStatusPayload
+          if (j.status === 'done') break
+          if (j.status === 'failed') throw new Error(j.error || 'Convert failed.')
+        }
+
+        await refreshLoad()
+      } finally {
+        window.clearTimeout(timeout)
+        setMediaConvertBusy(false)
+      }
+    },
+    [refreshLoad],
+  )
+
+  const setSequenceDisplayName = useCallback(
+    async (sequenceId: string, displayName: string) => {
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 3500)
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/v1/sequences/${encodeURIComponent(sequenceId)}`,
+          {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ displayName }),
+            signal: controller.signal,
+          },
+        )
+        if (!res.ok) throw new Error(await readApiError(res))
+        await refreshLoad()
+      } finally {
+        window.clearTimeout(timeout)
+      }
+    },
+    [refreshLoad],
+  )
+
+  const deleteSequence = useCallback(
+    async (sequenceId: string) => {
+      setSequenceBusy(sequenceId)
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 3500)
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/v1/sequences/${encodeURIComponent(sequenceId)}`,
+          {
+            method: 'DELETE',
+            signal: controller.signal,
+          },
+        )
+        if (!res.ok) throw new Error(await readApiError(res))
+        await refreshLoad()
+      } catch (err) {
+        setLoad((prev) => ({
+          kind: 'error',
+          message: err instanceof Error ? err.message : String(err),
+          health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
+          fetchedAt: new Date(),
+        }))
+      } finally {
+        window.clearTimeout(timeout)
+        setSequenceBusy(null)
+      }
+    },
+    [refreshLoad],
+  )
+
   const value = useMemo(
     () => ({
       load,
       modeBusy,
       sequenceBusy,
       masterToneBusy,
+      mediaUploadBusy,
+      mediaConvertBusy,
       setMode,
       selectSequence,
       setMasterTone,
+      uploadMediaFile,
+      convertMediaUpload,
+      setSequenceDisplayName,
+      deleteSequence,
     }),
-    [load, modeBusy, sequenceBusy, masterToneBusy, setMode, selectSequence, setMasterTone],
+    [
+      load,
+      modeBusy,
+      sequenceBusy,
+      masterToneBusy,
+      mediaUploadBusy,
+      mediaConvertBusy,
+      setMode,
+      selectSequence,
+      setMasterTone,
+      uploadMediaFile,
+      convertMediaUpload,
+      setSequenceDisplayName,
+      deleteSequence,
+    ],
   )
 
   return <GlowbeRuntimeContext.Provider value={value}>{children}</GlowbeRuntimeContext.Provider>

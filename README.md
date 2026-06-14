@@ -81,7 +81,7 @@ cargo run --manifest-path runtime/Cargo.toml -- \
 
 ## 次の開発ステップ
 
-Phase 2 の最小パイプライン（正距円筒静止画 → 1フレームシーケンス → Web/API から選択再生）まで実装済み。次は 60fps ベンチ記録、アップロード API、動画/複数フレーム変換へ進む。具体タスクは [`docs/STATUS.md`](docs/STATUS.md) の §7。
+Phase 2: 正距円筒 **単一画像** および **ZIP 連番**（最大 3600 フレーム）→ シーケンス、REST **`/api/v1/media/*`**、**`displayName`**（変換時指定 + **`PATCH /api/v1/sequences/:id`**）、Studio の **UV 散布プレビュー** と WS **`getLayoutUv` / `layoutUv`**。次は **動画** 変換・進捗のより細かい割合・60fps ベンチ記録。具体タスクは [`docs/STATUS.md`](docs/STATUS.md) の §7。
 
 ## 開発要件
 

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::sync::RwLock as StdRwLock;
@@ -159,6 +160,30 @@ impl RuntimeState {
     }
 }
 
+/// `POST /api/v1/media/upload` で保存したファイルと変換ジョブの状態。
+#[derive(Debug, Clone)]
+pub struct MediaUploadEntry {
+    pub source_path: std::path::PathBuf,
+    pub phase: MediaUploadPhase,
+}
+
+#[derive(Debug, Clone)]
+pub enum MediaUploadPhase {
+    Stored,
+    Converting {
+        job_id: String,
+        progress: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    },
+    Done {
+        job_id: String,
+        sequence_id: String,
+    },
+    Failed {
+        job_id: Option<String>,
+        message: String,
+    },
+}
+
 /// Shared application state: hot metrics + async-safe `RwLock` for ESP-derived fields.
 pub struct SharedApp {
     pub metrics: Arc<OutputMetrics>,
@@ -169,6 +194,8 @@ pub struct SharedApp {
     pub expected_layout_hash: Option<u32>,
     pub compiled_dir: std::path::PathBuf,
     pub sequences_dir: std::path::PathBuf,
+    pub uploads_dir: std::path::PathBuf,
+    pub media_uploads: RwLock<HashMap<String, MediaUploadEntry>>,
     /// `assets/compiled/<layout>.ledmap.json` 由来。インタラクティブ合成用（LED インデックス順）。
     pub(crate) interactive_uv: StdRwLock<Option<Vec<(f32, f32)>>>,
     pub(crate) interactive_pulses: StdRwLock<Vec<InteractivePulse>>,
@@ -189,6 +216,7 @@ pub fn new_shared(
     expected_layout_hash: Option<u32>,
     compiled_dir: std::path::PathBuf,
     sequences_dir: std::path::PathBuf,
+    uploads_dir: std::path::PathBuf,
 ) -> SharedState {
     let initial_mode = OutputMode::parse(&mode).unwrap_or(OutputMode::Loop);
     Arc::new(SharedApp {
@@ -203,6 +231,8 @@ pub fn new_shared(
         expected_layout_hash,
         compiled_dir,
         sequences_dir,
+        uploads_dir,
+        media_uploads: RwLock::new(HashMap::new()),
         interactive_uv: StdRwLock::new(None),
         interactive_pulses: StdRwLock::new(Vec::new()),
         interactive_default_effect: AtomicU8::new(InteractiveEffectKind::ExpandingRingDiagonal.code()),

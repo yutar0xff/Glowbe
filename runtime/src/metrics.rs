@@ -1,11 +1,16 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// `loop_source_frame` に「未設定」を表す値（有効フレームは通常 < 1_000_000）。
+const LOOP_SOURCE_FRAME_NONE: u32 = u32::MAX;
 
 /// Hot-path metrics (no `await` in the frame loop).
 pub struct OutputMetrics {
     frames_sent: AtomicU64,
     fps_out_bits: AtomicU64,
     last_tick_wall_ms: AtomicU64,
+    /// Loop ＋シーケンス再生時のソースフレーム index（`/sequences/.../source-frame` と同期）。
+    loop_source_frame: AtomicU32,
 }
 
 fn wall_ms() -> u64 {
@@ -22,6 +27,7 @@ impl OutputMetrics {
             frames_sent: AtomicU64::new(0),
             fps_out_bits: AtomicU64::new(f64::to_bits(0.0)),
             last_tick_wall_ms: AtomicU64::new(now),
+            loop_source_frame: AtomicU32::new(LOOP_SOURCE_FRAME_NONE),
         }
     }
 
@@ -53,5 +59,20 @@ impl OutputMetrics {
         let now = wall_ms();
         let last = self.last_tick_wall_ms.load(Ordering::Relaxed);
         now.saturating_sub(last)
+    }
+
+    #[inline]
+    pub fn set_loop_source_frame(&self, frame: Option<u32>) {
+        let v = frame.unwrap_or(LOOP_SOURCE_FRAME_NONE);
+        self.loop_source_frame.store(v, Ordering::Relaxed);
+    }
+
+    pub fn loop_source_frame(&self) -> Option<u32> {
+        let v = self.loop_source_frame.load(Ordering::Relaxed);
+        if v == LOOP_SOURCE_FRAME_NONE {
+            None
+        } else {
+            Some(v)
+        }
     }
 }

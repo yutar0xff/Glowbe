@@ -23,6 +23,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
   "outputTargetAddr": "192.168.1.10:49152",
   "ledCount": 225,
   "loopSequenceId": null,
+  "loopSourceFrame": null,
   "uptimeSec": 3600,
   "frameLoopStaleMs": 12,
   "layoutMismatch": false,
@@ -38,6 +39,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 - `layoutMismatch`: ESP STATUS の `layout_hash` とランタイムの `meta.layoutHash` が食い違うとき `true`（いずれか欠損時は照合しない）。
 - `framesSent`: 完全送信に成功したフレーム数（累計）。
 - `outputTargetAddr`: runtime が FRAME を送信している宛先。`espStatusAddr` と IP が違う場合、`config.toml` の `device.esp_ip` が古い可能性が高い。
+- `loopSourceFrame`: **`loop` かつシーケンスのフレームが実際に出力バッファへコピーできているとき**、そのソース上のフレーム index（0 始まり）。テストパターンへフォールバック中や `idle` / `interactive` では省略または `null`。
 - `espStatusAddr`: ESP STATUS パケットの送信元。
 
 ### `POST /api/v1/brightness`（草案・未実装）
@@ -112,28 +114,64 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
     "sourceKind": "equirectangular-image",
     "sourceWidth": 1024,
     "sourceHeight": 512,
-    "createdAtUnixSec": 1781332800
+    "createdAtUnixSec": 1781332800,
+    "displayName": "My clip"
   }
 ]
 ```
 
+任意キー **`displayName`**（UI 用・最大約 120 文字）。未設定のシーケンスでは省略され得る。
+
+### `GET /api/v1/sequences/:sequenceId/source-frame/:frameIndex`
+
+→ 実装済み: シーケンスに同梱されたインポート（`source-import.*`）から、指定フレームを **PNG** で返す。`frameIndex` は `0 .. frameCount-1`。`manifest.source.kind` が **`equirectangular-image`**（単一画像は 0 のみ）、**`equirectangular-image-sequence`**（旧 `equirectangular-zip` も同様）、**`equirectangular-video`**（サーバに `ffmpeg` が必要）に対応。インポートファイルが無い古いシーケンスでは `404`。
+
+### `DELETE /api/v1/sequences/:sequenceId`
+
+→ 実装済み: `assets/sequences/<sequenceId>/` を **ディスクから完全削除**（`manifest.json`・`frames.bin`・`source-import.*` など含む）。現在そのシーケンスをループ再生中なら、先に選択を解除してから削除する。成功時は **`204 No Content`**。ディレクトリが無い場合は `404`。
+
+### `PATCH /api/v1/sequences/:sequenceId`
+
+```json
+{ "displayName": "New label" }
+```
+
+→ 実装済み: `manifest.json` の `displayName` を更新（空文字でキー削除）。`200` + 更新後のシーケンス要約（`GET /api/v1/sequences` と同形の 1 要素相当）。シーケンスが無い場合は `404`。
+
 ### `POST /api/v1/media/upload`
 
 `multipart/form-data`: `file`（正距円筒画像/動画/ZIP）。
+
+→ 実装済み: **`file` は PNG / JPEG / ZIP / MP4 / WebM / MOV / MKV**（拡張子または先頭マジックで ZIP 判定）。本文上限はランタイムで約 **48MiB**。
 
 → `{ "uploadId": "uuid", "status": "stored" }`
 
 ### `POST /api/v1/media/:uploadId/convert`
 
 ```json
-{ "fps": 30, "layoutId": "prototype-icosahedron-15" }
+{ "fps": 30, "layoutId": "prototype-icosahedron-15", "displayName": "Optional label" }
 ```
 
 → `{ "jobId": "uuid", "status": "queued" }`
 
+→ 実装済み（**正距円筒 PNG/JPEG 1 枚**、**ZIP 内の同名サイズ PNG/JPEG 連番**・最大 **3600** フレーム・ファイル名ソート、または **動画** を **`ffmpeg`** で指定 `fps` にリサンプルして最大 3600 フレーム）。`manifest.source.kind` は `equirectangular-image` / `equirectangular-image-sequence`（旧 `equirectangular-zip`）/ `equirectangular-video`。元ファイルはシーケンスディレクトリに `source-import.<ext>` として複製され、プレビュー API 用の参照になる。
+
 ### `GET /api/v1/media/:uploadId`
 
 変換進捗・`sequenceId`（完了時）。
+
+→ 実装済み。例:
+
+```json
+{
+  "uploadId": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "running",
+  "jobId": "...",
+  "progress": 0
+}
+```
+
+`status`: `stored` | `running` | `done` | `failed`。`running` 中は **`progress` が 0–99** で変換のおおよその進捗（ZIP 多フレーム時）。`done` のとき `sequenceId` と `progress: 100`。`failed` のとき `error`。
 
 ## WebSocket `GET /api/v1/ws`
 
@@ -143,6 +181,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 
 ```json
 { "type": "masterSettings", "brightness": 0.85, "gamma": 1.15 }
+{ "type": "getLayoutUv" }
 { "type": "interactive", "action": "setEffect", "effect": "expandingRingDiagonal" }
 { "type": "interactive", "action": "pulse", "u": 0.42, "v": 0.71, "effect": "sphereGaussian", "durationMs": 450, "sigmaRad": 0.14, "colorRandom": true }
 { "type": "interactive", "action": "pulse", "u": 0.42, "v": 0.71, "effect": "expandingRingDiagonal", "colorRgb": [255, 120, 40], "ringSpeed": 1.2, "ringThicknessRad": 0.09 }
@@ -151,6 +190,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 ```
 
 - **`masterSettings`** … `brightness` / `gamma` を任意指定（未指定のキーは**変更しない**）。全モードで有効。
+- **`getLayoutUv`** … 現在のランタイム `layoutId` の UV マップを返す（`GET /api/v1/layout/uv` と同一 JSON に **`"type": "layoutUv"`** を付与）。失敗時は `event_status`（`event`: `getLayoutUv`, `status`: `error`）。
 - **`interactive` + `action: "setEffect"`** … 以降のパルスで省略したときに使う既定エフェクトを設定（`effect`: `sphereGaussian` | `expandingRingDiagonal`）。`ripple` 型メッセージでは不可。
 - **`interactive` + `action: "pulse"`**（または `action` 省略でパルス扱い）… パルスは **最大 32 本**まで保持し、それを超えると古いものから破棄する。アクティブな全パルスを **線形光（sRGB デコード）で加算**し、合成後に **最大チャンネルが 1 を超える場合だけ線形空間で RGB を一様に縮小**してから sRGB に戻す。残光トレイルが重なるため、赤と緑のリップルが重なった所は **黄に加算混色**される。
   - 共通: **`amplitude`**（既定 1、0–4）、**`colorRandom`: true** でタップごとに鮮やかな色を自動決定、**`colorRgb`: [r,g,b]`** で固定色（`colorRandom` が true なら無視）。
@@ -162,6 +202,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 
 ```json
 { "type": "state", "layoutId": "prototype-icosahedron-15", "mode": "loop", "fpsOut": 60.0 }
+{ "type": "layoutUv", "layoutId": "prototype-icosahedron-15", "ledCount": 225, "leds": [ { "i": 0, "u": 0.5, "v": 0.5 } ] }
 { "type": "pong" }
 { "type": "event_status", "event": "interactive", "status": "ok", "effect": "sphereGaussian" }
 { "type": "event_status", "event": "interactive", "status": "error", "reason": "interactive WS events apply only in output mode \"interactive\"" }
@@ -182,8 +223,10 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 | `GET /api/v1/layout/uv` | 1–2 | ✅ 実装済 |
 | `GET /api/v1/ws`（state 配信） | 1–2 | ✅ 実装済 |
 | `GET /api/v1/ws`（interactive） | 1–2 | ✅ interactive UV 合成・複数エフェクト |
-| `GET /api/v1/sequences` | 2 | ✅ 実装済 |
-| `media/*`（upload/convert 等） | 2 | ⬜ 未実装 |
+| `GET /api/v1/sequences`（任意 `displayName`） | 2 | ✅ 実装済 |
+| `PATCH /api/v1/sequences/:id`（`displayName`） | 2 | ✅ 実装済 |
+| `media/*`（upload / convert / GET 進捗） | 2 | 🟡 画像+ZIP 連番。**動画**は未 |
+| `GET /api/v1/ws`（`getLayoutUv` → `layoutUv`） | 2 | ✅ 実装済 |
 | clock modes 関連 | 4 | ⬜ 未実装 |
 
 > 進捗の正本は [`docs/STATUS.md`](../docs/STATUS.md)。本表はスナップショットであり、ズレた場合は STATUS を優先。

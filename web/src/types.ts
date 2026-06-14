@@ -10,6 +10,8 @@ export type RuntimeState = {
   outputTargetAddr: string | null
   ledCount: number
   loopSequenceId: string | null
+  /** Loop 再生中のソースフレーム番号（0 始まり）。テストパターン等で無いときは null。 */
+  loopSourceFrame: number | null
   uptimeSec: number
   frameLoopStaleMs: number
   layoutMismatch: boolean
@@ -28,6 +30,8 @@ export type SequenceSummary = {
   sourceWidth: number
   sourceHeight: number
   createdAtUnixSec: number
+  /** 任意。未設定時は一覧から省略されることがある。 */
+  displayName?: string | null
 }
 
 export type Health = {
@@ -47,6 +51,15 @@ export type LayoutUvResponse = {
   layoutId: string
   ledCount: number
   leds: LayoutUvLed[]
+}
+
+export type MediaUploadStatusPayload = {
+  uploadId: string
+  status: 'stored' | 'running' | 'done' | 'failed'
+  jobId?: string
+  sequenceId?: string
+  error?: string
+  progress?: number
 }
 
 export type LoadState =

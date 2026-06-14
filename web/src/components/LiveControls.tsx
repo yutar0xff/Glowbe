@@ -4,11 +4,11 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { MouseEvent } from 'react'
 import { Loader2, Wifi } from 'lucide-react'
 import type { InteractiveEffectKind } from '@/types'
 import { resolveGlowbeWsUrl } from '@/api'
 import { useLayoutUv } from '@/hooks/use-layout-uv'
+import { LayoutUvSheet } from '@/components/LayoutUvMap'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import {
@@ -21,7 +21,6 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
-import { cn } from '@/lib/utils'
 
 function hexToRgb(hex: string): [number, number, number] {
   const raw = hex.replace('#', '').trim()
@@ -77,6 +76,8 @@ export function LiveControls({
 
       ws.onopen = () => {
         setWsPhase('open')
+        // ブラウザは接続が成立したあとも onerror を送ることがあり、文言が残り続けるためここで掃除する。
+        setLastWsNote(null)
       }
       ws.onclose = () => {
         setWsPhase('closed')
@@ -86,8 +87,9 @@ export function LiveControls({
           if (mountedRef.current) openWebSocket()
         }, 2500)
       }
+      // WebSocket の error イベントは詳細がなく、接続成功後にも発火することがあるため UI には出さない。
       ws.onerror = () => {
-        setLastWsNote('Live connection error — check that the runtime is running.')
+        console.warn('Live WebSocket error event (connection may still recover via onclose/onopen).')
       }
       ws.onmessage = (ev) => {
         if (typeof ev.data !== 'string') return
@@ -157,15 +159,6 @@ export function LiveControls({
   }
 
   const canInteractive = outputMode === 'interactive' || outputMode === 'ripple'
-
-  const onUvSvgClick = (e: MouseEvent<SVGSVGElement>) => {
-    if (!canInteractive) return
-    const svg = e.currentTarget
-    const r = svg.getBoundingClientRect()
-    const u = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
-    const v = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
-    sendInteractivePulse(u, v)
-  }
 
   return (
     <Card>
@@ -325,29 +318,13 @@ export function LiveControls({
           ) : null}
 
         {uv && !uvLoading ? (
-          <div className="overflow-hidden rounded-xl border border-border bg-card/40">
-            <div className={cn('relative w-full max-w-full', !canInteractive && 'pointer-events-none opacity-50')}>
-              <svg
-                className="block h-auto w-full max-w-full touch-manipulation"
-                viewBox="0 0 2 1"
-                preserveAspectRatio="xMidYMid meet"
-                role="img"
-                aria-label="LED layout map (tap to add a pulse)"
-                onClick={onUvSvgClick}
-              >
-                <rect x={0} y={0} width={2} height={1} className="fill-muted/40" />
-                {uv.leds.map((led) => (
-                  <circle
-                    key={led.i}
-                    cx={led.u * 2}
-                    cy={led.v}
-                    r={0.028}
-                    className="fill-cyan-400/85 stroke-background/50 stroke-[0.006]"
-                  />
-                ))}
-              </svg>
-            </div>
-          </div>
+          <LayoutUvSheet
+            uv={uv}
+            disabled={!canInteractive}
+            onEquirectClick={
+              canInteractive ? (u, v) => sendInteractivePulse(u, v) : undefined
+            }
+          />
         ) : null}
       </CardContent>
     </Card>

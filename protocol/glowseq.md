@@ -29,9 +29,12 @@ assets/sequences/<id>/
     "width": 2048,
     "height": 1024
   },
-  "createdAtUnixSec": 1781332800
+  "createdAtUnixSec": 1781332800,
+  "displayName": "Optional UI label"
 }
 ```
+
+- 任意 **`displayName`**（文字列・短い UI 表示名）を付けられる。未設定のときはキー自体を省略してよい。
 
 ## frames.bin
 

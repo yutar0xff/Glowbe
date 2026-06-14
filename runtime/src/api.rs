@@ -1,18 +1,25 @@
+use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::{DefaultBodyLimit, Multipart, Path};
+use axum::http::header;
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::{
-    routing::{get, post},
+    routing::{get, patch, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time;
+use uuid::Uuid;
 
 use crate::media;
 use crate::state::{
-    InteractiveEffectKind, InteractivePulse, OutputMode, RuntimeState, SharedState,
+    InteractiveEffectKind, InteractivePulse, MediaUploadEntry, MediaUploadPhase, OutputMode,
+    RuntimeState, SharedState,
 };
 
 #[derive(Serialize)]
@@ -35,6 +42,8 @@ struct StateResponse {
     frames_sent: u64,
     master_brightness: f64,
     master_gamma: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    loop_source_frame: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -70,9 +79,366 @@ struct ErrorResponse {
     error: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MediaUploadStoredResponse {
+    upload_id: String,
+    status: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MediaConvertQueuedResponse {
+    job_id: String,
+    status: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MediaUploadStatusResponse {
+    upload_id: String,
+    status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    job_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sequence_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    progress: Option<u8>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MediaConvertRequest {
+    #[serde(default = "default_media_fps")]
+    fps: u32,
+    layout_id: String,
+    #[serde(default)]
+    display_name: Option<String>,
+}
+
+fn default_media_fps() -> u32 {
+    30
+}
+
+fn safe_disk_ext(file_name: Option<&str>) -> Result<&'static str, &'static str> {
+    let ext = file_name
+        .and_then(|n| std::path::Path::new(n).extension())
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    let ext = ext.as_deref().unwrap_or("png");
+    match ext {
+        "jpg" | "jpeg" => Ok("jpg"),
+        "png" => Ok("png"),
+        "zip" => Ok("zip"),
+        "mp4" => Ok("mp4"),
+        "webm" => Ok("webm"),
+        "mov" => Ok("mov"),
+        "mkv" => Ok("mkv"),
+        _ => Err("only .png, .jpg/.jpeg, .zip, or video (.mp4/.webm/.mov/.mkv) are supported"),
+    }
+}
+
+fn media_status_json(upload_id: &str, entry: &MediaUploadEntry) -> MediaUploadStatusResponse {
+    match &entry.phase {
+        MediaUploadPhase::Stored => MediaUploadStatusResponse {
+            upload_id: upload_id.to_string(),
+            status: "stored",
+            job_id: None,
+            sequence_id: None,
+            error: None,
+            progress: None,
+        },
+        MediaUploadPhase::Converting { job_id, progress } => MediaUploadStatusResponse {
+            upload_id: upload_id.to_string(),
+            status: "running",
+            job_id: Some(job_id.clone()),
+            sequence_id: None,
+            error: None,
+            progress: Some(progress.load(Ordering::Relaxed)),
+        },
+        MediaUploadPhase::Done {
+            job_id,
+            sequence_id,
+        } => MediaUploadStatusResponse {
+            upload_id: upload_id.to_string(),
+            status: "done",
+            job_id: Some(job_id.clone()),
+            sequence_id: Some(sequence_id.clone()),
+            error: None,
+            progress: Some(100),
+        },
+        MediaUploadPhase::Failed { job_id, message } => MediaUploadStatusResponse {
+            upload_id: upload_id.to_string(),
+            status: "failed",
+            job_id: job_id.clone(),
+            sequence_id: None,
+            error: Some(message.clone()),
+            progress: None,
+        },
+    }
+}
+
+async fn post_media_upload(app: SharedState, mut multipart: Multipart) -> impl IntoResponse {
+    let mut file_bytes: Option<(axum::body::Bytes, Option<String>)> = None;
+    while let Ok(Some(field)) = multipart.next_field().await {
+        if field.name() != Some("file") {
+            continue;
+        }
+        let fname = field.file_name().map(|s| s.to_string());
+        match field.bytes().await {
+            Ok(b) => {
+                file_bytes = Some((b, fname));
+                break;
+            }
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("read upload failed: {e}"),
+                    }),
+                )
+                    .into_response();
+            }
+        }
+    }
+    let Some((data, fname)) = file_bytes else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "multipart field \"file\" is required".into(),
+            }),
+        )
+            .into_response();
+    };
+
+    let disk_ext = match safe_disk_ext(fname.as_deref()) {
+        Ok(e) => e,
+        Err(msg) => {
+            return (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                Json(ErrorResponse {
+                    error: msg.into(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let upload_id = Uuid::new_v4().hyphenated().to_string();
+    let dir = app.uploads_dir.join(&upload_id);
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("create upload dir: {e:#}"),
+            }),
+        )
+            .into_response();
+    }
+    let dest = dir.join(format!("source.{disk_ext}"));
+    if let Err(e) = std::fs::write(&dest, &data) {
+        let _ = std::fs::remove_dir_all(&dir);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("write upload: {e:#}"),
+            }),
+        )
+            .into_response();
+    }
+
+    let mut map = app.media_uploads.write().await;
+    map.insert(
+        upload_id.clone(),
+        MediaUploadEntry {
+            source_path: dest,
+            phase: MediaUploadPhase::Stored,
+        },
+    );
+
+    (
+        StatusCode::OK,
+        Json(MediaUploadStoredResponse {
+            upload_id,
+            status: "stored",
+        }),
+    )
+        .into_response()
+}
+
+async fn get_media_upload_status(
+    app: SharedState,
+    Path(upload_id): Path<String>,
+) -> impl IntoResponse {
+    let Ok(uuid) = Uuid::parse_str(upload_id.trim()) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "unknown upload".into(),
+            }),
+        )
+            .into_response();
+    };
+    let upload_id = uuid.hyphenated().to_string();
+    let map = app.media_uploads.read().await;
+    let Some(entry) = map.get(&upload_id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "unknown upload".into(),
+            }),
+        )
+            .into_response();
+    };
+    let body = media_status_json(&upload_id, entry);
+    (StatusCode::OK, Json(body)).into_response()
+}
+
+async fn post_media_convert(
+    app: SharedState,
+    Path(upload_id): Path<String>,
+    Json(req): Json<MediaConvertRequest>,
+) -> impl IntoResponse {
+    let Ok(uuid) = Uuid::parse_str(upload_id.trim()) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "unknown upload".into(),
+            }),
+        )
+            .into_response();
+    };
+    let upload_id = uuid.hyphenated().to_string();
+
+    let layout_id = req.layout_id.trim();
+    if layout_id.is_empty() || layout_id.contains('/') || layout_id.contains('\\') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "layoutId must be non-empty and path-safe".into(),
+            }),
+        )
+            .into_response();
+    }
+    let layout_id = layout_id.to_string();
+    let fps = req.fps.clamp(1, 120);
+    let display_name = media::sanitize_display_name(req.display_name.as_deref());
+
+    let job_id = Uuid::new_v4().hyphenated().to_string();
+    let sequence_id = format!("up-{upload_id}");
+    let progress = Arc::new(AtomicU8::new(0));
+    let progress_spawn = progress.clone();
+
+    let source_path = {
+        let mut map = app.media_uploads.write().await;
+        let Some(entry) = map.get_mut(&upload_id) else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "unknown upload".into(),
+                }),
+            )
+                .into_response();
+        };
+        let allowed = matches!(
+            &entry.phase,
+            MediaUploadPhase::Stored | MediaUploadPhase::Failed { .. }
+        );
+        if !allowed {
+            return (
+                StatusCode::CONFLICT,
+                Json(ErrorResponse {
+                    error: "upload is already converting or already converted".into(),
+                }),
+            )
+                .into_response();
+        }
+        let path = entry.source_path.clone();
+        entry.phase = MediaUploadPhase::Converting {
+            job_id: job_id.clone(),
+            progress,
+        };
+        path
+    };
+
+    let compiled_dir = app.compiled_dir.clone();
+    let sequences_dir = app.sequences_dir.clone();
+    let app2 = app.clone();
+    let job_id_spawn = job_id.clone();
+    let upload_id_spawn = upload_id.clone();
+    let sequence_id_spawn = sequence_id.clone();
+
+    tokio::spawn(async move {
+        let sequence_for_blocking = sequence_id_spawn.clone();
+        let display_opt = display_name;
+        let res = tokio::task::spawn_blocking(move || {
+            media::convert_uploaded_media_to_sequence(
+                &source_path,
+                &sequence_for_blocking,
+                &layout_id,
+                &compiled_dir,
+                &sequences_dir,
+                fps,
+                display_opt.as_deref(),
+                Some(&progress_spawn),
+            )
+        })
+        .await;
+
+        let mut map = app2.media_uploads.write().await;
+        let Some(entry) = map.get_mut(&upload_id_spawn) else {
+            return;
+        };
+        match res {
+            Ok(Ok(_)) => {
+                entry.phase = MediaUploadPhase::Done {
+                    job_id: job_id_spawn.clone(),
+                    sequence_id: sequence_id_spawn,
+                };
+            }
+            Ok(Err(e)) => {
+                entry.phase = MediaUploadPhase::Failed {
+                    job_id: Some(job_id_spawn.clone()),
+                    message: format!("{e:#}"),
+                };
+            }
+            Err(e) => {
+                entry.phase = MediaUploadPhase::Failed {
+                    job_id: Some(job_id_spawn.clone()),
+                    message: format!("convert task failed: {e}"),
+                };
+            }
+        }
+    });
+
+    (
+        StatusCode::OK,
+        Json(MediaConvertQueuedResponse {
+            job_id,
+            status: "queued",
+        }),
+    )
+        .into_response()
+}
+
 pub fn router(app: SharedState) -> Router {
+    let upload_router = Router::new()
+        .route(
+            "/api/v1/media/upload",
+            post({
+                let app = app.clone();
+                move |multipart: Multipart| {
+                    let app = app.clone();
+                    async move { post_media_upload(app, multipart).await }
+                }
+            }),
+        )
+        .layer(DefaultBodyLimit::max(48 * 1024 * 1024));
+
     let app_health = app.clone();
-    Router::new()
+    let main = Router::new()
         .route(
             "/api/v1/state",
             get({
@@ -109,10 +475,48 @@ pub fn router(app: SharedState) -> Router {
             }),
         )
         .route(
+            "/api/v1/sequences/{sequence_id}",
+            patch({
+                let app = app.clone();
+                move |path, body| patch_sequence_display(app.clone(), path, body)
+            })
+            .delete({
+                let app = app.clone();
+                move |path: Path<String>| {
+                    let app = app.clone();
+                    async move { delete_sequence(app, path).await }
+                }
+            }),
+        )
+        .route(
+            "/api/v1/sequences/{sequence_id}/source-frame/{frame_index}",
+            get({
+                let app = app.clone();
+                move |path: Path<(String, u32)>| {
+                    let app = app.clone();
+                    async move { get_sequence_source_frame(app, path).await }
+                }
+            }),
+        )
+        .route(
             "/api/v1/layout/uv",
             get({
                 let app = app.clone();
                 move || get_layout_uv(app.clone())
+            }),
+        )
+        .route(
+            "/api/v1/media/{upload_id}/convert",
+            post({
+                let app = app.clone();
+                move |path, body| post_media_convert(app.clone(), path, body)
+            }),
+        )
+        .route(
+            "/api/v1/media/{upload_id}",
+            get({
+                let app = app.clone();
+                move |path| get_media_upload_status(app.clone(), path)
             }),
         )
         .route(
@@ -128,7 +532,9 @@ pub fn router(app: SharedState) -> Router {
                 let app = app_health.clone();
                 move || health(app.clone())
             }),
-        )
+        );
+
+    upload_router.merge(main)
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, app: SharedState) -> impl IntoResponse {
@@ -203,6 +609,35 @@ async fn handle_ws_text(
     let kind = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
     match kind {
+        "getLayoutUv" => {
+            let layout_id = {
+                let s = app.state.read().await;
+                s.layout_id.clone()
+            };
+            match media::load_layout_uv(&app.compiled_dir, &layout_id) {
+                Ok(uv) => {
+                    let mut payload = serde_json::to_value(&uv).expect("serialize layout uv");
+                    if let serde_json::Value::Object(ref mut m) = payload {
+                        m.insert(
+                            "type".into(),
+                            serde_json::Value::String("layoutUv".into()),
+                        );
+                    }
+                    socket
+                        .send(Message::Text(payload.to_string().into()))
+                        .await?;
+                }
+                Err(e) => {
+                    let reply = json!({
+                        "type": "event_status",
+                        "event": "getLayoutUv",
+                        "status": "error",
+                        "reason": format!("{e:#}")
+                    });
+                    socket.send(Message::Text(reply.to_string().into())).await?;
+                }
+            }
+        }
         "ping" => {
             let reply = json!({ "type": "pong" });
             socket.send(Message::Text(reply.to_string().into())).await?;
@@ -344,9 +779,163 @@ async fn handle_ws_text(
     Ok(())
 }
 
+async fn get_sequence_source_frame(
+    app: SharedState,
+    Path((sequence_id, frame_index)): Path<(String, u32)>,
+) -> impl IntoResponse {
+    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "sequenceId must be non-empty and path-safe".into(),
+            }),
+        )
+            .into_response();
+    }
+
+    let sequences_dir = app.sequences_dir.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        media::export_sequence_source_frame_png(&sequences_dir, &sequence_id, frame_index)
+    })
+    .await;
+
+    match res {
+        Ok(Ok(bytes)) => match Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "image/png")
+            .body(Body::from(bytes))
+        {
+            Ok(r) => r.into_response(),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("response build: {e}"),
+                }),
+            )
+                .into_response(),
+        },
+        Ok(Err(e)) => (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("source-frame task: {e}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
 async fn get_state(app: SharedState) -> Json<StateResponse> {
     let s = app.state.read().await;
     Json(state_response(&app, &s))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SequencePatchRequest {
+    display_name: String,
+}
+
+async fn patch_sequence_display(
+    app: SharedState,
+    Path(sequence_id): Path<String>,
+    Json(body): Json<SequencePatchRequest>,
+) -> impl IntoResponse {
+    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "sequenceId must be non-empty and path-safe".into(),
+            }),
+        )
+            .into_response();
+    }
+    let manifest_path = app
+        .sequences_dir
+        .join(&sequence_id)
+        .join("manifest.json");
+    if !manifest_path.is_file() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "sequence not found".into(),
+            }),
+        )
+            .into_response();
+    }
+    if let Err(e) = media::set_sequence_display_name(
+        &app.sequences_dir,
+        &sequence_id,
+        Some(body.display_name.as_str()),
+    ) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response();
+    }
+    match media::sequence_summary(&app.sequences_dir, &sequence_id) {
+        Ok(s) => (StatusCode::OK, Json(s)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("read sequence after patch: {e:#}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_sequence(app: SharedState, Path(sequence_id): Path<String>) -> impl IntoResponse {
+    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "sequenceId must be non-empty and path-safe".into(),
+            }),
+        )
+            .into_response();
+    }
+
+    let should_clear = {
+        let s = app.state.read().await;
+        s.loop_sequence_id.as_deref() == Some(sequence_id.as_str())
+    };
+    if should_clear {
+        app.clear_sequence().await;
+    }
+
+    let sequences_dir = app.sequences_dir.clone();
+    let id = sequence_id.clone();
+    let res = tokio::task::spawn_blocking(move || media::delete_sequence_directory(&sequences_dir, &id)).await;
+
+    match res {
+        Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Err(e)) => {
+            let msg = format!("{e:#}");
+            let code = if msg.contains("not found") {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (code, Json(ErrorResponse { error: msg })).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("delete task: {e}"),
+            }),
+        )
+            .into_response(),
+    }
 }
 
 async fn get_sequences(app: SharedState) -> impl IntoResponse {
@@ -417,6 +1006,7 @@ fn state_response(app: &SharedState, s: &RuntimeState) -> StateResponse {
         frames_sent: app.metrics.frames_sent(),
         master_brightness: f64::from(app.master_brightness()),
         master_gamma: f64::from(app.master_gamma()),
+        loop_source_frame: app.metrics.loop_source_frame(),
     }
 }
 

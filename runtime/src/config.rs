@@ -57,6 +57,9 @@ pub struct Assets {
     /// Directory containing generated sequence directories. Relative paths are from cwd.
     #[serde(default)]
     pub sequences_dir: Option<String>,
+    /// Staging for `POST /api/v1/media/upload` before convert. Relative paths are from cwd.
+    #[serde(default)]
+    pub uploads_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

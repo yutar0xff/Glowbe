@@ -126,14 +126,25 @@ pub async fn run(config: Config, app: SharedState, meta_path: PathBuf) -> Result
 
             let t_ms = loop_start.elapsed().as_millis() as u32;
             match app.output_mode() {
-                OutputMode::Idle | OutputMode::Interactive => rgb.fill(0),
+                OutputMode::Idle | OutputMode::Interactive => {
+                    app.metrics.set_loop_source_frame(None);
+                    rgb.fill(0)
+                }
                 OutputMode::Loop => {
                     if let Some(sequence) = app.selected_sequence() {
-                        if let Err(e) = sequence.copy_frame_at(loop_start.elapsed(), &mut rgb) {
-                            warn!("sequence frame copy failed; falling back to pattern: {e:#}");
-                            pattern::fill_loop_rgb(t_ms, &mut rgb, pattern_uv.as_deref());
+                        match sequence.copy_frame_at(loop_start.elapsed(), &mut rgb) {
+                            Ok(()) => {
+                                let idx = sequence.frame_index_at(loop_start.elapsed()) as u32;
+                                app.metrics.set_loop_source_frame(Some(idx));
+                            }
+                            Err(e) => {
+                                app.metrics.set_loop_source_frame(None);
+                                warn!("sequence frame copy failed; falling back to pattern: {e:#}");
+                                pattern::fill_loop_rgb(t_ms, &mut rgb, pattern_uv.as_deref());
+                            }
                         }
                     } else {
+                        app.metrics.set_loop_source_frame(None);
                         pattern::fill_loop_rgb(t_ms, &mut rgb, pattern_uv.as_deref());
                     }
                 }
@@ -409,7 +420,7 @@ pub fn ripple_dynamics(ring_speed: f32, ring_thickness_rad: f32) -> RippleDynami
     }
 }
 
-fn apply_interactive_expanding_ring_diagonal(
+pub fn apply_interactive_expanding_ring_diagonal(
     acc: &mut [f32],
     uv: &[(f32, f32)],
     pulse: &InteractivePulse,
@@ -467,6 +478,61 @@ fn apply_interactive_expanding_ring_diagonal(
         }
         add_tinted_to_accum(acc, i, wave, pulse.color_r, pulse.color_g, pulse.color_b);
     }
+}
+
+/// 黒背景向け: interactive overlay と同じトーンマップで線形加算累積を sRGB へ。
+pub fn finalize_linear_add_accum_black_base(acc: &[f32]) -> Vec<u8> {
+    let mut rgb = vec![0u8; acc.len()];
+    for i in (0..acc.len()).step_by(3) {
+        let mut r_lin = acc[i];
+        let mut g_lin = acc[i + 1];
+        let mut b_lin = acc[i + 2];
+        let m = r_lin.max(g_lin).max(b_lin);
+        if m > 1.0 {
+            let s = 1.0 / m;
+            r_lin *= s;
+            g_lin *= s;
+            b_lin *= s;
+        }
+        rgb[i] = linear_to_srgb_u8(r_lin);
+        rgb[i + 1] = linear_to_srgb_u8(g_lin);
+        rgb[i + 2] = linear_to_srgb_u8(b_lin);
+    }
+    rgb
+}
+
+/// 複数 expanding-ring パルスを `now` で合成した 1 フレーム（sRGB）。
+pub fn compose_demo_expanding_ring_frame_rgba(
+    uv: &[(f32, f32)],
+    pulses: &[InteractivePulse],
+    now: Instant,
+) -> Vec<u8> {
+    let mut acc = vec![0f32; uv.len() * 3];
+    for p in pulses {
+        if now < p.started || now >= p.started + p.duration {
+            continue;
+        }
+        apply_interactive_expanding_ring_diagonal(&mut acc, uv, p, now);
+    }
+    finalize_linear_add_accum_black_base(&acc)
+}
+
+/// デモ用: `seq_base` から等速タイムラインで `frame_count` フレーム分の `frames.bin` 生データを生成。
+pub fn encode_demo_expanding_ring_sequence_bytes(
+    uv: &[(f32, f32)],
+    pulses: &[InteractivePulse],
+    seq_base: Instant,
+    fps: u32,
+    frame_count: u32,
+) -> Vec<u8> {
+    let fps = fps.max(1);
+    let mut bin = Vec::with_capacity(uv.len() * 3 * frame_count as usize);
+    for fi in 0..frame_count {
+        let t = fi as f32 / fps as f32;
+        let now = seq_base + Duration::from_secs_f32(t);
+        bin.extend_from_slice(&compose_demo_expanding_ring_frame_rgba(uv, pulses, now));
+    }
+    bin
 }
 
 #[cfg(test)]

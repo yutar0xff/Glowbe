@@ -1,8 +1,8 @@
 # Glowbe — 実装状況・引き継ぎ（STATUS）
 
-> **役割:** 本書は「いま何ができていて、次に何をやるか」の**正本**。  
-> 設計の「あるべき姿」は [`ARCHITECTURE.md`](ARCHITECTURE.md)、各仕様は [`../protocol/`](../protocol/)。  
-> 最終更新: 2026-06-14（S3/無印とも NeoPixelBus、無印ちらつき対策確認済み）
+> **役割:** 本書は「いま何ができていて、次に何をやるか」の**正本**。
+> 設計の「あるべき姿」は [`ARCHITECTURE.md`](ARCHITECTURE.md)、各仕様は [`../protocol/`](../protocol/)。
+> 最終更新: 2026-06-14（Phase 2: ZIP 連番・`displayName`・UV プレビュー / WS `getLayoutUv`）
 
 ---
 
@@ -14,8 +14,8 @@
 | ランタイム | loop パターン / 選択シーケンス再生 + 状態 API。`cargo test` **5** 件パス |
 | ファーム | UDP 受信・フレーム再構成・S3(NeoPixelBus LCD)/無印(NeoPixelBus I2S0) ドライバ実装済。欠落時は前フレーム保持 + プレイアウト遅延 |
 | UDP E2E | ESP32 **無印**で 60fps×5 分ベンチ通過、ちらつき解消を確認（記録: [`BENCHMARK.md`](BENCHMARK.md)）。**ESP32-S3 本番ボードでは未再計測** |
-| Web | **Phase 2 UI 一部実装**（状態/モード/シーケンス一覧・選択） |
-| メディアパイプライン | **Phase 2 最小実装**（正距円筒静止画→1フレームシーケンス） |
+| Web | **Phase 2 UI**（状態/モード・シーケンス表示名・ZIP/画像アップロード・**UV 散布プレビュー**） |
+| メディアパイプライン | **Phase 2**（静止画 / **ZIP 連番**→シーケンス・`displayName`・進捗 GET） |
 
 > ハードウェア前提: ESP32-S3 が本番。S3 実機が「届いたら本番」、手元の ESP32 無印で先行検証する想定（`docs/firmware/LED-OUTPUT.md`）。
 
@@ -29,9 +29,9 @@
 |----------------|------|------|------|
 | Rust ランタイム | `runtime/` | 🟡 | 送信失敗でループ停止しない・60 連続失敗で再接続／mDNS（`esp_ip` 省略時）／`[assets].compiled_dir`／ホットパス atomics／`layoutMismatch`・**論理 RGB** ワイヤ |
 | `Mode` trait・モード合成 | `runtime/`（§9） | 🟡 | trait 化は未実装。`idle` / `loop` / `interactive`（別名 `ripple`）は atomic |
-| メディアワーカー / 変換 | `runtime/src/media.rs` | 🟡 | CLI `convert-image` で正距円筒 PNG/JPEG → `manifest.json` + `frames.bin`（1フレーム） |
+| メディアワーカー / 変換 | `runtime/src/media.rs` + HTTP `media/*` | 🟡 | CLI + **REST**（PNG/JPEG・**ZIP 連番**・`PATCH …/sequences` で表示名） |
 | サーバマイク（cpal） | `runtime/`（§6.1） | ⬜ | Phase 4 |
-| Web クライアント | `web/` | ✅ | Vite + React。単一ページ **Glowbe Studio**（モードバッジ・モード別 UI・ステータス） |
+| Web クライアント | `web/` | ✅ | **Glowbe Studio**（Loop: 画像/ZIP アップロード・表示名・**UV プレビュー**・シーケンス一覧） |
 | ESP ファーム（共通） | `firmware/esp32s3/` | ✅ | Wi-Fi STA / UDP / 再構成 / **20 バイト STATUS**（`layout_hash`）。LED は UDP のみ（マイコン内アニメなし）。受信途絶時は前フレーム保持 |
 | LED ドライバ S3 | `src/led_driver_s3.cpp` | ✅ | NeoPixelBus LCD 並列（`NeoEsp32LcdX8/X16Ws2812xMethod`）、論理 RGB → `NeoGrbFeature` |
 | LED ドライバ 無印 | `src/led_driver_esp32.cpp` | ✅ | NeoPixelBus I2S0 並列（`NeoEsp32I2s0X8/X16Ws2812xMethod`）、論理 RGB 入力 |
@@ -50,11 +50,13 @@
 | `GET /health` | ✅ | 出力ループ tick が **1s 超 stale** なら **503**、そうでなければ **200 ok** |
 | `POST /api/v1/mode` | ✅ | `idle`（黒・シーケンス解除）/ `loop` / `interactive`（消灯＋WS `interactive`／別名 `ripple` 合成。後方互換で `ripple` も `interactive` と同義） |
 | `POST /api/v1/master-tone` | ✅ | 全モード最終段の明るさ・ガンマ（`masterBrightness` / `masterGamma` を `state` に反映） |
-| `GET /api/v1/sequences` | ✅ | `assets/sequences/*/manifest.json` の一覧 |
+| `GET /api/v1/sequences` | ✅ | 一覧（任意 **`displayName`**） |
+| `PATCH /api/v1/sequences/:id` | ✅ | `manifest.json` の **`displayName`** 更新 |
 | `GET /api/v1/layout/uv` | ✅ | `assets/compiled/<layoutId>.ledmap.json` を返す |
 | `GET /api/v1/ws`（state 配信） | ✅ | 接続直後 + 1 秒ごとに state を送信 |
 | `GET /api/v1/ws`（interactive） | ✅ | `interactive` 複数パルス同時加算・色/輪パラメータ・`masterSettings`。`ripple` 型パルス |
-| `media/upload`, `media/convert` | ⬜ | Phase 2 後続 |
+| `media/upload`, `media/convert`, `GET …/media/:uploadId` | 🟡 | **PNG/JPEG + ZIP**（正距円筒連番）・進捗 **`progress`**。**動画**は未 |
+| `GET /api/v1/ws` `getLayoutUv` | ✅ | **`layoutUv`** 応答（`GET /layout/uv` 相当） |
 
 詳細仕様: [`../protocol/control-api.md`](../protocol/control-api.md)
 
@@ -107,7 +109,7 @@
 ## 7. 次の具体タスク（Phase 1 締め）
 
 1. **ESP32-S3 実機でベンチ再計測**: 無印と同条件で 5 分 → [`BENCHMARK.md`](BENCHMARK.md) に追記（本番ボード到着後の最優先）。
-2. Phase 2 を拡張（動画/複数フレーム変換、Web アップロード、変換進捗、WebSocket での **正距円筒 UV マップ** 相当プレビュー）。
+2. Phase 2 を拡張（**動画変換**、進捗のより細かい割合、ZIP 以外のコンテナ）。正距円筒 **UV** は Studio の散布プレビューと WS **`getLayoutUv`** / **`layoutUv`** で対応済み。
 3. 同一プレイアウト設定で S3 実機ベンチを再計測（上記 1 とまとめ可能）。
 
 ---
