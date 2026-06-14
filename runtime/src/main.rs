@@ -1,6 +1,7 @@
 mod api;
 mod config;
 mod discover;
+mod mate;
 mod media;
 mod metrics;
 mod output;

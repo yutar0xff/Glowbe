@@ -1,4 +1,4 @@
-import { Moon, MousePointer2, Repeat } from 'lucide-react'
+import { Moon, MousePointer2, Repeat, Sparkles } from 'lucide-react'
 import type { OutputMode } from '@/types'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { Separator } from '@/components/ui/separator'
@@ -6,9 +6,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { IdleModePanel } from './IdleModePanel'
 import { InteractiveModePanel } from './InteractiveModePanel'
 import { LoopModePanel } from './LoopModePanel'
+import { MateModePanel } from './MateModePanel'
 import { StatusSection } from './StatusSection'
 
-const MODES: OutputMode[] = ['loop', 'interactive', 'idle']
+const MODES: OutputMode[] = ['idle', 'loop', 'interactive', 'mate']
 
 const modeMeta: Record<
   OutputMode,
@@ -29,11 +30,17 @@ const modeMeta: Record<
     description: 'Lights off; loop selection is cleared.',
     icon: Moon,
   },
+  mate: {
+    label: 'Mate',
+    description: 'Sphere-native face: gaze, idle choreography, and liquid motion on device LEDs.',
+    icon: Sparkles,
+  },
 }
 
 function panelMode(mode: string): OutputMode {
   if (mode === 'loop') return 'loop'
   if (mode === 'interactive' || mode === 'ripple') return 'interactive'
+  if (mode === 'mate') return 'mate'
   return 'idle'
 }
 
@@ -54,7 +61,7 @@ export function StudioPage() {
     <div className="flex flex-col gap-8 md:gap-10">
       <Tabs value={modeKey} onValueChange={pickMode} className="flex flex-col gap-0">
         <div className="space-y-3">
-          <TabsList className="grid h-11 w-full max-w-full grid-cols-3 gap-0.5 p-1 sm:h-12">
+          <TabsList className="grid h-11 w-full max-w-full grid-cols-2 gap-0.5 p-1 sm:grid-cols-4 sm:h-12">
             {MODES.map((mode) => {
               const { label, icon: Icon } = modeMeta[mode]
               return (
@@ -81,14 +88,17 @@ export function StudioPage() {
           ) : null}
         </div>
 
+        <TabsContent value="idle" className="mt-8 space-y-6 outline-none focus-visible:outline-none">
+          <IdleModePanel state={state} />
+        </TabsContent>
         <TabsContent value="loop" className="mt-8 space-y-6 outline-none focus-visible:outline-none">
           <LoopModePanel state={state} sequences={sequences} />
         </TabsContent>
         <TabsContent value="interactive" className="mt-8 space-y-6 outline-none focus-visible:outline-none">
           <InteractiveModePanel state={state} />
         </TabsContent>
-        <TabsContent value="idle" className="mt-8 space-y-6 outline-none focus-visible:outline-none">
-          <IdleModePanel state={state} />
+        <TabsContent value="mate" className="mt-8 space-y-6 outline-none focus-visible:outline-none">
+          <MateModePanel state={state} />
         </TabsContent>
       </Tabs>
 

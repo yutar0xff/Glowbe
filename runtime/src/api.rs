@@ -17,6 +17,7 @@ use tokio::time;
 use uuid::Uuid;
 
 use crate::media;
+use crate::mate;
 use crate::state::{
     InteractiveEffectKind, InteractivePulse, MediaUploadEntry, MediaUploadPhase, OutputMode,
     RuntimeState, SharedState,
@@ -44,6 +45,8 @@ struct StateResponse {
     master_gamma: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     loop_source_frame: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mate: Option<mate::MateSummary>,
 }
 
 #[derive(Serialize)]
@@ -468,6 +471,13 @@ pub fn router(app: SharedState) -> Router {
             }),
         )
         .route(
+            "/api/v1/mate/state",
+            post({
+                let app = app.clone();
+                move |body| post_mate_state(app.clone(), body)
+            }),
+        )
+        .route(
             "/api/v1/sequences",
             get({
                 let app = app.clone();
@@ -768,6 +778,232 @@ async fn handle_ws_text(
             };
             socket.send(Message::Text(reply.to_string().into())).await?;
         }
+        "mate" => {
+            if app.output_mode() != OutputMode::Mate {
+                let reply = json!({
+                    "type": "event_status",
+                    "event": "mate",
+                    "status": "error",
+                    "reason": "mate WS events apply only in output mode \"mate\""
+                });
+                socket.send(Message::Text(reply.to_string().into())).await?;
+                return Ok(());
+            }
+
+            let action = v.get("action").and_then(|a| a.as_str()).unwrap_or("");
+            let patch = match action {
+                "setExpression" => {
+                    let Some(expr) = v.get("expression").and_then(|x| x.as_str()) else {
+                        let reply = json!({
+                            "type": "event_status",
+                            "event": "mate",
+                            "status": "error",
+                            "reason": "setExpression requires \"expression\""
+                        });
+                        socket.send(Message::Text(reply.to_string().into())).await?;
+                        return Ok(());
+                    };
+                    json!({ "expression": expr })
+                }
+                "setMood" => {
+                    let Some(mood) = v.get("mood").and_then(|x| x.as_str()) else {
+                        let reply = json!({
+                            "type": "event_status",
+                            "event": "mate",
+                            "status": "error",
+                            "reason": "setMood requires \"mood\""
+                        });
+                        socket.send(Message::Text(reply.to_string().into())).await?;
+                        return Ok(());
+                    };
+                    json!({ "mood": mood })
+                }
+                "setIdle" => {
+                    use serde_json::Map;
+                    let mut idle = Map::new();
+                    if let Some(r) = v.get("routine").and_then(|x| x.as_str()) {
+                        idle.insert("routine".into(), json!(r));
+                    }
+                    if let Some(sp) = v.get("speed").and_then(|x| x.as_f64()) {
+                        idle.insert("speed".into(), json!(sp));
+                    }
+                    if let Some(ax) = v.get("axis").and_then(|x| x.as_array()) {
+                        idle.insert("axis".into(), json!(ax));
+                    }
+                    if idle.is_empty() {
+                        let reply = json!({
+                            "type": "event_status",
+                            "event": "mate",
+                            "status": "error",
+                            "reason": "setIdle requires \"routine\", \"speed\", and/or \"axis\""
+                        });
+                        socket.send(Message::Text(reply.to_string().into())).await?;
+                        return Ok(());
+                    }
+                    json!({ "idle": serde_json::Value::Object(idle) })
+                }
+                "setGaze" => {
+                    use serde_json::Map;
+                    let mut top = Map::new();
+                    let mut gaze = Map::new();
+                    if let Some(u) = v.get("u").and_then(|x| x.as_f64()) {
+                        gaze.insert("u".into(), json!(u));
+                    }
+                    if let Some(vv) = v.get("v").and_then(|x| x.as_f64()) {
+                        gaze.insert("v".into(), json!(vv));
+                    }
+                    if !gaze.is_empty() {
+                        top.insert("gaze".into(), serde_json::Value::Object(gaze));
+                    }
+                    if let Some(gp) = v.get("gazePull").and_then(|x| x.as_f64()) {
+                        top.insert("gazePull".into(), json!(gp));
+                    }
+                    if let Some(c) = v.get("cluster").and_then(|x| x.as_f64()) {
+                        top.insert("cluster".into(), json!(c));
+                    }
+                    if top.is_empty() {
+                        let reply = json!({
+                            "type": "event_status",
+                            "event": "mate",
+                            "status": "error",
+                            "reason": "setGaze requires \"u\"/\"v\" and/or \"gazePull\"/\"cluster\""
+                        });
+                        socket.send(Message::Text(reply.to_string().into())).await?;
+                        return Ok(());
+                    }
+                    serde_json::Value::Object(top)
+                }
+                "setDynamics" => {
+                    use serde_json::Map;
+                    let mut d = Map::new();
+                    if let Some(x) = v.get("stiffness").and_then(|x| x.as_f64()) {
+                        d.insert("stiffness".into(), json!(x));
+                    }
+                    if let Some(x) = v.get("damping").and_then(|x| x.as_f64()) {
+                        d.insert("damping".into(), json!(x));
+                    }
+                    if let Some(x) = v.get("floatiness").and_then(|x| x.as_f64()) {
+                        d.insert("floatiness".into(), json!(x));
+                    }
+                    if let Some(x) = v.get("trailLag").and_then(|x| x.as_f64()) {
+                        d.insert("trailLag".into(), json!(x));
+                    }
+                    if d.is_empty() {
+                        let reply = json!({
+                            "type": "event_status",
+                            "event": "mate",
+                            "status": "error",
+                            "reason": "setDynamics requires at least one of stiffness, damping, floatiness, trailLag"
+                        });
+                        socket.send(Message::Text(reply.to_string().into())).await?;
+                        return Ok(());
+                    }
+                    json!({ "dynamics": serde_json::Value::Object(d) })
+                }
+                "setAppearance" => {
+                    use serde_json::Map;
+                    let mut ap = Map::new();
+                    if let Some(c) = v.get("color").and_then(|x| x.as_array()) {
+                        ap.insert("color".into(), json!(c));
+                    }
+                    if let Some(x) = v.get("brightness").and_then(|x| x.as_f64()) {
+                        ap.insert("brightness".into(), json!(x));
+                    }
+                    if let Some(x) = v.get("faceScale").and_then(|x| x.as_f64()) {
+                        ap.insert("faceScale".into(), json!(x));
+                    }
+                    if let Some(x) = v.get("partsScale").and_then(|x| x.as_f64()) {
+                        ap.insert("partsScale".into(), json!(x));
+                    }
+                    if let Some(x) = v.get("useExpressionTint").and_then(|x| x.as_bool()) {
+                        ap.insert("useExpressionTint".into(), json!(x));
+                    }
+                    if ap.is_empty() {
+                        let reply = json!({
+                            "type": "event_status",
+                            "event": "mate",
+                            "status": "error",
+                            "reason": "setAppearance requires color, brightness, faceScale, partsScale, and/or useExpressionTint"
+                        });
+                        socket.send(Message::Text(reply.to_string().into())).await?;
+                        return Ok(());
+                    }
+                    json!({ "appearance": serde_json::Value::Object(ap) })
+                }
+                "setAuto" => {
+                    use serde_json::Map;
+                    let mut a = Map::new();
+                    if let Some(x) = v.get("breath").and_then(|x| x.as_bool()) {
+                        a.insert("breath".into(), json!(x));
+                    }
+                    if let Some(x) = v.get("blink").and_then(|x| x.as_bool()) {
+                        a.insert("blink".into(), json!(x));
+                    }
+                    if let Some(x) = v.get("saccade").and_then(|x| x.as_bool()) {
+                        a.insert("saccade".into(), json!(x));
+                    }
+                    if let Some(x) = v.get("tremor").and_then(|x| x.as_bool()) {
+                        a.insert("tremor".into(), json!(x));
+                    }
+                    if a.is_empty() {
+                        let reply = json!({
+                            "type": "event_status",
+                            "event": "mate",
+                            "status": "error",
+                            "reason": "setAuto requires at least one of breath, blink, saccade, tremor"
+                        });
+                        socket.send(Message::Text(reply.to_string().into())).await?;
+                        return Ok(());
+                    }
+                    json!({ "auto": serde_json::Value::Object(a) })
+                }
+                "setMouthOpen" => {
+                    let Some(val) = v.get("value").and_then(|x| x.as_f64()) else {
+                        let reply = json!({
+                            "type": "event_status",
+                            "event": "mate",
+                            "status": "error",
+                            "reason": "setMouthOpen requires \"value\""
+                        });
+                        socket.send(Message::Text(reply.to_string().into())).await?;
+                        return Ok(());
+                    };
+                    json!({ "mouthOpen": val })
+                }
+                "clearMouthOpen" => json!({ "clearMouthOpen": true }),
+                _ => {
+                    let reply = json!({
+                        "type": "event_status",
+                        "event": "mate",
+                        "status": "error",
+                        "reason": format!("unknown mate action: {action}")
+                    });
+                    socket.send(Message::Text(reply.to_string().into())).await?;
+                    return Ok(());
+                }
+            };
+
+            match app.mate_apply_json(&patch) {
+                Ok(()) => {
+                    let reply = json!({
+                        "type": "event_status",
+                        "event": "mate",
+                        "status": "ok",
+                        "action": action
+                    });
+                    socket.send(Message::Text(reply.to_string().into())).await?;
+                }
+                Err(e) => {
+                    let reply = json!({
+                        "type": "event_status",
+                        "event": "mate",
+                        "status": "error",
+                        "reason": e
+                    });
+                    socket.send(Message::Text(reply.to_string().into())).await?;
+                }
+            }
+        }
         _ => {
             let reply = json!({
                 "type": "error",
@@ -983,11 +1219,25 @@ async fn post_mode(app: SharedState, Json(req): Json<ModeRequest>) -> impl IntoR
         app.clear_sequence().await;
     }
     app.set_output_mode(mode).await;
+    if mode == OutputMode::Mate {
+        let (layout_id, led_count) = {
+            let s = app.state.read().await;
+            (s.layout_id.clone(), s.led_count as usize)
+        };
+        if let Err(e) = app.ensure_interactive_uv(&layout_id, led_count) {
+            tracing::warn!("mate: ensure_interactive_uv failed: {e:#}");
+        }
+    }
     let s = app.state.read().await;
     (StatusCode::OK, Json(state_response(&app, &s))).into_response()
 }
 
 fn state_response(app: &SharedState, s: &RuntimeState) -> StateResponse {
+    let mate = if s.mode == "mate" {
+        Some(app.mate_summary())
+    } else {
+        None
+    };
     StateResponse {
         layout_id: s.layout_id.clone(),
         mode: s.mode.clone(),
@@ -1007,6 +1257,7 @@ fn state_response(app: &SharedState, s: &RuntimeState) -> StateResponse {
         master_brightness: f64::from(app.master_brightness()),
         master_gamma: f64::from(app.master_gamma()),
         loop_source_frame: app.metrics.loop_source_frame(),
+        mate,
     }
 }
 
@@ -1055,6 +1306,29 @@ async fn post_master_tone(
     Json(req): Json<MasterToneRequest>,
 ) -> impl IntoResponse {
     app.set_master_tone(req.brightness as f32, req.gamma as f32);
+    let s = app.state.read().await;
+    (StatusCode::OK, Json(state_response(&app, &s))).into_response()
+}
+
+async fn post_mate_state(app: SharedState, Json(req): Json<serde_json::Value>) -> impl IntoResponse {
+    if app.output_mode() != OutputMode::Mate {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "mate state applies only in output mode \"mate\"".to_string(),
+            }),
+        )
+            .into_response();
+    }
+    if let Err(e) = app.mate_apply_json(&req) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: e,
+            }),
+        )
+            .into_response();
+    }
     let s = app.state.read().await;
     (StatusCode::OK, Json(state_response(&app, &s))).into_response()
 }

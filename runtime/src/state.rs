@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
 
+use crate::mate::{self, MateState};
 use crate::media::{self, LoadedSequence};
 use crate::metrics::OutputMetrics;
 
@@ -79,18 +80,22 @@ pub enum OutputMode {
     Loop,
     /// 消灯ベース。WebSocket のインタラクティブ・パルスのみ UDP に合成。
     Interactive,
+    /// 相棒（球面顔・手続き描画）。
+    Mate,
 }
 
 impl OutputMode {
     const IDLE: u8 = 0;
     const LOOP: u8 = 1;
     const INTERACTIVE: u8 = 2;
+    const MATE: u8 = 3;
 
     pub fn parse(id: &str) -> Option<Self> {
         match id {
             "idle" => Some(Self::Idle),
             "loop" => Some(Self::Loop),
             "interactive" | "ripple" => Some(Self::Interactive),
+            "mate" => Some(Self::Mate),
             _ => None,
         }
     }
@@ -100,6 +105,7 @@ impl OutputMode {
             Self::Idle => "idle",
             Self::Loop => "loop",
             Self::Interactive => "interactive",
+            Self::Mate => "mate",
         }
     }
 
@@ -108,6 +114,7 @@ impl OutputMode {
             Self::Idle => Self::IDLE,
             Self::Loop => Self::LOOP,
             Self::Interactive => Self::INTERACTIVE,
+            Self::Mate => Self::MATE,
         }
     }
 
@@ -116,6 +123,7 @@ impl OutputMode {
             Self::IDLE => Self::Idle,
             Self::LOOP => Self::Loop,
             Self::INTERACTIVE => Self::Interactive,
+            Self::MATE => Self::Mate,
             _ => Self::Loop,
         }
     }
@@ -199,6 +207,7 @@ pub struct SharedApp {
     /// `assets/compiled/<layout>.ledmap.json` 由来。インタラクティブ合成用（LED インデックス順）。
     pub(crate) interactive_uv: StdRwLock<Option<Vec<(f32, f32)>>>,
     pub(crate) interactive_pulses: StdRwLock<Vec<InteractivePulse>>,
+    pub(crate) mate_state: StdRwLock<MateState>,
     /// WS `setEffect` またはパルス省略時に使う既定エフェクト。
     interactive_default_effect: AtomicU8,
     /// 全モード共通: 最終 RGB に掛ける明るさ（0–2、1 が既定）。
@@ -235,6 +244,7 @@ pub fn new_shared(
         media_uploads: RwLock::new(HashMap::new()),
         interactive_uv: StdRwLock::new(None),
         interactive_pulses: StdRwLock::new(Vec::new()),
+        mate_state: StdRwLock::new(MateState::default()),
         interactive_default_effect: AtomicU8::new(InteractiveEffectKind::ExpandingRingDiagonal.code()),
         master_brightness_bits: AtomicU32::new(f32::to_bits(1.0)),
         master_gamma_bits: AtomicU32::new(f32::to_bits(1.0)),
@@ -351,5 +361,21 @@ impl SharedApp {
         };
         let now = Instant::now();
         g.retain(|p| now < p.started + p.duration);
+    }
+
+    pub fn mate_apply_json(&self, v: &serde_json::Value) -> Result<(), String> {
+        let mut g = self
+            .mate_state
+            .write()
+            .map_err(|_| "mate_state lock poisoned".to_string())?;
+        g.apply_json_patch(v)
+    }
+
+    pub fn mate_summary(&self) -> mate::MateSummary {
+        self.mate_state
+            .read()
+            .ok()
+            .map(|g| g.summary())
+            .unwrap_or_else(|| MateState::default().summary())
     }
 }

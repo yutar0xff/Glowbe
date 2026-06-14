@@ -8,6 +8,7 @@ use tracing::{debug, info, warn};
 
 use crate::config::Config;
 use crate::discover;
+use crate::mate;
 use crate::media;
 use crate::pattern;
 use crate::sphere::{angle_rad_between_unit, unit_dir_from_equirect_uv_y_up};
@@ -147,6 +148,11 @@ pub async fn run(config: Config, app: SharedState, meta_path: PathBuf) -> Result
                         app.metrics.set_loop_source_frame(None);
                         pattern::fill_loop_rgb(t_ms, &mut rgb, pattern_uv.as_deref());
                     }
+                }
+                OutputMode::Mate => {
+                    app.metrics.set_loop_source_frame(None);
+                    let dt = frame_interval.as_secs_f32();
+                    mate::tick_and_render_mate(&app, loop_start, Instant::now(), dt, &mut rgb);
                 }
             }
 

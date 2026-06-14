@@ -1,3 +1,30 @@
+export type MateDynamics = {
+  stiffness: number
+  damping: number
+  floatiness: number
+  trailLag: number
+}
+
+export type MateSummary = {
+  expression: string
+  mood: string
+  idleRoutine: string
+  gazeU: number
+  gazeV: number
+  gazePull: number
+  cluster: number
+  idleSpeed: number
+  color: [number, number, number]
+  brightness: number
+  faceScale: number
+  partsScale: number
+  dynamics: MateDynamics
+  autoBreath: boolean
+  autoBlink: boolean
+  autoSaccade: boolean
+  autoTremor: boolean
+}
+
 export type RuntimeState = {
   layoutId: string
   mode: string
@@ -18,6 +45,7 @@ export type RuntimeState = {
   framesSent: number
   masterBrightness: number
   masterGamma: number
+  mate?: MateSummary | null
 }
 
 export type SequenceSummary = {
@@ -67,6 +95,6 @@ export type LoadState =
   | { kind: 'ready'; state: RuntimeState; health: Health; sequences: SequenceSummary[]; fetchedAt: Date }
   | { kind: 'error'; message: string; health?: Health; fetchedAt?: Date }
 
-export type OutputMode = 'idle' | 'loop' | 'interactive'
+export type OutputMode = 'idle' | 'loop' | 'interactive' | 'mate'
 
 export type InteractiveEffectKind = 'sphereGaussian' | 'expandingRingDiagonal'

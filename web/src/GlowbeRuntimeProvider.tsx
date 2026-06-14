@@ -317,6 +317,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       convertMediaUpload,
       setSequenceDisplayName,
       deleteSequence,
+      refreshLoad,
     }),
     [
       load,
@@ -332,6 +333,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       convertMediaUpload,
       setSequenceDisplayName,
       deleteSequence,
+      refreshLoad,
     ],
   )
 

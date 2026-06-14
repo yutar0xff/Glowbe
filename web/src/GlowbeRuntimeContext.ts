@@ -24,6 +24,8 @@ export type GlowbeRuntimeContextValue = {
   setSequenceDisplayName: (sequenceId: string, displayName: string) => Promise<void>
   /** シーケンスをディスクから削除（再生中ならサーバが選択解除）。 */
   deleteSequence: (sequenceId: string) => Promise<void>
+  /** Refetch runtime state (e.g. after mate updates). */
+  refreshLoad: () => Promise<void>
 }
 
 export const GlowbeRuntimeContext = createContext<GlowbeRuntimeContextValue | null>(null)
