@@ -7,18 +7,7 @@
 static const uint8_t GLOWBE_GPIO_PINS[5] = { 16, 17, 18, 19, 21 };
 static const uint16_t GLOWBE_LINE_LED_COUNTS[5] = { 45, 45, 45, 45, 45 };
 
-// ESP32-S3: contiguous buffer + LCD DMA parallel (FastLED FASTLED_USES_ESP32S3_I2S).
-#define GLOWBE_FASTLED_REGISTER_PARALLEL(leds) \
-  FastLED.addLeds<WS2812, 16, GRB>((leds) + 0, 45); \
-  FastLED.addLeds<WS2812, 17, GRB>((leds) + 45, 45); \
-  FastLED.addLeds<WS2812, 18, GRB>((leds) + 90, 45); \
-  FastLED.addLeds<WS2812, 19, GRB>((leds) + 135, 45); \
-  FastLED.addLeds<WS2812, 21, GRB>((leds) + 180, 45);
-
-// ESP32 (classic): per-line buffers; `prototype-esp32` は FastLED I2S-parallel（platformio.ini）。
-#define GLOWBE_FASTLED_REGISTER_RMT(strips) \
-  FastLED.addLeds<WS2812, 16, GRB>((strips)[0], 45); \
-  FastLED.addLeds<WS2812, 17, GRB>((strips)[1], 45); \
-  FastLED.addLeds<WS2812, 18, GRB>((strips)[2], 45); \
-  FastLED.addLeds<WS2812, 19, GRB>((strips)[3], 45); \
-  FastLED.addLeds<WS2812, 21, GRB>((strips)[4], 45);
+// NeoPixelBus: データ線ごとに NeoPixelBus(count, pin)。
+// S3 は NeoEsp32LcdX8/X16Ws2812xMethod、無印は NeoEsp32I2s0X8/X16Ws2812xMethod（I2S0）。
+// 論理インデックスは `GLOWBE_LINE_LED_COUNTS` の先頭から順に各 GPIO へ割当（一次元 UDP と一致）。
+// 並列幅: X8（≤8 本）

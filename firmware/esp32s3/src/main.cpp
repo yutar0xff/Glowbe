@@ -1,5 +1,10 @@
 /**
  * Glowbe prototype firmware — UDP FRAME RGB output.
+ *
+ * 表示方針:
+ * - 完全フレームが揃ったときだけ LED を更新する（部分フレームでは前表示を維持）。
+ * - 受信途絶・リンクタイムアウトでも消灯しない（最後に表示したフレームを保持）。
+ * - オプションでプレイアウト遅延（ジッタバッファ）: `include/glowbe_playout.h` を参照。
  */
 #include <Arduino.h>
 #include <ESPmDNS.h>
@@ -7,6 +12,7 @@
 #include <cstring>
 
 #include "glowbe_layout.h"
+#include "glowbe_playout.h"
 #include "glowbe_udp.h"
 #include "glowbe_wire.h"
 #include "led_driver.h"
@@ -26,24 +32,26 @@ namespace {
 constexpr uint16_t kUdpPort = 49152;
 constexpr uint16_t kStatusPort = 49153;
 constexpr uint32_t kStatusIntervalMs = 1000;
-constexpr uint32_t kIdleLedIntervalMs = 50;
-constexpr uint32_t kLinkTimeoutMs = 3000;
+constexpr uint32_t kLinkStaleLogMs = 10000;  // 診断用（消灯はしない）
 constexpr uint16_t kMaxPacketsPerLoop = 32;
 
 glowbe::wire::FrameAssembler assembler(GLOWBE_LED_COUNT);
+glowbe::playout::Ring g_playout;
 
 uint32_t frames_rx = 0;
 uint32_t drops = 0;  // discarded packets (malformed header etc.), Glowbe Wire v1 STATUS offset 10
 uint32_t udp_errors = 0;
 uint32_t last_udp_rx_ms = 0;
-uint32_t last_idle_show_ms = 0;
 uint32_t fps_window_start = 0;
 uint16_t fps_window_count = 0;
 uint16_t fps_rx_x10 = 0;
 IPAddress last_peer;
 bool have_last_peer = false;
-bool link_lost_blackout_sent = false;
-uint8_t latest_rgb[GLOWBE_LED_COUNT * 3] = {};
+
+void applyCompleteFrame(const uint8_t* rgb) {
+  glowbe_led_set_rgb(rgb);
+  glowbe_led_show();
+}
 
 void sendStatusTo(const IPAddress& ip) {
   uint8_t pkt[20] = {};
@@ -114,6 +122,7 @@ void onWifiEvent(WiFiEvent_t event) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       Serial.println(WiFi.localIP());
+      g_playout.reset();
       startUdpListen();
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
@@ -123,19 +132,10 @@ void onWifiEvent(WiFiEvent_t event) {
       }
       have_last_peer = false;
       last_udp_rx_ms = 0;
-      link_lost_blackout_sent = false;
       break;
     default:
       break;
   }
-}
-
-void showIdlePattern(uint32_t now) {
-  if (now - last_idle_show_ms < kIdleLedIntervalMs) {
-    return;
-  }
-  last_idle_show_ms = now;
-  glowbe_led_test_pattern(now);
 }
 
 }  // namespace
@@ -145,9 +145,15 @@ void setup() {
   delay(500);
   Serial.printf("Glowbe layout=%s leds=%d lines=%d driver=%s\n", GLOWBE_LAYOUT_ID, GLOWBE_LED_COUNT,
                 GLOWBE_DATA_LINES, glowbe_led_driver_name());
+#if GLOWBE_PLAYOUT_LAG_FRAMES > 0
+  Serial.printf("playout: lag_frames=%d ring_cap=%d\n", GLOWBE_PLAYOUT_LAG_FRAMES, GLOWBE_PLAYOUT_RING_CAP);
+#else
+  Serial.println("playout: off (lag_frames=0)");
+#endif
 
   glowbe_led_init();
-  glowbe_led_test_pattern(0);
+  glowbe_led_clear();
+  g_playout.reset();
 
   WiFi.onEvent(onWifiEvent);
   WiFi.mode(WIFI_STA);
@@ -176,10 +182,8 @@ void loop() {
 
   uint8_t buf[glowbe::wire::kHeaderSize + glowbe::wire::kMaxChunkPayload];
   IPAddress from;
-  bool have_new_frame = false;
   uint16_t packets_processed = 0;
 
-  // Consume only a bounded number of packets per loop to avoid starving LED latch.
   while (packets_processed < kMaxPacketsPerLoop) {
     const int n = glowbe::udp::recv(buf, sizeof(buf), &from);
     if (n == -2) {
@@ -198,8 +202,7 @@ void loop() {
     if (glowbe::wire::parseHeader(buf, static_cast<size_t>(n), hdr)) {
       const uint8_t* payload = buf + glowbe::wire::kHeaderSize;
       if (assembler.ingest(hdr, payload, GLOWBE_LED_COUNT)) {
-        memcpy(latest_rgb, assembler.buffer(), sizeof(latest_rgb));
-        have_new_frame = true;
+        g_playout.push(assembler.buffer(), applyCompleteFrame);
         noteFrameRx();
       }
     } else {
@@ -208,31 +211,18 @@ void loop() {
     packets_processed++;
   }
 
-  if (have_new_frame) {
-    glowbe_led_set_rgb(latest_rgb);
-    glowbe_led_show();
-    link_lost_blackout_sent = false;
-  }
-
-  const bool link_live = last_udp_rx_ms > 0 && (now - last_udp_rx_ms < kLinkTimeoutMs);
-  if (!link_live && WiFi.status() == WL_CONNECTED) {
-    if (frames_rx == 0) {
-      showIdlePattern(now);
-    } else if (!link_lost_blackout_sent) {
-      memset(latest_rgb, 0, sizeof(latest_rgb));
-      glowbe_led_set_rgb(latest_rgb);
-      glowbe_led_show();
-      link_lost_blackout_sent = true;
-    }
-  }
-
   static uint32_t last_diag = 0;
   if (now - last_diag >= 5000) {
     last_diag = now;
-    Serial.printf("diag: ip=%s frames=%lu drops=%lu udp_err=%lu fps_x10=%u rssi=%d\n",
-                  WiFi.localIP().toString().c_str(), static_cast<unsigned long>(frames_rx),
-                  static_cast<unsigned long>(drops), static_cast<unsigned long>(udp_errors),
-                  fps_rx_x10, WiFi.RSSI());
+    const bool link_stale =
+        last_udp_rx_ms > 0 && (now - last_udp_rx_ms >= kLinkStaleLogMs);
+    Serial.printf(
+        "diag: ip=%s frames=%lu drops=%lu frame_aborts=%lu udp_err=%lu fps_x10=%u rssi=%d%s\n",
+        WiFi.localIP().toString().c_str(), static_cast<unsigned long>(frames_rx),
+        static_cast<unsigned long>(drops),
+        static_cast<unsigned long>(assembler.incomplete_frame_aborts()),
+        static_cast<unsigned long>(udp_errors), fps_rx_x10, WiFi.RSSI(),
+        link_stale ? " link_stale(hold_last)" : "");
   }
 
   static uint32_t last_status = 0;

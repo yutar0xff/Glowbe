@@ -54,6 +54,7 @@ async fn main() -> Result<()> {
         led_count,
         config.modes.default.clone(),
         expected_layout_hash,
+        compiled_dir.clone(),
         sequences_dir,
     );
 

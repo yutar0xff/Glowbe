@@ -1,4 +1,4 @@
-/// Prototype loop pattern — matches firmware CHSV layout; wire buffer is **logical RGB** (R,G,B order).
+/// Prototype loop pattern (runtime / Web 用)。ワイヤバッファは **論理 RGB**（R,G,B 順）。
 pub fn fill_loop_rgb(led_count: usize, t_ms: u32, rgb: &mut [u8]) {
     const LEDS_PER_LINE: usize = 45;
     let t = t_ms;

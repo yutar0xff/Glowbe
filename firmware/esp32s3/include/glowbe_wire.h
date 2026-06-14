@@ -55,28 +55,42 @@ class FrameAssembler {
 
   bool ingest(const FrameHeader& hdr, const uint8_t* payload, size_t expected_led_count) {
     if (hdr.led_count != expected_led_count || hdr.chunk_count == 0 ||
-        hdr.chunk_index >= hdr.chunk_count) {
+        hdr.chunk_index >= hdr.chunk_count || hdr.chunk_count > 64) {
+      return false;
+    }
+
+    const uint16_t expected_chunks = chunkCountForPayload(expected_bytes_);
+    if (hdr.chunk_count != expected_chunks) {
       return false;
     }
 
     if (hdr.frame_id != assembling_id_ || chunk_count_ == 0) {
+      // 前フレームが未完のまま別 frame_id に切り替わった（欠落・順序逆転・送信側の打ち切り等）
+      if (chunk_count_ > 0 && !assembly_fully_received()) {
+        incomplete_frame_aborts_++;
+      }
       assembling_id_ = hdr.frame_id;
       chunk_count_ = hdr.chunk_count;
       received_bytes_ = 0;
       memset(received_mask_, 0, sizeof(received_mask_));
       memset(chunk_sizes_, 0, sizeof(chunk_sizes_));
+      memset(buffer_, 0, expected_bytes_);
     }
 
-    if (hdr.chunk_count != chunk_count_ || received_mask_[hdr.chunk_index]) {
+    if (hdr.chunk_count != chunk_count_) {
       return false;
     }
 
-    size_t offset = 0;
-    for (uint16_t i = 0; i < hdr.chunk_index; i++) {
-      offset += chunk_sizes_[i];
-    }
-    if (offset + hdr.payload_len > expected_bytes_) {
+    const size_t offset = chunkByteOffset(hdr.chunk_index, expected_bytes_);
+    const uint16_t expected_len =
+        static_cast<uint16_t>(chunkPayloadLen(hdr.chunk_index, hdr.chunk_count, expected_bytes_));
+    if (hdr.payload_len != expected_len || offset + hdr.payload_len > expected_bytes_) {
       return false;
+    }
+
+    if (received_mask_[hdr.chunk_index]) {
+      // 同一 frame_id のチャンク再送（送信側リトライ）を許可
+      received_bytes_ -= chunk_sizes_[hdr.chunk_index];
     }
 
     memcpy(buffer_ + offset, payload, hdr.payload_len);
@@ -84,7 +98,7 @@ class FrameAssembler {
     received_mask_[hdr.chunk_index] = true;
     received_bytes_ += hdr.payload_len;
 
-    if (received_bytes_ < expected_bytes_) {
+    if (received_bytes_ != expected_bytes_) {
       return false;
     }
     for (uint16_t i = 0; i < chunk_count_; i++) {
@@ -97,7 +111,45 @@ class FrameAssembler {
 
   const uint8_t* buffer() const { return buffer_; }
 
+  /// 未完成フレームを捨てて別 `frame_id` に切り替えた回数（診断用。`drops` とは別）。
+  uint32_t incomplete_frame_aborts() const { return incomplete_frame_aborts_; }
+
  private:
+  bool assembly_fully_received() const {
+    if (chunk_count_ == 0 || received_bytes_ != expected_bytes_) {
+      return false;
+    }
+    for (uint16_t i = 0; i < chunk_count_; i++) {
+      if (!received_mask_[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static uint16_t chunkCountForPayload(size_t total_rgb) {
+    return static_cast<uint16_t>((total_rgb + kMaxChunkPayload - 1) / kMaxChunkPayload);
+  }
+
+  static size_t chunkByteOffset(uint16_t chunk_index, size_t total_rgb) {
+    size_t off = 0;
+    for (uint16_t i = 0; i < chunk_index; i++) {
+      const size_t remain = total_rgb - off;
+      const size_t len = remain > kMaxChunkPayload ? kMaxChunkPayload : remain;
+      off += len;
+    }
+    return off;
+  }
+
+  static size_t chunkPayloadLen(uint16_t chunk_index, uint16_t chunk_count, size_t total_rgb) {
+    if (chunk_index >= chunk_count) {
+      return 0;
+    }
+    const size_t off = chunkByteOffset(chunk_index, total_rgb);
+    const size_t remain = total_rgb - off;
+    return remain > kMaxChunkPayload ? kMaxChunkPayload : remain;
+  }
+
   uint16_t expected_led_count_;
   size_t expected_bytes_;
   uint32_t assembling_id_ = 0;
@@ -106,6 +158,7 @@ class FrameAssembler {
   uint16_t chunk_sizes_[64] = {};
   bool received_mask_[64] = {};
   uint8_t buffer_[4096];
+  uint32_t incomplete_frame_aborts_ = 0;
 };
 
 }  // namespace glowbe::wire

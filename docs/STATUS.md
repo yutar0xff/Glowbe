@@ -2,7 +2,7 @@
 
 > **役割:** 本書は「いま何ができていて、次に何をやるか」の**正本**。  
 > 設計の「あるべき姿」は [`ARCHITECTURE.md`](ARCHITECTURE.md)、各仕様は [`../protocol/`](../protocol/)。  
-> 最終更新: 2026-06-14（ESP32 無印: FastLED I2S-parallel、`BENCHMARK.md` 暫定記録）
+> 最終更新: 2026-06-14（S3/無印とも NeoPixelBus、無印ちらつき対策確認済み）
 
 ---
 
@@ -12,8 +12,8 @@
 |------|--------|
 | フェーズ | **Phase 2（静止画→シーケンス最小パイプライン実装中）** |
 | ランタイム | loop パターン / 選択シーケンス再生 + 状態 API。`cargo test` **5** 件パス |
-| ファーム | UDP 受信・フレーム再構成・S3(LCD+DMA)/無印(FastLED I2S-parallel) ドライバ実装済 |
-| UDP E2E | ESP32 **無印**で 60fps×5 分ベンチ通過を確認（記録: [`BENCHMARK.md`](BENCHMARK.md)）。**ESP32-S3 本番ボードでは未再計測** |
+| ファーム | UDP 受信・フレーム再構成・S3(NeoPixelBus LCD)/無印(NeoPixelBus I2S0) ドライバ実装済。欠落時は前フレーム保持 + プレイアウト遅延 |
+| UDP E2E | ESP32 **無印**で 60fps×5 分ベンチ通過、ちらつき解消を確認（記録: [`BENCHMARK.md`](BENCHMARK.md)）。**ESP32-S3 本番ボードでは未再計測** |
 | Web | **Phase 2 UI 一部実装**（状態/モード/シーケンス一覧・選択） |
 | メディアパイプライン | **Phase 2 最小実装**（正距円筒静止画→1フレームシーケンス） |
 
@@ -28,14 +28,14 @@
 | コンポーネント | パス | 状況 | 備考 |
 |----------------|------|------|------|
 | Rust ランタイム | `runtime/` | 🟡 | 送信失敗でループ停止しない・60 連続失敗で再接続／mDNS（`esp_ip` 省略時）／`[assets].compiled_dir`／ホットパス atomics／`layoutMismatch`・**論理 RGB** ワイヤ |
-| `Mode` trait・モード合成 | `runtime/`（§9） | 🟡 | trait 化は未実装。`idle`/`loop` は atomic flag で最小切替済み |
+| `Mode` trait・モード合成 | `runtime/`（§9） | 🟡 | trait 化は未実装。`idle` / `loop` / `ripple` は atomic |
 | メディアワーカー / 変換 | `runtime/src/media.rs` | 🟡 | CLI `convert-image` で正距円筒 PNG/JPEG → `manifest.json` + `frames.bin`（1フレーム） |
-| プレビュー（WS JPEG） | `runtime/`（§14） | ⬜ | |
+| プレビュー（WS JPEG） | `runtime/`（§14） | 🟡 | `preview_frame` は LED ストリップ状の低解像 JPEG（正距円筒 UV マップ画像ではない） |
 | サーバマイク（cpal） | `runtime/`（§6.1） | ⬜ | Phase 4 |
-| Web クライアント | `web/` | ✅ | Vite + React。状態表示、`idle`/`loop`、シーケンス一覧・選択 |
-| ESP ファーム（共通） | `firmware/esp32s3/` | ✅ | Wi-Fi STA / UDP / 再構成 / **20 バイト STATUS**（`layout_hash`）/ idle パターン |
-| LED ドライバ S3 | `src/led_driver_s3.cpp` | ✅ | LCD+DMA、`setMaxPower`（暫定 4000mA TODO）、論理 RGB 入力 |
-| LED ドライバ 無印 | `src/led_driver_esp32.cpp` | ✅ | FastLED I2S-parallel（`prototype-esp32` の build_flags）、論理 RGB 入力 |
+| Web クライアント | `web/` | ✅ | Vite + React。`/` ステータス、`/mode` で Idle トグル + Loop/Ripple へのリンク、`/mode/loop`・`/mode/ripple`（英語 UI） |
+| ESP ファーム（共通） | `firmware/esp32s3/` | ✅ | Wi-Fi STA / UDP / 再構成 / **20 バイト STATUS**（`layout_hash`）。LED は UDP のみ（マイコン内アニメなし）。受信途絶時は前フレーム保持 |
+| LED ドライバ S3 | `src/led_driver_s3.cpp` | ✅ | NeoPixelBus LCD 並列（`NeoEsp32LcdX8/X16Ws2812xMethod`）、論理 RGB → `NeoGrbFeature` |
+| LED ドライバ 無印 | `src/led_driver_esp32.cpp` | ✅ | NeoPixelBus I2S0 並列（`NeoEsp32I2s0X8/X16Ws2812xMethod`）、論理 RGB 入力 |
 | レイアウト v1 + コンパイル | `config/layouts/`, `tools/layout-compile.ts` | ✅ | **`layoutHash` / `GLOWBE_LAYOUT_HASH`** を出力。プロトタイプ 225 LED コンパイル済 |
 | プロトコル文書 | `protocol/` | ✅ | udp-wire / control-api / glowseq / compiled-layout |
 | ベンチツール | `tools/bench-udp.mjs`, `tools/listen-status.mjs` | ✅ | 無印で合格記録あり（[`BENCHMARK.md`](BENCHMARK.md)） |
@@ -49,11 +49,12 @@
 |----------------|------|------|
 | `GET /api/v1/state` | ✅ | `layoutId, mode, fpsOut, fpsRx, espRssi, espDrops, ledCount, loopSequenceId, uptimeSec, frameLoopStaleMs, layoutMismatch, framesSent` |
 | `GET /health` | ✅ | 出力ループ tick が **1s 超 stale** なら **503**、そうでなければ **200 ok** |
-| `POST /api/v1/mode` | ✅ | `idle` / `loop` の最小切替。`idle` は黒フレーム、`loop` はテストパターン |
+| `POST /api/v1/mode` | ✅ | `idle`（黒・シーケンス解除）/ `loop` / `ripple`（消灯＋WS ripple のみ合成） |
 | `POST /api/v1/loop/select` | ✅ | 生成済みシーケンスを読み込み、layout/LED 数一致時に loop へ選択 |
 | `GET /api/v1/sequences` | ✅ | `assets/sequences/*/manifest.json` の一覧 |
-| `GET /api/v1/layout/uv` | ⬜ | UV プレビュー |
-| `GET /api/v1/ws`（ripple/preview） | ⬜ | |
+| `GET /api/v1/layout/uv` | ✅ | `assets/compiled/<layoutId>.ledmap.json` を返す |
+| `GET /api/v1/ws`（state 配信） | ✅ | 接続直後 + 1 秒ごとに state を送信 |
+| `GET /api/v1/ws`（ripple/preview） | ✅ | `ripple` UV 合成（ledmap 必須）。`subscribe_preview` / `unsubscribe_preview` で JPEG `preview_frame`（約 500ms ごと・最新のみ） |
 | `media/upload`, `media/convert` | ⬜ | Phase 2 後続 |
 
 詳細仕様: [`../protocol/control-api.md`](../protocol/control-api.md)
@@ -65,7 +66,8 @@
 | モード | id | 状況 |
 |--------|-----|------|
 | ループ再生 | `loop` | 🟡 現状は変換シーケンス再生ではなく、ランタイム内蔵のテストパターン（`pattern.rs`）を送出 |
-| インタラクティブ | `interactive` | ⬜ Phase 3 |
+| リップル（消灯＋WS） | `ripple` | ✅ 消灯出力＋WS `ripple` のみ合成（`loop` では `ripple` WS は拒否） |
+| インタラクティブ（将来） | `interactive` | ⬜ Phase 3 |
 | デジタル時計 | `clock_digital` | ⬜ Phase 4a（ロードマップ分割後） |
 | アナログ時計 | `clock_analog` | ⬜ Phase 4a |
 | サーバマイク | `mic` | ⬜ Phase 4b |
@@ -77,9 +79,11 @@
 - **STATUS offset 10 は `drops`**。実装・仕様・API（`espDrops`）で一致。
 - **STATUS 拡張（20 バイト）:** 末尾 4 バイトに `layout_hash`（FNV-1a）。ランタイムは `meta.layoutHash` と照合し `layoutMismatch` を立てる。16 バイトのみの旧ファームは照合スキップ。
 - **FRAME ペイロード上限** ランタイム・ファームとも **1472 バイト**（旧 1020 から拡大）。ESP 側 `FrameAssembler` バッファ **4096** バイト。
-- **ワイヤ色順:** **論理 RGB**（R,G,B）。GRB 物理順は FastLED の `GRB` テンプレートのみが担当（二重変換を解消済み）。
+- **ワイヤ色順:** **論理 RGB**（R,G,B）。GRB 物理順は **NeoPixelBus `NeoGrbFeature`** が担当（二重変換を解消済み）。
+- **欠落時表示:** 完全フレームが揃わない場合は LED を更新せず、最後に表示したフレームを保持する。受信途絶で自動消灯しない。
+- **プレイアウト遅延:** ファーム側 `GLOWBE_PLAYOUT_LAG_FRAMES` 既定 2、リング 8。ESP32 無印で低 fps でも出ていた消灯ちらつきは、この方針で解消確認済み。
 - 現ファームの `drops` は主に **不正ヘッダで破棄したパケット数**。
-  - ⚠️ **TODO:** チャンク欠落による未完成フレーム破棄の計上（`FrameAssembler` 拡張）。
+- **未完成フレーム破棄:** `FrameAssembler` は、別 `frame_id` に切り替わる際に前フレームが未完なら **`incomplete_frame_aborts`** を増やす（シリアル `diag` の `frame_aborts=`）。STATUS の `drops` とは別指標（ワイヤ上の STATUS には未載せ）。
 
 ---
 
@@ -88,24 +92,24 @@
 | # | 内容 | 優先 |
 |---|------|------|
 | 1 | **ESP32-S3 で 60fps×5 分ベンチを再計測し `BENCHMARK.md` に追記** | 高（本番ハード検証） |
-| 2 | 残 API（`layout/uv` / `ws`）の実装方針確定 | 高 |
+| 2 | ~~WebSocket の `preview_frame` / `ripple`~~ → 実装済（プレビューはストリップ状 JPEG のみ。EQ 投影や帯域制御は未） | 完了 |
 | 3 | `Mode` trait 導入（loop 固定からプラグイン化へ） | 中 |
-| 4 | frame-drop（チャンク欠落）カウントの実装 | 中 |
+| 4 | ~~frame-drop（チャンク欠落）カウント~~ → シリアル `frame_aborts`（`FrameAssembler::incomplete_frame_aborts`）で計上 | 完了（STATUS への載せは未） |
 | 5 | LICENSE 確定（README "TBD"。完全オープン方針なら明示） | 中 |
 | 6 | 製品レイアウト `product-geodesic-2v-60` のコンパイル・検証 | 中 |
 | 8 | `hardware/pcb/glowbe-revA/` の追加 | 低 |
-| 9 | **判断待ち:** `SK6805` と FastLED `WS2812` テンプレの組み合わせ／`SK6812` 等への切替 | 低 |
+| 9 | **判断待ち:** `SK6805` と NeoPixelBus `NeoGrbFeature`/`Ws2812x` タイミングの整合／`SK6812` 等への切替 | 低 |
 | 10 | PlatformIO ファームの `pio run` を CI に追加（キャッシュ設定含む） | 低 |
 
-**直近の実装反映:** Phase 2 最小（`convert-image` CLI、`GET /api/v1/sequences`、`POST /api/v1/loop/select`、Web 選択 UI、選択シーケンス再生）、Phase 1.5 Web、UDP 送信失敗耐性、layout hash、mDNS、GitHub Actions（Rust + Web）、**無印: FastLED I2S-parallel LED 出力**。
+**直近の実装反映:** Phase 2 最小（`convert-image` CLI、`GET /api/v1/sequences`、`GET /api/v1/layout/uv`、`GET /api/v1/ws` state + **ripple / ストリップ JPEG プレビュー**、`POST /api/v1/loop/select`、Web 選択 UI、選択シーケンス再生）、Phase 1.5 Web、UDP 送信失敗耐性、layout hash、mDNS、GitHub Actions（Rust + Web）、**S3/無印: NeoPixelBus LED 出力（マイコン内アニメなし）**、前フレーム保持 + プレイアウト遅延によるちらつき対策。
 
 ---
 
 ## 7. 次の具体タスク（Phase 1 締め）
 
 1. **ESP32-S3 実機でベンチ再計測**: 無印と同条件で 5 分 → [`BENCHMARK.md`](BENCHMARK.md) に追記。
-2. ファームを再フラッシュし、blackout / sequence 選択の実機挙動を確認。
-3. Phase 2 を拡張（動画/複数フレーム変換、Web アップロード、変換進捗）。
+2. Phase 2 を拡張（動画/複数フレーム変換、Web アップロード、変換進捗、WebSocket プレビューを **正距円筒 UV マップ** 相当へ）。
+3. ESP32-S3 本番ボード到着後、同じプレイアウト設定で実機ベンチを再計測。
 
 ---
 
@@ -115,7 +119,7 @@
 |------|------|----------|
 | レイアウト | Node 20+ | `npx tsx tools/layout-compile.ts config/layouts/prototype.layout.json` |
 | ランタイム | Rust toolchain + C linker | `cd runtime && cargo run -- ../config.toml` |
-| Web | Node 20+ | `cd web && npm install && npm run dev`（状態表示 + `idle`/`loop` 切替 + シーケンス選択。既定で runtime `127.0.0.1:8080` へプロキシ） |
+| Web | Node 20+ | `cd web && npm install && npm run dev`（`/api` と WS をランタイムへプロキシ。`/` `/mode` `/mode/loop` `/mode/ripple`） |
 | 静止画変換 | Rust + PNG/JPEG | `cargo run --manifest-path runtime/Cargo.toml -- convert-image /path/to/image.png sequence-id config.toml` |
 | ファーム | PlatformIO（`uv`） | `cd firmware/esp32s3 && uv sync && uv run pio run -e prototype -t upload` |
 | ベンチ | Node 20+ | `docs/BENCHMARK.md` 参照 |

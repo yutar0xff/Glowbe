@@ -13,11 +13,24 @@ struct LedMap {
     leds: Vec<LedPoint>,
 }
 
-#[derive(Debug, Deserialize)]
-struct LedPoint {
-    i: usize,
-    u: f32,
-    v: f32,
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LedPoint {
+    pub i: usize,
+    pub u: f32,
+    pub v: f32,
+    #[serde(default)]
+    pub channel: usize,
+    #[serde(default)]
+    pub chain_index: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutUv {
+    pub layout_id: String,
+    pub led_count: usize,
+    pub leds: Vec<LedPoint>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -65,6 +78,31 @@ pub struct LoadedSequence {
     pub frame_count: usize,
     pub fps: u32,
     frames: Vec<u8>,
+}
+
+pub fn load_layout_uv(compiled_dir: &Path, layout_id: &str) -> Result<LayoutUv> {
+    if layout_id.is_empty() || layout_id.contains('/') || layout_id.contains('\\') {
+        anyhow::bail!("layout id must be non-empty and must not contain path separators");
+    }
+
+    let ledmap_path = compiled_dir.join(format!("{layout_id}.ledmap.json"));
+    let ledmap_raw = fs::read_to_string(&ledmap_path)
+        .with_context(|| format!("read {}", ledmap_path.display()))?;
+    let ledmap: LedMap = serde_json::from_str(&ledmap_raw)
+        .with_context(|| format!("parse {}", ledmap_path.display()))?;
+    if ledmap.layout_id != layout_id {
+        anyhow::bail!(
+            "layout id mismatch in ledmap: got {}, expected {}",
+            ledmap.layout_id,
+            layout_id
+        );
+    }
+
+    Ok(LayoutUv {
+        layout_id: ledmap.layout_id,
+        led_count: ledmap.leds.len(),
+        leds: ledmap.leds,
+    })
 }
 
 pub fn convert_equirect_image_to_sequence(

@@ -39,8 +39,11 @@ cargo run --manifest-path runtime/Cargo.toml -- \
 | STATUS 受信 | UDP 49153 ← ESP |
 | `GET /api/v1/state` | HTTP 8080 |
 | `GET /health` | HTTP 8080（出力ループ停止時 503） |
-| `POST /api/v1/mode` | HTTP 8080（`idle` / `loop`） |
+| `POST /api/v1/mode` | HTTP 8080（`idle` / `loop` / `ripple`） |
 | `POST /api/v1/loop/select` | HTTP 8080（生成済みシーケンス選択） |
+| `GET /api/v1/sequences` | HTTP 8080（生成済みシーケンス一覧） |
+| `GET /api/v1/layout/uv` | HTTP 8080（LED UV マップ） |
+| `GET /api/v1/ws` | WebSocket 8080（`state` 約 1s、`ping`/`pong`、`ripple` UV 波紋を送出フレームに合成、`subscribe_preview` で JPEG `preview_frame`） |
 
 `/api/v1/state` の JSON は camelCase（`frameLoopStaleMs`, `layoutMismatch`, `framesSent` 等）。
 

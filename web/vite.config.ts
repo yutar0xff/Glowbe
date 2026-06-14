@@ -7,7 +7,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': runtimeTarget,
+      '/api': {
+        target: runtimeTarget,
+        ws: true,
+      },
       '/health': runtimeTarget,
     },
   },

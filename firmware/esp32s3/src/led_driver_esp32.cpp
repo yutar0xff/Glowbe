@@ -1,54 +1,84 @@
 /**
- * ESP32（無印）— FastLED I2S-parallel（`prototype-esp32` で `FASTLED_ESP32_I2S` 有効）。
+ * ESP32（無印）— NeoPixelBus I2S0 並列（WS2812x）。
  *
- * 5 本の WS2812 線は同一タイミングのため I2S 並列出力に適する。UDP 経路のチラつき対策は
- * main の受信ドレイン + 単回 show、および FastLED.setDither(0) で行う。
+ * `NeoEsp32I2s0X8Ws2812xMethod`（または X16）でデータ線ごとに NeoPixelBus を生成する。
+ * Arduino-ESP32 のデフォルト X8 エイリアスは I2S1 側のため、明示的に I2S0 を選択する。
  */
 #include <Arduino.h>
-#include <FastLED.h>
+#include <NeoPixelBus.h>
 
 #include "glowbe_layout.h"
 #include "led_driver.h"
 
 namespace {
 
-constexpr uint16_t kMaxLedsPerLine = 64;
-CRGB strips[GLOWBE_DATA_LINES][kMaxLedsPerLine];
+#if GLOWBE_DATA_LINES > 8
+using StripMethod = NeoEsp32I2s0X16Ws2812xMethod;
+#else
+using StripMethod = NeoEsp32I2s0X8Ws2812xMethod;
+#endif
+
+using Strip = NeoPixelBus<NeoGrbFeature, StripMethod>;
+
+static_assert(GLOWBE_DATA_LINES > 0, "layout");
+static_assert(GLOWBE_DATA_LINES <= 16, "NeoPixelBus parallel: max 16 lines (use X16 layout)");
+
+Strip* g_lines[16];
+uint8_t g_line_count = 0;
+
+RgbColor dimRgb(uint8_t r, uint8_t g, uint8_t b) {
+  const uint16_t k = kGlowbeLedBrightness;
+  return RgbColor(static_cast<uint8_t>((static_cast<uint16_t>(r) * k) / 255u),
+                    static_cast<uint8_t>((static_cast<uint16_t>(g) * k) / 255u),
+                    static_cast<uint8_t>((static_cast<uint16_t>(b) * k) / 255u));
+}
 
 }  // namespace
 
 void glowbe_led_init() {
-  for (uint8_t line = 0; line < GLOWBE_DATA_LINES; line++) {
-    if (GLOWBE_LINE_LED_COUNTS[line] > kMaxLedsPerLine) {
-      while (true) {
-        delay(1000);
+  g_line_count = GLOWBE_DATA_LINES;
+  for (uint8_t line = 0; line < g_line_count; line++) {
+    const uint16_t n = GLOWBE_LINE_LED_COUNTS[line];
+    const uint8_t pin = GLOWBE_GPIO_PINS[line];
+    g_lines[line] = new Strip(n, pin);
+    g_lines[line]->Begin();
+  }
+}
+
+void glowbe_led_wait_ready() {
+  for (;;) {
+    bool all = true;
+    for (uint8_t line = 0; line < g_line_count; line++) {
+      if (!g_lines[line]->CanShow()) {
+        all = false;
+        break;
       }
     }
+    if (all) {
+      return;
+    }
+    yield();
   }
-  GLOWBE_FASTLED_REGISTER_RMT(strips);
-  FastLED.setBrightness(255);
-  // 輝度 < 255 時の時間ディザーが低輝度でチラつきに見えるのを止める
-  FastLED.setDither(0);
-  // TODO: set budget (mA) from PCB / supply rating.
-  FastLED.setMaxPowerInVoltsAndMilliamps(5, 4000);
 }
 
 void glowbe_led_set_rgb(const uint8_t* rgb) {
+  glowbe_led_wait_ready();
   size_t offset = 0;
-  for (uint8_t line = 0; line < GLOWBE_DATA_LINES; line++) {
+  for (uint8_t line = 0; line < g_line_count; line++) {
+    Strip* s = g_lines[line];
     const uint16_t n = GLOWBE_LINE_LED_COUNTS[line];
     for (uint16_t i = 0; i < n; i++) {
-      // Wire payload is logical RGB; FastLED GRB template reorders for the strip.
-      CRGB c(rgb[offset], rgb[offset + 1], rgb[offset + 2]);
-      glowbe_led_dim(c);
-      strips[line][i] = c;
+      const RgbColor c = dimRgb(rgb[offset], rgb[offset + 1], rgb[offset + 2]);
+      s->SetPixelColor(i, c);
       offset += 3;
     }
   }
 }
 
 void glowbe_led_show() {
-  FastLED.show();
+  for (uint8_t line = 0; line < g_line_count; line++) {
+    g_lines[line]->Show();
+  }
 }
 
 void glowbe_led_apply_rgb(const uint8_t* rgb) {
@@ -56,23 +86,19 @@ void glowbe_led_apply_rgb(const uint8_t* rgb) {
   glowbe_led_show();
 }
 
-void glowbe_led_rainbow_pattern(int32_t t_ms, bool reverse) {
-  const int32_t t = reverse ? -t_ms : t_ms;
-  for (uint8_t line = 0; line < GLOWBE_DATA_LINES; line++) {
-    const uint16_t n = GLOWBE_LINE_LED_COUNTS[line];
-    for (uint16_t i = 0; i < n; i++) {
-      CRGB c = CHSV(static_cast<uint8_t>(t / 8 + line * 40 + i * 2), 220, 180);
-      glowbe_led_dim(c);
-      strips[line][i] = c;
-    }
+void glowbe_led_clear() {
+  glowbe_led_wait_ready();
+  for (uint8_t line = 0; line < g_line_count; line++) {
+    Strip* s = g_lines[line];
+    s->ClearTo(RgbColor(0, 0, 0));
   }
-  FastLED.show();
-}
-
-void glowbe_led_test_pattern(uint32_t t_ms) {
-  glowbe_led_rainbow_pattern(static_cast<int32_t>(t_ms), false);
+  glowbe_led_show();
 }
 
 const char* glowbe_led_driver_name() {
-  return "esp32-i2s-parallel-fastled";
+#if GLOWBE_DATA_LINES > 8
+  return "esp32-neopixelbus-i2s0-x16";
+#else
+  return "esp32-neopixelbus-i2s0-x8";
+#endif
 }

@@ -47,10 +47,10 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 ### `POST /api/v1/mode`
 
 ```json
-{ "mode": "idle" | "loop" | "interactive" | "mic" | "clock_digital" | "clock_analog" }
+{ "mode": "idle" | "loop" | "ripple" | "interactive" | "mic" | "clock_digital" | "clock_analog" }
 ```
 
-→ 実装済み: `idle` / `loop`。`idle` は選択中シーケンスを解除する。`200` + 更新後 `state` オブジェクト。その他のモードは現時点では `400`。
+→ 実装済み: **`idle`**（全消灯・**選択シーケンス解除**・WS `ripple` は無視）、**`loop`**（テストパターンまたは選択シーケンス）、**`ripple`**（消灯ベースで WebSocket の `ripple` のみ UDP に合成。シーケンス選択は保持）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
 
 ### `POST /api/v1/loop/select`
 
@@ -62,17 +62,19 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 
 ### `GET /api/v1/layout/uv`
 
-UV プレビュー用（間引き可）。
+UV プレビュー用。ランタイムの現在の `layoutId` に対応する `assets/compiled/<layoutId>.ledmap.json` を読み取り、全 LED の UV と配線上の位置を返す。
 
 ```json
 {
   "layoutId": "prototype-icosahedron-15",
   "ledCount": 225,
-  "points": [{ "i": 0, "u": 0.42, "v": 0.18 }, "..."]
+  "leds": [
+    { "i": 0, "u": 0.574469, "v": 0.630754, "channel": 0, "chainIndex": 0 }
+  ]
 }
 ```
 
-`points` は全 LED または `?sparse=64` で間引き（実装時）。
+→ 実装済み。失敗時は `500` + `{ "error": "..." }`。
 
 ### `GET /health`
 
@@ -123,19 +125,30 @@ UV プレビュー用（間引き可）。
 
 ## WebSocket `GET /api/v1/ws`
 
+→ 実装済み: 接続直後と約 1 秒ごとに `state` を送る。`ping` → `pong`。**`ripple`** メッセージはランタイムの出力モードが **`ripple`** のときだけ UV 波紋を合成（それ以外は `event_status` `error`）。`subscribe_preview` / `unsubscribe_preview` と `preview_frame` は従来どおり。
+
 ### クライアント → サーバ
 
 ```json
 { "type": "ripple", "u": 0.42, "v": 0.71, "amplitude": 1.0 }
 { "type": "subscribe_preview", "quality": 70 }
+{ "type": "unsubscribe_preview" }
+{ "type": "ping" }
 ```
 
 ### サーバ → クライアント
 
 ```json
-{ "type": "state", "..." }
+{ "type": "state", "layoutId": "prototype-icosahedron-15", "mode": "loop", "fpsOut": 60.0 }
+{ "type": "pong" }
+{ "type": "preview_status", "status": "available", "quality": 70 }
+{ "type": "preview_status", "status": "stopped", "reason": "client unsubscribed" }
+{ "type": "event_status", "event": "ripple", "status": "ok" }
+{ "type": "event_status", "event": "ripple", "status": "error", "reason": "ripple WS events apply only in output mode \"ripple\"" }
 { "type": "preview_frame", "format": "jpeg", "seq": 12004, "data": "<base64>" }
 ```
+
+`preview_status` は `available`（購読開始）・`stopped`（`unsubscribe_preview`）・将来用の `unavailable` など。`ripple` の `error` は ledmap 欠落など。
 
 ## Phase 対応 / 実装状況
 
@@ -143,9 +156,11 @@ UV プレビュー用（間引き可）。
 |----------------|-------|------|
 | `GET /api/v1/state` | 1 | ✅ 実装済 |
 | `GET /health` | 1 | ✅ 実装済 |
-| `POST /api/v1/mode` (`idle` / `loop`) | 1 | ✅ 実装済 |
+| `POST /api/v1/mode` (`idle` / `loop` / `ripple`) | 1 | ✅ 実装済 |
 | `POST /api/v1/loop/select` | 2 | ✅ 実装済 |
-| `GET /api/v1/layout/uv`, `GET /api/v1/ws`（ripple/preview） | 1–2 | ⬜ 未実装（設計のみ） |
+| `GET /api/v1/layout/uv` | 1–2 | ✅ 実装済 |
+| `GET /api/v1/ws`（state 配信） | 1–2 | ✅ 実装済 |
+| `GET /api/v1/ws`（ripple/preview） | 1–2 | ✅ ripple UV 合成・JPEG プレビュー配信 |
 | `GET /api/v1/sequences` | 2 | ✅ 実装済 |
 | `media/*`（upload/convert 等） | 2 | ⬜ 未実装 |
 | clock modes 関連 | 4 | ⬜ 未実装 |

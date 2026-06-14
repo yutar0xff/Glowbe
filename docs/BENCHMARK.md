@@ -33,15 +33,17 @@
 ## 未達時の切り分け順
 
 1. UDP チャンクサイズ（`payload_len` ≤ **1472**）と 1 フレームあたりパケット数
-2. ESP: Wi-Fi 省電力無効、受信タスク優先度
-3. AP チャンネル混雑（スキャンして変更）
-4. ランタイム送信スレッドの CPU ピン留め（Linux）
+2. ESP: 完全フレーム欠落時に前フレーム保持になっていること（自動消灯しないこと）
+3. ESP: `GLOWBE_PLAYOUT_LAG_FRAMES` / `GLOWBE_PLAYOUT_RING_CAP` の値
+4. ESP: Wi-Fi 省電力無効、受信タスク優先度
+5. AP チャンネル混雑（スキャンして変更）
+6. ランタイム送信スレッドの CPU ピン留め（Linux）
 
 ## 帯域目安（プロトタイプ）
 
 - 225 LED × 3 = **675 バイト/フレーム**
 - 60 fps → **40.5 KB/s** ペイロード（ヘッダ込みでも 2.4 GHz では十分小さい）
-- ボトルネックは帯域より **ESP の LED 出力時間（S3: LCD+DMA / 無印: FastLED I2S-parallel）+ Wi-Fi スタック遅延** になりやすい
+- ボトルネックは帯域より **ESP の LED 出力時間（S3: NeoPixelBus LCD / 無印: NeoPixelBus I2S0）+ Wi-Fi スタック遅延** になりやすい
 
 製品版（`product-geodesic-2v-60`）はコンパイル後に同様の表を追記する。
 
@@ -52,9 +54,10 @@
 | 項目 | 記録 |
 |------|------|
 | レイアウト | `prototype-icosahedron-15`（225 LED、5 線） |
-| LED 出力 | **FastLED I2S-parallel**（`FASTLED_ESP32_I2S`、`FASTLED_ESP32_I2S_NUM_DMA_BUFFERS=4`）。本変更後は再フラッシュして再計測すること。 |
+| LED 出力 | **NeoPixelBus**（S3: LCD 並列 / 無印: I2S0 並列）。再フラッシュして再計測すること。 |
 | 条件 | 60 fps ターゲット、`loop` / テストパターン、**連続 5 分**、`espDrops` 増分 **0**（運用確認） |
 | 参考ログ | シリアル `diag`: `fps_x10≈600`（≈60 fps）、`drops=0`、`udp_err=0`（例: `frames` が 5 秒あたり **+300** 程度で増加） |
+| ちらつき対策 | 低 fps（5〜10 fps）で消灯混入と切り分け。リンク切れ時の黒フォールバックを廃止し、完全フレーム欠落時は前フレーム保持。`GLOWBE_PLAYOUT_LAG_FRAMES=2` のジッタバッファで解消確認。 |
 
 **注意:** 本番ターゲットの **ESP32-S3**（`prototype` env、LCD+DMA）では同条件の記録を別途取ること。
 

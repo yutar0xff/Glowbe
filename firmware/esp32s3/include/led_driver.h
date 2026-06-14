@@ -2,16 +2,13 @@
 
 #include <stdint.h>
 
-#include <FastLED.h>
-
 constexpr uint8_t kGlowbeLedBrightness = 30;
 
-inline void glowbe_led_dim(CRGB& c) { c.nscale8_video(kGlowbeLedBrightness); }
-
 void glowbe_led_init();
-void glowbe_led_set_rgb(const uint8_t* rgb);   // wire buffer (logical RGB) → strip RAM, no show
-void glowbe_led_show();                        // latch strips to LEDs
+/// 前回の DMA 送出が完了するまで待つ（Wi-Fi 負荷下でのチラつき緩和）。
+void glowbe_led_wait_ready();
+void glowbe_led_set_rgb(const uint8_t* rgb);    // 論理 RGB →ストリップ RAM（Show しない）
+void glowbe_led_show();                         // 全データ線をラッチ
 void glowbe_led_apply_rgb(const uint8_t* rgb); // set_rgb + show
-void glowbe_led_rainbow_pattern(int32_t t_ms, bool reverse);
-void glowbe_led_test_pattern(uint32_t t_ms);
+void glowbe_led_clear();                        // 全消灯 + show
 const char* glowbe_led_driver_name();

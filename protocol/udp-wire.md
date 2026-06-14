@@ -6,11 +6,14 @@
 
 - バイト順: **リトルエンディアン**
 - IPv4 UDP（v1 はマルチキャスト非対応）
-- 1 フレーム = `led_count × 3` バイトの **論理 RGB**（グローバル LED インデックス順、8bit/チャンネル、各 LED は R,G,B の並び）。チップの GRB 物理順はファームの FastLED テンプレートが担当する。
+- 1 フレーム = `led_count × 3` バイトの **論理 RGB**（グローバル LED インデックス順、8bit/チャンネル、各 LED は R,G,B の並び）。チップの GRB 物理順はファームの **NeoPixelBus `NeoGrbFeature`** が担当する。
 
 ## メッセージ: FRAME（ランタイム → ESP）
 
-複数 UDP ダタグラムに分割する。ESP は `chunk_index == chunk_count - 1` まで揃った時点で LED 出力を更新する（S3: LCD+DMA 並列、無印プロト: FastLED I2S-parallel。詳細は [`docs/firmware/LED-OUTPUT.md`](../docs/firmware/LED-OUTPUT.md)）。
+複数 UDP ダタグラムに分割する。ESP は `chunk_index == chunk_count - 1` まで揃った時点で **完全フレーム**として扱い、プレイアウト経由で LED を更新する（S3: NeoPixelBus LCD 並列、無印: NeoPixelBus I2S0 並列。詳細は [`docs/firmware/LED-OUTPUT.md`](../docs/firmware/LED-OUTPUT.md)）。
+
+- **欠落・遅延:** 完全フレームが届かない間は **直前に表示したフレームを保持**する（受信途絶で勝手に消灯しない）。
+- **ジッタバッファ:** ファーム側で数フレームの再生遅延を入れられる（既定有効）。`idle` で送る黒は「有効な完全フレーム」としてそのまま表示される。
 
 ### ヘッダ（16 バイト）
 
@@ -74,7 +77,7 @@ v1 の FRAME ペイロードには**アプリ層のチェックサムを付け�
 - **後方互換:** 16 バイトのみの STATUS も有効。`layout_hash` は省略扱い（照合スキップ）。
 - **推奨:** 新規ファームは **20 バイト**を送信する。
 
-> 実装ノート: 現ファームの `drops` は **ヘッダ解析失敗で破棄したパケット数**を計上する。チャンク欠落による「未完成フレームの破棄」カウントは将来拡張（`docs/STATUS.md` 既知の TODO）。
+> 実装ノート: 現ファームの `drops` は **ヘッダ解析失敗で破棄したパケット数**を計上する。チャンク欠落などで未完成のまま別 `frame_id` に切り替わった回数は **`FrameAssembler::incomplete_frame_aborts`**（5 秒ごとのシリアル `diag` 行の `frame_aborts=`）で参照できる。STATUS UDP パケットへの載せは未実装。
 
 ## 実装ノート
 
