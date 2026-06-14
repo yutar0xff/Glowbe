@@ -5,8 +5,23 @@ import {
   useState,
 } from 'react'
 import type { MouseEvent } from 'react'
-import type { InteractiveEffectKind, LayoutUvResponse } from '../types'
-import { API_BASE, resolveGlowbeWsUrl } from '../api'
+import { Loader2, Wifi } from 'lucide-react'
+import type { InteractiveEffectKind } from '@/types'
+import { resolveGlowbeWsUrl } from '@/api'
+import { useLayoutUv } from '@/hooks/use-layout-uv'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
+import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
+import { cn } from '@/lib/utils'
 
 function hexToRgb(hex: string): [number, number, number] {
   const raw = hex.replace('#', '').trim()
@@ -15,6 +30,13 @@ function hexToRgb(hex: string): [number, number, number] {
   }
   const n = parseInt(raw, 16)
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+function connectionLabel(phase: 'idle' | 'connecting' | 'open' | 'closed'): string {
+  if (phase === 'connecting') return 'Connecting…'
+  if (phase === 'open') return 'Connected'
+  if (phase === 'closed') return 'Reconnecting…'
+  return 'Idle'
 }
 
 export function LiveControls({
@@ -26,57 +48,18 @@ export function LiveControls({
   ledCount: number
   outputMode: string
 }) {
-  const [uv, setUv] = useState<LayoutUvResponse | null>(null)
-  const [uvError, setUvError] = useState<string | null>(null)
-  const [uvLoading, setUvLoading] = useState(true)
+  const { uv, uvError, uvLoading } = useLayoutUv(layoutId, ledCount)
   const [wsPhase, setWsPhase] = useState<'idle' | 'connecting' | 'open' | 'closed'>('idle')
   const [lastWsNote, setLastWsNote] = useState<string | null>(null)
   const [pulseDurationMs, setPulseDurationMs] = useState(450)
   const [pulseSigmaDeg, setPulseSigmaDeg] = useState(8)
-  const [interactiveEffect, setInteractiveEffect] = useState<InteractiveEffectKind>('sphereGaussian')
+  const [interactiveEffect, setInteractiveEffect] = useState<InteractiveEffectKind>('expandingRingDiagonal')
   const [colorRandom, setColorRandom] = useState(false)
   const [colorHex, setColorHex] = useState('#c8f0ff')
   const [ringSpeed, setRingSpeed] = useState(1)
   const [ringThicknessDeg, setRingThicknessDeg] = useState(0)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<number | undefined>(undefined)
-
-  useEffect(() => {
-    let cancelled = false
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset UV UI before async fetch
-    setUvLoading(true)
-    setUv(null)
-    setUvError(null)
-    ;(async () => {
-      try {
-        const r = await fetch(`${API_BASE}/api/v1/layout/uv`)
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        const j = (await r.json()) as LayoutUvResponse
-        if (cancelled) return
-        if (j.ledCount !== ledCount) {
-          setUvError(
-            `ledmap ledCount (${j.ledCount}) does not match runtime ledCount (${ledCount})`,
-          )
-          setUv(null)
-        } else if (j.ledCount !== j.leds.length) {
-          setUvError('ledCount does not match leds[] length')
-          setUv(null)
-        } else {
-          setUv(j)
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setUv(null)
-          setUvError(e instanceof Error ? e.message : String(e))
-        }
-      } finally {
-        if (!cancelled) setUvLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [layoutId, ledCount])
 
   const mountedRef = useRef(true)
 
@@ -104,7 +87,7 @@ export function LiveControls({
         }, 2500)
       }
       ws.onerror = () => {
-        setLastWsNote('WebSocket error (check runtime / proxy)')
+        setLastWsNote('Live connection error — check that the runtime is running.')
       }
       ws.onmessage = (ev) => {
         if (typeof ev.data !== 'string') return
@@ -116,9 +99,8 @@ export function LiveControls({
         }
         const t = msg.type
         if (t === 'event_status') {
-          const evName = msg.event
           const st = msg.status
-          setLastWsNote(`event_status ${String(evName)}: ${String(st)}`)
+          if (st !== 'ok') setLastWsNote('The effect could not be applied.')
         }
       }
     }
@@ -147,13 +129,12 @@ export function LiveControls({
   const sendInteractivePulse = (u: number, v: number) => {
     const ws = wsRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      setLastWsNote('interactive: WebSocket not open')
+      setLastWsNote('Not connected — wait for the link to open, then try again.')
       return
     }
     const sigmaRad = (pulseSigmaDeg * Math.PI) / 180
     const [r, g, b] = hexToRgb(colorHex)
-    const ringThicknessRad =
-      ringThicknessDeg <= 0 ? 0 : (ringThicknessDeg * Math.PI) / 180
+    const ringThicknessRad = ringThicknessDeg <= 0 ? 0 : (ringThicknessDeg * Math.PI) / 180
     const payload: Record<string, unknown> = {
       type: 'interactive',
       action: 'pulse',
@@ -187,153 +168,188 @@ export function LiveControls({
   }
 
   return (
-    <section className="panel interactive-panel">
-      <div className="panel-heading">
-        <h2>Live (WebSocket)</h2>
-        <span className="muted">
-          WS: {wsPhase}
-          {uvLoading ? ' · UV map…' : uv ? ` · ${uv.leds.length} LEDs` : ''}
-        </span>
-      </div>
-      <p className="muted">
-        Equirectangular UV (2:1). Choose an effect and tint, then click to stack <code>interactive</code> pulses;
-        the runtime composites all active pulses on the UDP stream only in <strong>interactive</strong> output mode.
-      </p>
-      <div className={`ripple-params${canInteractive ? '' : ' ripple-params--disabled'}`}>
-        <label className="ripple-param ripple-param--select">
-          <span className="ripple-param-label">Effect</span>
-          <select
-            value={interactiveEffect}
-            disabled={!canInteractive}
-            onChange={(e) => setInteractiveEffect(e.target.value as InteractiveEffectKind)}
-            aria-label="Interactive effect"
-          >
-            <option value="sphereGaussian">Sphere Gaussian (soft spot)</option>
-            <option value="expandingRingDiagonal">Expanding ring (isotropic)</option>
-          </select>
-        </label>
-        {interactiveEffect === 'sphereGaussian' ? (
-          <>
-            <label className="ripple-param">
-              <span className="ripple-param-label">Duration (ms)</span>
-              <input
-                type="range"
-                min={100}
-                max={5000}
-                step={50}
-                value={pulseDurationMs}
-                disabled={!canInteractive}
-                onChange={(e) => setPulseDurationMs(Number(e.target.value))}
-              />
-              <span className="ripple-param-value">{pulseDurationMs}</span>
-            </label>
-            <label className="ripple-param">
-              <span className="ripple-param-label">Spot radius (σ, °)</span>
-              <input
-                type="range"
-                min={2}
-                max={34}
-                step={1}
-                value={pulseSigmaDeg}
-                disabled={!canInteractive}
-                onChange={(e) => setPulseSigmaDeg(Number(e.target.value))}
-              />
-              <span className="ripple-param-value">{pulseSigmaDeg}°</span>
-            </label>
-          </>
-        ) : null}
-        <label className="ripple-param ripple-param--color">
-          <span className="ripple-param-label">Tint</span>
-          <div className="ripple-color-controls">
-            <label className="ripple-check">
-              <input
-                type="checkbox"
-                checked={colorRandom}
-                disabled={!canInteractive}
-                onChange={(e) => setColorRandom(e.target.checked)}
-              />
-              Random
-            </label>
-            <input
-              type="color"
-              value={colorHex}
-              disabled={!canInteractive || colorRandom}
-              onChange={(e) => setColorHex(e.target.value)}
-              aria-label="Pulse tint color"
-            />
-          </div>
-        </label>
-        {interactiveEffect === 'expandingRingDiagonal' ? (
-          <>
-            <label className="ripple-param">
-              <span className="ripple-param-label">Propagation speed</span>
-              <input
-                type="range"
-                min={25}
-                max={400}
-                step={5}
-                value={Math.round(ringSpeed * 100)}
-                disabled={!canInteractive}
-                onChange={(e) => setRingSpeed(Number(e.target.value) / 100)}
-              />
-              <span className="ripple-param-value">{ringSpeed.toFixed(2)}×</span>
-            </label>
-            <label className="ripple-param">
-              <span className="ripple-param-label">Wavefront width</span>
-              <input
-                type="range"
-                min={0}
-                max={28}
-                step={1}
-                value={ringThicknessDeg}
-                disabled={!canInteractive}
-                onChange={(e) => setRingThicknessDeg(Number(e.target.value))}
-              />
-              <span className="ripple-param-value">
-                {ringThicknessDeg <= 0 ? 'auto' : `${ringThicknessDeg}°`}
-              </span>
-            </label>
-          </>
-        ) : null}
-      </div>
-      {!canInteractive ? (
-        <p className="panel-warn-text">
-          Pick <strong>Interactive</strong> in output mode above; then UV clicks send pulses to the runtime.
-        </p>
-      ) : null}
-      {uvLoading ? <p className="muted">Loading layout/uv…</p> : null}
-      {uvError ? (
-        <p className="panel-warn-text">
-          Could not load layout/uv (needs <code>assets/compiled/{layoutId}.ledmap.json</code>):{' '}
-          {uvError}
-        </p>
-      ) : null}
-      {uv && !uvLoading ? (
-        <div className="uv-map-wrap">
-          <div className={`uv-map-inner ${canInteractive ? '' : 'uv-map-inner--disabled'}`}>
-            <svg
-              className="uv-map-svg"
-              viewBox="0 0 2 1"
-              preserveAspectRatio="xMidYMid meet"
-              role="img"
-              aria-label="LED UV map (click to send interactive pulse)"
-              onClick={onUvSvgClick}
-            >
-              <rect x={0} y={0} width={2} height={1} className="uv-map-bg" />
-              {uv.leds.map((led) => (
-                <circle
-                  key={led.i}
-                  cx={led.u * 2}
-                  cy={led.v}
-                  r={0.028}
-                  className="uv-led-dot"
-                />
-              ))}
-            </svg>
-          </div>
+    <Card>
+      <CardHeader className="flex flex-col gap-1 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Wifi className="size-5 text-muted-foreground" aria-hidden />
+            Live map
+          </CardTitle>
+          <CardDescription className="text-xs">
+            {connectionLabel(wsPhase)}
+            {uvLoading ? ' · Map loading…' : uv ? ` · ${uv.leds.length} LEDs` : ''}
+          </CardDescription>
         </div>
-      ) : null}
-      {lastWsNote ? <p className="muted ws-note">{lastWsNote}</p> : null}
-    </section>
+        {wsPhase === 'connecting' ? <Loader2 className="size-5 animate-spin text-muted-foreground" aria-label="Connecting" /> : null}
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <p className="text-sm text-muted-foreground">
+          2:1 layout preview. Choose an effect and color, then tap the map; pulses add together until they fade out.
+        </p>
+
+          {uvLoading ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+              Loading layout map…
+            </p>
+          ) : null}
+          {uvError ? (
+            <p className="max-w-full break-words text-sm text-destructive" role="alert">
+              Could not load the LED layout for this device. {uvError}
+            </p>
+          ) : null}
+
+          <div className="space-y-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">Effect</Label>
+                <Select
+                  value={interactiveEffect}
+                  onValueChange={(v) => setInteractiveEffect(v as InteractiveEffectKind)}
+                  disabled={!canInteractive}
+                >
+                  <SelectTrigger className="w-full text-xs" aria-label="Interactive effect">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sphereGaussian">Soft spot</SelectItem>
+                    <SelectItem value="expandingRingDiagonal">Expanding ring</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {interactiveEffect === 'sphereGaussian' ? (
+                <>
+                  <div className="space-y-2 sm:col-span-1">
+                    <div className="flex justify-between gap-2">
+                      <Label className="text-xs font-semibold">Duration (ms)</Label>
+                      <span className="text-xs text-muted-foreground tabular-nums">{pulseDurationMs}</span>
+                    </div>
+                    <Slider
+                      disabled={!canInteractive}
+                      min={100}
+                      max={5000}
+                      step={50}
+                      value={[pulseDurationMs]}
+                      onValueChange={(v) => setPulseDurationMs(v[0]!)}
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-1">
+                    <div className="flex justify-between gap-2">
+                      <Label className="text-xs font-semibold">Spot radius (σ, °)</Label>
+                      <span className="text-xs text-muted-foreground tabular-nums">{pulseSigmaDeg}°</span>
+                    </div>
+                    <Slider
+                      disabled={!canInteractive}
+                      min={2}
+                      max={34}
+                      step={1}
+                      value={[pulseSigmaDeg]}
+                      onValueChange={(v) => setPulseSigmaDeg(v[0]!)}
+                    />
+                  </div>
+                </>
+              ) : null}
+
+              {interactiveEffect === 'expandingRingDiagonal' ? (
+                <>
+                  <div className="space-y-2">
+                    <div className="flex justify-between gap-2">
+                      <Label className="text-xs font-semibold">Propagation speed</Label>
+                      <span className="text-xs text-muted-foreground tabular-nums">{ringSpeed.toFixed(2)}×</span>
+                    </div>
+                    <Slider
+                      disabled={!canInteractive}
+                      min={25}
+                      max={400}
+                      step={5}
+                      value={[Math.round(ringSpeed * 100)]}
+                      onValueChange={(v) => setRingSpeed(v[0]! / 100)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between gap-2">
+                      <Label className="text-xs font-semibold">Wavefront width</Label>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {ringThicknessDeg <= 0 ? 'auto' : `${ringThicknessDeg}°`}
+                      </span>
+                    </div>
+                    <Slider
+                      disabled={!canInteractive}
+                      min={0}
+                      max={28}
+                      step={1}
+                      value={[ringThicknessDeg]}
+                      onValueChange={(v) => setRingThicknessDeg(v[0]!)}
+                    />
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            <Separator />
+
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="color-random"
+                  checked={colorRandom}
+                  onCheckedChange={setColorRandom}
+                  disabled={!canInteractive}
+                />
+                <Label htmlFor="color-random" className="text-xs font-semibold">
+                  Random tint
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="tint-color" className="text-xs text-muted-foreground">
+                  Color
+                </Label>
+                <input
+                  id="tint-color"
+                  type="color"
+                  value={colorHex}
+                  disabled={!canInteractive || colorRandom}
+                  onChange={(e) => setColorHex(e.target.value)}
+                  className="h-9 w-12 cursor-pointer rounded-md border border-input bg-transparent disabled:opacity-40"
+                  aria-label="Pulse tint color"
+                />
+              </div>
+            </div>
+          </div>
+
+          {lastWsNote ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              {lastWsNote}
+            </p>
+          ) : null}
+
+        {uv && !uvLoading ? (
+          <div className="overflow-hidden rounded-xl border border-border bg-card/40">
+            <div className={cn('relative w-full max-w-full', !canInteractive && 'pointer-events-none opacity-50')}>
+              <svg
+                className="block h-auto w-full max-w-full touch-manipulation"
+                viewBox="0 0 2 1"
+                preserveAspectRatio="xMidYMid meet"
+                role="img"
+                aria-label="LED layout map (tap to add a pulse)"
+                onClick={onUvSvgClick}
+              >
+                <rect x={0} y={0} width={2} height={1} className="fill-muted/40" />
+                {uv.leds.map((led) => (
+                  <circle
+                    key={led.i}
+                    cx={led.u * 2}
+                    cy={led.v}
+                    r={0.028}
+                    className="fill-cyan-400/85 stroke-background/50 stroke-[0.006]"
+                  />
+                ))}
+              </svg>
+            </div>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   )
 }

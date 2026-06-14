@@ -5,9 +5,9 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
-import type { LoadState, OutputMode, RuntimeState } from './types'
-import { API_BASE, fetchState, POLL_MS } from './api'
-import { GlowbeRuntimeContext } from './GlowbeRuntimeContext'
+import type { LoadState, OutputMode, RuntimeState } from '@/types'
+import { API_BASE, fetchState, POLL_MS } from '@/api'
+import { GlowbeRuntimeContext } from '@/GlowbeRuntimeContext'
 
 export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' })
@@ -58,7 +58,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ mode }),
         signal: controller.signal,
       })
-      if (!res.ok) throw new Error(`POST /api/v1/mode failed: ${res.status}`)
+      if (!res.ok) throw new Error(`Could not change output mode (error ${res.status}).`)
       const newState = (await res.json()) as RuntimeState
       setLoad((prev) => {
         if (prev.kind === 'ready') {
@@ -100,7 +100,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ sequenceId }),
         signal: controller.signal,
       })
-      if (!res.ok) throw new Error(`POST /api/v1/loop/select failed: ${res.status}`)
+      if (!res.ok) throw new Error(`Could not select sequence (error ${res.status}).`)
       const newState = (await res.json()) as RuntimeState
       setLoad((prev) => {
         if (prev.kind === 'ready') {
@@ -138,7 +138,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ brightness, gamma }),
         signal: controller.signal,
       })
-      if (!res.ok) throw new Error(`POST /api/v1/master-tone failed: ${res.status}`)
+      if (!res.ok) throw new Error(`Could not update master tone (error ${res.status}).`)
       const newState = (await res.json()) as RuntimeState
       setLoad((prev) => {
         if (prev.kind === 'ready') {

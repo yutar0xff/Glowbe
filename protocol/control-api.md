@@ -143,7 +143,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 
 ```json
 { "type": "masterSettings", "brightness": 0.85, "gamma": 1.15 }
-{ "type": "interactive", "action": "setEffect", "effect": "sphereGaussian" }
+{ "type": "interactive", "action": "setEffect", "effect": "expandingRingDiagonal" }
 { "type": "interactive", "action": "pulse", "u": 0.42, "v": 0.71, "effect": "sphereGaussian", "durationMs": 450, "sigmaRad": 0.14, "colorRandom": true }
 { "type": "interactive", "action": "pulse", "u": 0.42, "v": 0.71, "effect": "expandingRingDiagonal", "colorRgb": [255, 120, 40], "ringSpeed": 1.2, "ringThicknessRad": 0.09 }
 { "type": "ripple", "u": 0.42, "v": 0.71, "amplitude": 1.0, "durationMs": 450, "sigmaRad": 0.14 }

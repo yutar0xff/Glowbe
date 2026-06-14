@@ -65,7 +65,7 @@
 | モード | id | 状況 |
 |--------|-----|------|
 | ループ再生 | `loop` | 🟡 シーケンス未選択時は内蔵テストパターン（`pattern.rs`）。色相は **`ledmap` の (u,v)**（欠落時はワイヤ順フォールバック） |
-| インタラクティブ（消灯＋WS） | `interactive` | ✅ 消灯出力＋WS `interactive`（別名メッセージ型 `ripple`）でパルス合成。エフェクト: `sphereGaussian` / `expandingRingDiagonal`。`loop` では WS 合成は拒否 |
+| インタラクティブ（消灯＋WS） | `interactive` | ✅ 消灯出力＋WS `interactive`（別名メッセージ型 `ripple`）でパルス合成。エフェクト: `sphereGaussian` / `expandingRingDiagonal`（既定 `expandingRingDiagonal`）。`loop` では WS 合成は拒否 |
 | 後方互換 | `ripple`（モード id） | ✅ `interactive` と同義（REST / state では `interactive` を推奨） |
 | デジタル時計 | `clock_digital` | ⬜ Phase 4a（ロードマップ分割後） |
 | アナログ時計 | `clock_analog` | ⬜ Phase 4a |

@@ -1,13 +1,13 @@
-export function IdleModePanel() {
+import { LiveMetricsRow } from '@/components/LiveMetricsRow'
+import type { RuntimeState } from '@/types'
+
+export function IdleModePanel({ state }: { state: RuntimeState }) {
   return (
-    <div className="studio-mode-block">
-      <header className="mode-panel-intro">
-        <h2 className="mode-panel-title">Idle</h2>
-        <p className="subtitle mode-panel-desc">
-          Blackout output via <code>POST /api/v1/mode</code> with <code>idle</code>. Clears the selected loop
-          sequence.
-        </p>
-      </header>
+    <div className="space-y-6">
+      <LiveMetricsRow state={state} />
+      <p className="text-sm text-muted-foreground">
+        Output stays dark until you choose Loop or Interactive above.
+      </p>
     </div>
   )
 }

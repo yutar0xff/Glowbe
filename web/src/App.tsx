@@ -1,7 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { AppLayout } from './AppLayout'
-import { GlowbeRuntimeProvider } from './GlowbeRuntimeProvider'
-import './App.css'
+import { AppLayout } from '@/AppLayout'
+import { GlowbeRuntimeProvider } from '@/GlowbeRuntimeProvider'
 
 export default function App() {
   return (

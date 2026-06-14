@@ -1,6 +1,8 @@
-import { MetricCard } from '../components/MetricCard'
-import { formatNumber, formatUptime } from '../format'
-import { useGlowbeRuntime } from '../GlowbeRuntimeContext'
+import { Braces } from 'lucide-react'
+import { MetricCard } from '@/components/MetricCard'
+import { formatNumber, formatUptime } from '@/format'
+import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export function StatusSection() {
   const { load } = useGlowbeRuntime()
@@ -9,12 +11,15 @@ export function StatusSection() {
   const playingSequenceId = state.mode === 'loop' ? state.loopSequenceId : null
 
   return (
-    <>
-      <section className="grid">
+    <div className="space-y-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <MetricCard label="Mode" value={state.mode} hint={playingSequenceId ?? '—'} />
         <MetricCard label="FPS Out" value={formatNumber(state.fpsOut)} hint={`${state.framesSent} frames sent`} />
-        <MetricCard label="FPS Rx" value={formatNumber(state.fpsRx)} hint="from ESP STATUS" />
-        <MetricCard label="ESP Frames" value={state.espFramesComplete === null ? '-' : String(state.espFramesComplete)} />
+        <MetricCard label="FPS Rx" value={formatNumber(state.fpsRx)} hint="device-reported" />
+        <MetricCard
+          label="ESP Frames"
+          value={state.espFramesComplete === null ? '-' : String(state.espFramesComplete)}
+        />
         <MetricCard label="ESP RSSI" value={state.espRssi === null ? '-' : `${state.espRssi} dBm`} />
         <MetricCard label="ESP Drops" value={state.espDrops === null ? '-' : String(state.espDrops)} />
         <MetricCard label="ESP Status From" value={state.espStatusAddr ?? '-'} />
@@ -27,15 +32,22 @@ export function StatusSection() {
         <MetricCard label="LED Count" value={String(state.ledCount)} hint={state.layoutId} />
         <MetricCard label="Uptime" value={formatUptime(state.uptimeSec)} />
         <MetricCard label="Sequences (count)" value={String(sequences.length)} hint="select in Loop mode above" />
-      </section>
+      </div>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Raw state</h2>
-          <span>{fetchedAt.toLocaleTimeString()}</span>
-        </div>
-        <pre>{JSON.stringify(state, null, 2)}</pre>
-      </section>
-    </>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Braces className="size-4 text-muted-foreground" aria-hidden />
+            Raw state
+          </CardTitle>
+          <span className="font-mono text-xs text-muted-foreground">{fetchedAt.toLocaleTimeString()}</span>
+        </CardHeader>
+        <CardContent>
+          <pre className="max-h-[min(420px,55vh)] overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+            {JSON.stringify(state, null, 2)}
+          </pre>
+        </CardContent>
+      </Card>
+    </div>
   )
 }

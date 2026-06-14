@@ -45,7 +45,7 @@ export async function fetchState(signal: AbortSignal): Promise<LoadState> {
   if (!stateRes.ok) {
     return {
       kind: 'error',
-      message: `GET /api/v1/state failed: ${stateRes.status}`,
+      message: `Could not read runtime state (error ${stateRes.status}).`,
       health,
       fetchedAt: new Date(),
     }

@@ -1,6 +1,8 @@
 # Glowbe Studio (web)
 
-React + Vite SPA (English UI). Polls `GET /api/v1/state` and `GET /health` once per second.
+React 19 + Vite 8 SPA (English UI). Styling: **Tailwind CSS v4** (`@tailwindcss/vite`), **shadcn/ui** (Radix Nova preset, Geist), **Lucide** icons. Polls `GET /api/v1/state` and `GET /health` once per second.
+
+Imports use the `@/` alias (`tsconfig` paths → `./src/*`).
 
 ## Routes
 
@@ -24,6 +26,12 @@ For a static build that talks to another origin, set `VITE_GLOWBE_API_BASE` at b
 ```bash
 VITE_GLOWBE_API_BASE=http://192.168.0.10:8080 npm run build
 ```
+
+## UI stack
+
+- Tailwind v4 via `@import "tailwindcss"` in `src/index.css` and the Vite plugin.
+- shadcn components live under `src/components/ui/` (registry: `npx shadcn@latest add …`).
+- The `shadcn` npm package is a **devDependency** so `src/index.css` can `@import "shadcn/tailwind.css"` at build time.
 
 ## Static hosting (SPA)
 

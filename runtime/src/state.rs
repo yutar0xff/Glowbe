@@ -205,7 +205,7 @@ pub fn new_shared(
         sequences_dir,
         interactive_uv: StdRwLock::new(None),
         interactive_pulses: StdRwLock::new(Vec::new()),
-        interactive_default_effect: AtomicU8::new(InteractiveEffectKind::SphereGaussian.code()),
+        interactive_default_effect: AtomicU8::new(InteractiveEffectKind::ExpandingRingDiagonal.code()),
         master_brightness_bits: AtomicU32::new(f32::to_bits(1.0)),
         master_gamma_bits: AtomicU32::new(f32::to_bits(1.0)),
     })
