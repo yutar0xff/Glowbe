@@ -1,15 +1,10 @@
-# Glowbe Web Dashboard
+# Glowbe Studio (web)
 
 React + Vite SPA (English UI). Polls `GET /api/v1/state` and `GET /health` once per second.
 
 ## Routes
 
-| Path | Purpose |
-|------|---------|
-| `/` | Status metrics and raw JSON |
-| `/mode` | Mode overview: **Idle** on/off (blackout, clears sequence), links to Loop and Ripple |
-| `/mode/loop` | Sequence selection; sets runtime mode to `loop` when opened |
-| `/mode/ripple` | UV map + WebSocket controls; sets runtime mode to `ripple` when opened |
+Single-page UI at **`/`** (scroll: mode badges → mode-specific controls → runtime status). Any other path redirects to **`/`** (SPA fallback / old bookmarks).
 
 ## Development
 
@@ -32,7 +27,7 @@ VITE_GLOWBE_API_BASE=http://192.168.0.10:8080 npm run build
 
 ## Static hosting (SPA)
 
-Client-side routes (`/mode/loop`, etc.) require the host to serve `index.html` for unknown paths (same as any SPA). `npm run preview` does this automatically.
+Client-side routes only normalize legacy URLs to **`/`**; the app is effectively a single view. Static hosting must still serve `index.html` for unknown paths. `npm run preview` does this automatically.
 
 ## Scripts
 
