@@ -43,11 +43,13 @@ node tools/migrate-studio-layout.mjs <旧.json> <新.layout.json> product|protot
 ## 変更手順
 
 1. `product.layout.json` または `prototype.layout.json` を編集（`id` は変えないか、変える場合はファーム設定も更新）。
-2. コンパイル:
+2. コンパイル（`assets/compiled/<id>.*` と `firmware/esp32s3/include/generated/<id>/glowbe_layout.h` を出力）:
 
    ```bash
    npx tsx tools/layout-compile.ts config/layouts/prototype.layout.json
    npx tsx tools/layout-compile.ts config/layouts/product.layout.json
    ```
 
-3. `docs/ARCHITECTURE.md` のレイアウト表を必要に応じて更新。
+3. ファーム: `platformio.ini` の各 `env` で `-I include/generated/<layout-id>` を **`include` より前**に置き、その ID の `glowbe_layout.h` が選ばれるようにする。
+
+4. `docs/ARCHITECTURE.md` のレイアウト表を必要に応じて更新。

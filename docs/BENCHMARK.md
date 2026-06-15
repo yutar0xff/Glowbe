@@ -32,7 +32,7 @@
 
 ## 未達時の切り分け順
 
-1. UDP チャンクサイズ（`payload_len` ≤ **1472**）と 1 フレームあたりパケット数
+1. UDP チャンク RGB（`payload_len` ≤ **1440**）と 1 フレームあたりパケット数
 2. ESP: 完全フレーム欠落時に前フレーム保持になっていること（自動消灯しないこと）
 3. ESP: `GLOWBE_PLAYOUT_LAG_FRAMES` / `GLOWBE_PLAYOUT_RING_CAP` の値
 4. ESP: Wi-Fi 省電力無効、受信タスク優先度

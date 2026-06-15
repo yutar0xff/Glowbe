@@ -1,44 +1,56 @@
-# Glowbe ESP32 / ESP32-S3 ファーム
+# Glowbe ESP32 / ESP32-S3 firmware
 
-プロトタイプレイアウト: `prototype-icosahedron-15`（225 LED、5 線）
+Layouts are compiled from `config/layouts/*.layout.json`. Headers live under **`include/generated/<layout-id>/glowbe_layout.h`** (not in `include/` root). Each PlatformIO environment prepends the matching `-I include/generated/...` so `#include "glowbe_layout.h"` resolves correctly.
 
-## セットアップ
+| Layout id | LEDs | Data lines | Typical env |
+|-----------|------|------------|-------------|
+| `prototype-icosahedron-15` | 225 | 5 | `prototype`, `prototype-esp32` |
+| `product-geodesic-2v-60` | 1260 | 10 | `product`, `product-esp32` |
+
+## Setup
 
 ```bash
+cd ../..   # repo root
 npx tsx tools/layout-compile.ts config/layouts/prototype.layout.json
+npx tsx tools/layout-compile.ts config/layouts/product.layout.json
 cd firmware/esp32s3
 uv sync
-cp include/wifi_config.h.example include/wifi_config.h  # 2.4 GHz SSID を設定
+cp include/wifi_config.h.example include/wifi_config.h   # set 2.4 GHz SSID
 ```
 
-## ビルド / フラッシュ
+## Build / flash
 
-| ボード | env |
-|--------|-----|
-| ESP32-S3 | `prototype` |
-| ESP32 無印 | `prototype-esp32` |
+| Board | PlatformIO env |
+|-------|----------------|
+| ESP32-S3 | `prototype` or `product` |
+| ESP32 (classic) | `prototype-esp32` or `product-esp32` |
 
 ```bash
 uv run pio run -e prototype-esp32 -t upload
+uv run pio run -e product-esp32 -t upload
 uv run pio device monitor
 ```
 
-## 動作
+**Rule:** Flash firmware built with the **same** `glowbe_layout.h` (layout id + hash) that the runtime uses (`config.toml` `[device] layout_id` or `POST /api/v1/device/layout`). Otherwise `layout_mismatch` will appear in state and frames may be ignored.
 
-- **UDP FRAME 受信:** ワイヤ RGB を LED に適用
-- **ESP32-S3 (`prototype`):** NeoPixelBus **LCD 並列**（`NeoEsp32LcdX8Ws2812xMethod` / 8 本超は X16）
-- **ESP32 無印 (`prototype-esp32`):** NeoPixelBus **I2S0 並列**（`NeoEsp32I2s0X8Ws2812xMethod` / 8 本超は X16）
-- **起動直後:** `setup` で一度消灯し、最初の **完全フレーム** を受信してから表示を開始する。
-- **受信途絶:** ファームは **最後に表示したフレームを保持**（リンクタイムアウトで消灯しない）。`idle` モードでランタイムが送る黒フレームはそのまま表示される。
-- **プレイアウト:** 既定で数フレームのジッタバッファ（`glowbe_playout.h`）。無効化はファームの `build_flags` に `-D GLOWBE_PLAYOUT_LAG_FRAMES=0`。
-- ポート **49152**（[`protocol/udp-wire.md`](../../protocol/udp-wire.md)）
+## NeoPixelBus (parallel strips)
 
-```bash
-# Phase 1 推奨: Rust ランタイム
-cd runtime && cargo run -- ../config.toml
+- **ESP32-S3 (`prototype` / `product`):** NeoPixelBus **LCD** multi-channel (`NeoEsp32LcdX8Ws2812xMethod`; more than 8 lines uses **X16**). See [Makuna/NeoPixelBus](https://github.com/Makuna/NeoPixelBus) for method constraints.
+- **ESP32 classic (`prototype-esp32` / `product-esp32`):** **I2S0** parallel (`NeoEsp32I2s0X8Ws2812xMethod`; more than 8 lines uses **`NeoEsp32I2s0X16Ws2812xMethod`**). Product (10 strips) selects the X16 template.
+- **One `NeoPixelBus` instance per GPIO** in [`src/led_driver_esp32.cpp`](src/led_driver_esp32.cpp) / S3 variant; logical RGB from UDP is split in **data-line order** matching `GLOWBE_LINE_LED_COUNTS[]`.
+- **SK6805 vs WS2812x:** layout JSON may specify `SK6805`; the sketch uses `NeoGrbFeature` with `Ws2812xMethod`. Bit timing is usually close enough for bring-up—verify colors and white on real hardware; switch to a SK6812-oriented feature class if needed.
 
-# または単体ベンチ
-node tools/bench-udp.mjs <serial-monitorのIP> 60
-```
+## Glowbe Wire UDP (FRAME)
 
-LED 駆動の詳細: [`docs/firmware/LED-OUTPUT.md`](../../docs/firmware/LED-OUTPUT.md)
+- **MTU:** keep each chunk ≤ **1440** RGB bytes so `16 + chunk` fits in one Ethernet frame (no IP fragmentation). Match runtime `MAX_CHUNK_PAYLOAD` and firmware `kMaxChunkPayload`.
+- Port **49152** by default ([`protocol/udp-wire.md`](../../protocol/udp-wire.md)).
+- Large layouts use **multiple datagrams per frame** (`chunk_count` = ceil(`led_count * 3` / **1440**)). Wi-Fi reordering is handled by chunk index; missing chunks keep the previous full frame.
+- ESP `FrameAssembler` currently holds up to **4096** RGB bytes (~**1365** LEDs). Product at **1260** LEDs fits; larger layouts need firmware changes.
+
+## Behaviour
+
+- After boot, the firmware clears LEDs once, then updates only after a **complete** frame is assembled (partial frames keep the last image).
+- **Link loss:** last frame is held (no auto blackout). Black from runtime `idle` mode is a valid full frame.
+- **Playout:** small jitter buffer by default (`glowbe_playout.h`); override with e.g. `-D GLOWBE_PLAYOUT_LAG_FRAMES=0` in `build_flags`.
+
+More LED path notes: [`docs/firmware/LED-OUTPUT.md`](../../docs/firmware/LED-OUTPUT.md).

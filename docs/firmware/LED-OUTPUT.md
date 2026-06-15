@@ -42,8 +42,8 @@ ESP32-S3 で多ピンを低 CPU 負荷で駆動するには、内蔵 **LCD ペ�
 
 - **LCD ペリフェラル**を使うため、内蔵 LCD 等と競合しないよう配線・ソフト構成を確認する。
 
-共通: UDP 受信・フレーム組み立ては `main.cpp` + `glowbe_wire.h`。  
-ピンと本数は `tools/layout-compile.ts` が `glowbe_layout.h` に生成する。
+共通: UDP 受信・フレーム組み立ては `main.cpp` + `glowbe_wire.h`。
+ピンと本数は `tools/layout-compile.ts` が `include/generated/<layout-id>/glowbe_layout.h` に生成する。
 
 ## ビルド
 

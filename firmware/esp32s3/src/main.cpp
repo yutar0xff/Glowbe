@@ -32,14 +32,14 @@ namespace {
 constexpr uint16_t kUdpPort = 49152;
 constexpr uint16_t kStatusPort = 49153;
 constexpr uint32_t kStatusIntervalMs = 1000;
-constexpr uint32_t kLinkStaleLogMs = 10000;  // 診断用（消灯はしない）
+constexpr uint32_t kLinkStaleLogMs = 10000;
 constexpr uint16_t kMaxPacketsPerLoop = 32;
 
 glowbe::wire::FrameAssembler assembler(GLOWBE_LED_COUNT);
 glowbe::playout::Ring g_playout;
 
 uint32_t frames_rx = 0;
-uint32_t drops = 0;  // discarded packets (malformed header etc.), Glowbe Wire v1 STATUS offset 10
+uint32_t drops = 0;
 uint32_t udp_errors = 0;
 uint32_t last_udp_rx_ms = 0;
 uint32_t fps_window_start = 0;

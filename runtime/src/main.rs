@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
     let cfg = config.clone();
     let app_out = app.clone();
     let output_handle = tokio::spawn(async move {
-        if let Err(e) = output::run(cfg, app_out, meta_path).await {
+        if let Err(e) = output::run(cfg, app_out).await {
             tracing::error!("output loop ended: {e:#}");
         }
     });

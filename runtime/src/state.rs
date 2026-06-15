@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::RwLock as StdRwLock;
 use std::time::{Duration, Instant};
 
+use anyhow::Context;
 use tokio::sync::RwLock;
 
 use crate::mate::{self, MateState};
@@ -198,14 +199,16 @@ pub struct SharedApp {
     pub state: RwLock<RuntimeState>,
     mode_code: AtomicU8,
     sequence: StdRwLock<Option<Arc<LoadedSequence>>>,
-    /// From `assets/compiled/<id>.meta.json` at startup; compared with ESP STATUS extension.
-    pub expected_layout_hash: Option<u32>,
+    /// Compared with ESP STATUS `layout_hash`; updated when the active compiled layout changes.
+    pub expected_layout_hash: StdRwLock<Option<u32>>,
     pub compiled_dir: std::path::PathBuf,
     pub sequences_dir: std::path::PathBuf,
     pub uploads_dir: std::path::PathBuf,
     pub media_uploads: RwLock<HashMap<String, MediaUploadEntry>>,
     /// `assets/compiled/<layout>.ledmap.json` 由来。インタラクティブ合成用（LED インデックス順）。
     pub(crate) interactive_uv: StdRwLock<Option<Vec<(f32, f32)>>>,
+    /// Matches `interactive_uv` when populated; cleared on layout switch.
+    pub(crate) interactive_uv_layout_id: StdRwLock<Option<String>>,
     pub(crate) interactive_pulses: StdRwLock<Vec<InteractivePulse>>,
     pub(crate) mate_state: StdRwLock<MateState>,
     /// WS `setEffect` またはパルス省略時に使う既定エフェクト。
@@ -253,12 +256,13 @@ pub fn new_shared(
         )),
         mode_code: AtomicU8::new(initial_mode.code()),
         sequence: StdRwLock::new(None),
-        expected_layout_hash,
+        expected_layout_hash: StdRwLock::new(expected_layout_hash),
         compiled_dir,
         sequences_dir,
         uploads_dir,
         media_uploads: RwLock::new(HashMap::new()),
         interactive_uv: StdRwLock::new(None),
+        interactive_uv_layout_id: StdRwLock::new(None),
         interactive_pulses: StdRwLock::new(Vec::new()),
         mate_state: StdRwLock::new(MateState::default()),
         interactive_default_effect: AtomicU8::new(InteractiveEffectKind::ExpandingRingDiagonal.code()),
@@ -272,6 +276,57 @@ pub fn new_shared(
 }
 
 impl SharedApp {
+    /// Switch the active compiled layout (UV, LED count, hash). Clears loop selection if the
+    /// loaded sequence does not match the new layout. Does not persist `config.toml`.
+    pub async fn switch_runtime_layout(&self, new_layout_id: String) -> anyhow::Result<()> {
+        if new_layout_id.is_empty()
+            || new_layout_id.contains('/')
+            || new_layout_id.contains('\\')
+        {
+            anyhow::bail!("layout id must be non-empty and must not contain path separators");
+        }
+        let meta_path = self
+            .compiled_dir
+            .join(format!("{}.meta.json", new_layout_id));
+        let meta_raw = std::fs::read_to_string(&meta_path)
+            .with_context(|| format!("read layout meta {}", meta_path.display()))?;
+        let meta: serde_json::Value =
+            serde_json::from_str(&meta_raw).context("parse layout meta json")?;
+        let led_count = meta["ledCount"].as_u64().context("ledCount in meta")? as u16;
+        let expected_layout_hash = meta
+            .get("layoutHash")
+            .and_then(|v| v.as_u64())
+            .map(|x| x as u32);
+
+        if let Some(seq) = self.selected_sequence() {
+            if seq.layout_id != new_layout_id || seq.led_count != led_count as usize {
+                self.clear_sequence().await;
+            }
+        }
+
+        if let Ok(mut w) = self.preview_frame.write() {
+            *w = vec![0u8; led_count as usize * 3];
+        }
+        self.preview_seq.store(0, Ordering::Relaxed);
+
+        if let Ok(mut g) = self.interactive_uv.write() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.interactive_uv_layout_id.write() {
+            *g = None;
+        }
+
+        if let Ok(mut g) = self.expected_layout_hash.write() {
+            *g = expected_layout_hash;
+        }
+
+        let mut st = self.state.write().await;
+        st.layout_id = new_layout_id;
+        st.led_count = led_count;
+        st.layout_mismatch = false;
+        Ok(())
+    }
+
     pub fn output_mode(&self) -> OutputMode {
         OutputMode::from_code(self.mode_code.load(Ordering::Relaxed))
     }
@@ -380,9 +435,12 @@ impl SharedApp {
 
     /// インタラクティブ用 UV テーブルを読み込む（同一 `layout_id` / LED 数なら再読み込みしない）。
     pub fn ensure_interactive_uv(&self, layout_id: &str, led_count: usize) -> anyhow::Result<()> {
-        if let Ok(guard) = self.interactive_uv.read() {
-            if let Some(v) = guard.as_ref() {
-                if v.len() == led_count {
+        if let (Ok(uv_g), Ok(id_g)) = (
+            self.interactive_uv.read(),
+            self.interactive_uv_layout_id.read(),
+        ) {
+            if let (Some(v), Some(id)) = (uv_g.as_ref(), id_g.as_deref()) {
+                if id == layout_id && v.len() == led_count {
                     return Ok(());
                 }
             }
@@ -406,6 +464,11 @@ impl SharedApp {
             .write()
             .map_err(|e| anyhow::anyhow!("interactive_uv lock poisoned: {e}"))?;
         *slot = Some(table);
+        let mut id_slot = self
+            .interactive_uv_layout_id
+            .write()
+            .map_err(|e| anyhow::anyhow!("interactive_uv_layout_id lock poisoned: {e}"))?;
+        *id_slot = Some(layout_id.to_string());
         Ok(())
     }
 

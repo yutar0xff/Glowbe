@@ -190,11 +190,12 @@ function main(): void {
   }
 
   const outDir = join(REPO, "assets/compiled");
-  const fwInc = join(REPO, "firmware/esp32s3/include");
   mkdirSync(outDir, { recursive: true });
-  mkdirSync(fwInc, { recursive: true });
 
   const id = layout.id;
+  const fwGen = join(REPO, "firmware/esp32s3/include/generated", id);
+  mkdirSync(fwGen, { recursive: true });
+
   const layoutHash = fnv1aLayoutHash(layout, gpios, ledsPerLine);
   const meta = {
     layoutId: id,
@@ -221,13 +222,13 @@ function main(): void {
   writeFileSync(join(outDir, `${id}.meta.json`), JSON.stringify(meta, null, 2) + "\n");
   writeFileSync(join(outDir, `${id}.ledmap.json`), JSON.stringify({ layoutId: id, leds: ledmap }, null, 2) + "\n");
   writeBin(join(outDir, `${id}.bin`), gpios, ledsPerLine);
-  writeHeader(join(fwInc, "glowbe_layout.h"), id, gpios, ledsPerLine, layoutHash);
+  writeHeader(join(fwGen, "glowbe_layout.h"), id, gpios, ledsPerLine, layoutHash);
 
   console.log(`Compiled ${id}: ${placements.length} LEDs, ${gpios.length} data lines`);
   console.log(`  GPIO: ${gpios.join(", ")}`);
   console.log(`  per line: ${ledsPerLine.join(", ")}`);
   console.log(`  → assets/compiled/${id}.*`);
-  console.log(`  → firmware/esp32s3/include/glowbe_layout.h`);
+  console.log(`  → firmware/esp32s3/include/generated/${id}/glowbe_layout.h`);
 }
 
 main();

@@ -11,7 +11,9 @@ constexpr uint8_t kMagic1 = 0x42;
 constexpr uint8_t kVersion = 1;
 constexpr uint8_t kMsgFrame = 1;
 constexpr uint8_t kHeaderSize = 16;
-constexpr size_t kMaxChunkPayload = 1472;
+// Datagram = kHeaderSize + chunk; IPv4 UDP payload max 1472 → chunk ≤ 1456 (use 1440).
+// Must match runtime `MAX_CHUNK_PAYLOAD`.
+constexpr size_t kMaxChunkPayload = 1440;
 
 struct FrameHeader {
   uint32_t frame_id;
@@ -65,7 +67,6 @@ class FrameAssembler {
     }
 
     if (hdr.frame_id != assembling_id_ || chunk_count_ == 0) {
-      // 前フレームが未完のまま別 frame_id に切り替わった（欠落・順序逆転・送信側の打ち切り等）
       if (chunk_count_ > 0 && !assembly_fully_received()) {
         incomplete_frame_aborts_++;
       }
@@ -89,7 +90,6 @@ class FrameAssembler {
     }
 
     if (received_mask_[hdr.chunk_index]) {
-      // 同一 frame_id のチャンク再送（送信側リトライ）を許可
       received_bytes_ -= chunk_sizes_[hdr.chunk_index];
     }
 
@@ -111,7 +111,7 @@ class FrameAssembler {
 
   const uint8_t* buffer() const { return buffer_; }
 
-  /// 未完成フレームを捨てて別 `frame_id` に切り替えた回数（診断用。`drops` とは別）。
+  /// Assembly aborted: new `frame_id` arrived before the previous frame had all chunks.
   uint32_t incomplete_frame_aborts() const { return incomplete_frame_aborts_; }
 
  private:

@@ -8,7 +8,7 @@
 assets/compiled/<layout-id>.meta.json
 assets/compiled/<layout-id>.ledmap.json   # サーバ用 UV テーブル
 assets/compiled/<layout-id>.bin             # ファーム用（配線メタ）
-firmware/esp32s3/include/glowbe_layout.h    # ファーム用 C ヘッダ（自動生成）
+firmware/esp32s3/include/generated/<layout-id>/glowbe_layout.h    # ファーム用 C ヘッダ（自動生成）
 ```
 
 ## `.meta.json`
@@ -50,4 +50,4 @@ RGB 順序は **論理 RGB**（グローバル LED インデックスごとに R
 
 ## C ヘッダ
 
-`glowbe_layout.h` にマクロ `GLOWBE_LAYOUT_ID`, `GLOWBE_LAYOUT_HASH`, `GLOWBE_LED_COUNT`, `GLOWBE_DATA_LINES`, `GLOWBE_GPIO_PINS[]`, `GLOWBE_LINE_LED_COUNTS[]` を出力。
+`include/generated/<layout-id>/glowbe_layout.h` にマクロ `GLOWBE_LAYOUT_ID`, `GLOWBE_LAYOUT_HASH`, `GLOWBE_LED_COUNT`, `GLOWBE_DATA_LINES`, `GLOWBE_GPIO_PINS[]`, `GLOWBE_LINE_LED_COUNTS[]` を出力。PlatformIO の `-I` でそのディレクトリを先に指定する。

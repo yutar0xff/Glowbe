@@ -86,6 +86,12 @@ struct MasterToneRequest {
     gamma: f64,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceLayoutRequest {
+    layout_id: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ErrorResponse {
@@ -537,6 +543,20 @@ pub fn router(app: SharedState) -> Router {
             get({
                 let app = app.clone();
                 move || get_layout_uv(app.clone())
+            }),
+        )
+        .route(
+            "/api/v1/layouts",
+            get({
+                let app = app.clone();
+                move || get_layout_catalog(app.clone())
+            }),
+        )
+        .route(
+            "/api/v1/device/layout",
+            post({
+                let app = app.clone();
+                move |body| post_device_layout(app.clone(), body)
             }),
         )
         .route(
@@ -1248,6 +1268,38 @@ async fn get_sequences(app: SharedState) -> impl IntoResponse {
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
                 error: format!("list sequences failed: {e:#}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_layout_catalog(app: SharedState) -> impl IntoResponse {
+    match media::list_compiled_layouts(&app.compiled_dir) {
+        Ok(layouts) => (StatusCode::OK, Json(layouts)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("list layouts failed: {e:#}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn post_device_layout(
+    app: SharedState,
+    Json(req): Json<DeviceLayoutRequest>,
+) -> impl IntoResponse {
+    match app.switch_runtime_layout(req.layout_id).await {
+        Ok(()) => {
+            let s = app.state.read().await;
+            (StatusCode::OK, Json(state_response(&app, &s))).into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
             }),
         )
             .into_response(),

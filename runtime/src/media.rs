@@ -92,6 +92,44 @@ pub struct LoadedSequence {
     frames: Vec<u8>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompiledLayoutSummary {
+    pub layout_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    pub led_count: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+}
+
+pub fn list_compiled_layouts(compiled_dir: &Path) -> Result<Vec<CompiledLayoutSummary>> {
+    let mut out: Vec<CompiledLayoutSummary> = Vec::new();
+    let rd = fs::read_dir(compiled_dir)
+        .with_context(|| format!("read_dir {}", compiled_dir.display()))?;
+    for entry in rd {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        let Some(id) = name.strip_suffix(".meta.json").map(str::to_string) else {
+            continue;
+        };
+        let raw = fs::read_to_string(entry.path())
+            .with_context(|| format!("read {}", entry.path().display()))?;
+        let v: serde_json::Value = serde_json::from_str(&raw).context("parse layout meta")?;
+        let led_count = v["ledCount"].as_u64().unwrap_or(0).min(u64::from(u16::MAX)) as u16;
+        let display_name = v["displayName"].as_str().map(String::from);
+        let variant = v["variant"].as_str().map(String::from);
+        out.push(CompiledLayoutSummary {
+            layout_id: id,
+            display_name,
+            led_count,
+            variant,
+        });
+    }
+    out.sort_by(|a, b| a.layout_id.cmp(&b.layout_id));
+    Ok(out)
+}
+
 pub fn load_layout_uv(compiled_dir: &Path, layout_id: &str) -> Result<LayoutUv> {
     if layout_id.is_empty() || layout_id.contains('/') || layout_id.contains('\\') {
         anyhow::bail!("layout id must be non-empty and must not contain path separators");

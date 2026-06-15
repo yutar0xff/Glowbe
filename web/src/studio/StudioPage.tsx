@@ -7,6 +7,7 @@ import { IdleModePanel } from './IdleModePanel'
 import { InteractiveModePanel } from './InteractiveModePanel'
 import { LoopModePanel } from './LoopModePanel'
 import { MateModePanel } from './MateModePanel'
+import { LayoutPicker } from './LayoutPicker'
 import { StatusSection } from './StatusSection'
 
 const MODES: OutputMode[] = ['idle', 'loop', 'interactive', 'mate']
@@ -45,7 +46,7 @@ function panelMode(mode: string): OutputMode {
 }
 
 export function StudioPage() {
-  const { load, modeBusy, setMode } = useGlowbeRuntime()
+  const { load, modeBusy, layoutBusy, setMode } = useGlowbeRuntime()
   if (load.kind !== 'ready') return null
   const { state, sequences } = load
 
@@ -59,6 +60,8 @@ export function StudioPage() {
 
   return (
     <div className="flex flex-col gap-8 md:gap-10">
+      <LayoutPicker />
+
       <Tabs value={modeKey} onValueChange={pickMode} className="flex flex-col gap-0">
         <div className="space-y-3">
           <TabsList className="grid h-11 w-full max-w-full grid-cols-2 gap-0.5 p-1 sm:grid-cols-4 sm:h-12">
@@ -68,7 +71,7 @@ export function StudioPage() {
                 <TabsTrigger
                   key={mode}
                   value={mode}
-                  disabled={modeBusy !== null}
+                  disabled={modeBusy !== null || layoutBusy}
                   className="flex items-center justify-center gap-2 rounded-md px-2 text-xs font-medium sm:text-sm"
                   aria-label={label}
                 >

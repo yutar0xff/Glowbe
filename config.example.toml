@@ -4,6 +4,7 @@
 # esp_ip を省略または空にすると、同一 LAN で mDNS `_glowbe._udp` を探索する。
 # esp_ip = "192.168.x.x"
 layout_id = "prototype-icosahedron-15"
+# layout_id = "product-geodesic-2v-60"   # ESP must use matching firmware env (see firmware/README.md)
 
 [assets]
 # 省略時: リポジトリの assets/compiled（カレントから上位に `assets/compiled` を探索）

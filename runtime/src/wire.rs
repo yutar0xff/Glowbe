@@ -4,8 +4,9 @@ pub const VERSION: u8 = 1;
 pub const MSG_FRAME: u8 = 1;
 pub const MSG_STATUS: u8 = 3;
 pub const HEADER_SIZE: usize = 16;
-/// Max RGB bytes per UDP datagram (MTU-friendly; must match firmware `kMaxChunkPayload`).
-pub const MAX_CHUNK_PAYLOAD: usize = 1472;
+/// Max RGB bytes per chunk. One datagram is 16-byte header + chunk; IPv4 UDP payload max is
+/// 1472, so chunk ≤ 1456. Use 1440 with margin; must match firmware `kMaxChunkPayload`.
+pub const MAX_CHUNK_PAYLOAD: usize = 1440;
 
 /// Build one or more UDP datagrams for a full RGB frame.
 pub fn encode_frame(led_count: u16, frame_id: u32, rgb: &[u8]) -> Vec<Vec<u8>> {
@@ -132,11 +133,13 @@ mod tests {
     }
 
     #[test]
-    fn encode_multi_chunk_when_payload_exceeds_max() {
-        let led_count = 500u16;
-        let rgb: Vec<u8> = vec![0; led_count as usize * 3];
-        let pkts = encode_frame(led_count, 1, &rgb);
-        assert!(pkts.len() > 1);
+    fn encode_product_layout_uses_three_chunks() {
+        let led_count = 1260u16;
+        let rgb: Vec<u8> = vec![7; led_count as usize * 3];
+        let pkts = encode_frame(led_count, 99, &rgb);
+        assert_eq!(pkts.len(), 3);
+        assert_eq!(u16::from_le_bytes(pkts[0][12..14].try_into().unwrap()), 3);
+        assert_eq!(u16::from_le_bytes(pkts[2][10..12].try_into().unwrap()), 2);
         let total_payload: usize = pkts.iter().map(|p| p.len() - HEADER_SIZE).sum();
         assert_eq!(total_payload, rgb.len());
     }

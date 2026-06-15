@@ -27,9 +27,10 @@
 
 ```bash
 npx tsx tools/layout-compile.ts config/layouts/prototype.layout.json
+npx tsx tools/layout-compile.ts config/layouts/product.layout.json
 ```
 
-→ `assets/compiled/prototype-icosahedron-15.*`、`firmware/esp32s3/include/glowbe_layout.h`
+→ `assets/compiled/<layout-id>.*` と `firmware/esp32s3/include/generated/<layout-id>/glowbe_layout.h`（各 PlatformIO `env` の `-I` でどちらを使うか指定）
 
 ### 2. ファーム（スパイク）
 

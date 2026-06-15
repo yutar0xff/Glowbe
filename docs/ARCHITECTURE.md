@@ -458,7 +458,7 @@ POST /api/v1/mode
 ```
 main
 ├── glowbe_wire.h         # FRAME パーサ・再構成
-├── glowbe_layout.h       # layout-compile 自動生成
+├── include/generated/<layout-id>/glowbe_layout.h   # layout-compile 自動生成（env の -I で選択）
 ├── led_driver_s3.cpp     # S3: NeoPixelBus LCD 並列
 ├── led_driver_esp32.cpp  # 無印: NeoPixelBus I2S0 並列
 ├── main.cpp              # Wi-Fi + UDP + LED ドライバ

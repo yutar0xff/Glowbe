@@ -43,8 +43,10 @@ led_index_start = offset_bytes / 3
 
 | 項目 | 推奨値 |
 |------|--------|
-| `payload_len` 上限 | **1472**（IPv4 UDP で実用的な最大ペイロードに近い値。ランタイム・ファームで一致させる） |
-| 送信レート | ターゲット fps に合わせフレーム境界でバースト |
+| `payload_len` 上限 | **1440**（チャンク RGB）。ダタグラムは 16B ヘッダ + チャンク。UDP ペイロードが 1472 バイトを超えると IP 断片化し、ESP lwIP で欠けやすい。ランタイム `MAX_CHUNK_PAYLOAD` とファーム `kMaxChunkPayload` を一致させる |
+| `chunk_count` 上限 | **64**（ESP `FrameAssembler` の実装上限。`ceil(led_count * 3 / 1440)` がこれを超えるレイアウトは v1 では不可） |
+| ESP 再構成バッファ | 現実装 **4096 バイト**（≒ **1365 LED** 分の RGB。超える場合はファームの `buffer_[]` 拡張が必要） |
+| 送信レート | ターゲット fps に合わせる（壁時計ベース） |
 | `frame_id` 変化時 | 未完了の部分フレームは破棄 |
 
 ### 整合性（チェックサムなし）
@@ -72,7 +74,7 @@ v1 の FRAME ペイロードには**アプリ層のチェックサムを付け�
 
 | オフセット | 型 | 名前 | 値 |
 |-----------|-----|------|-----|
-| 16 | u32 | layout_hash | `tools/layout-compile.ts` が `.meta.json` と `glowbe_layout.h` に書く **FNV-1a 32bit**（配線・GPIO・chip 等の正規化 JSON から算出）。ランタイムが `meta.layoutHash` と照合し不一致を警告する。 |
+| 16 | u32 | layout_hash | `tools/layout-compile.ts` が `.meta.json` と **`firmware/esp32s3/include/generated/<layout-id>/glowbe_layout.h`** に書く **FNV-1a 32bit**（配線・GPIO・chip 等の正規化 JSON から算出）。ランタイムが `meta.layoutHash` と照合し不一致を警告する。 |
 
 - **後方互換:** 16 バイトのみの STATUS も有効。`layout_hash` は省略扱い（照合スキップ）。
 - **推奨:** 新規ファームは **20 バイト**を送信する。

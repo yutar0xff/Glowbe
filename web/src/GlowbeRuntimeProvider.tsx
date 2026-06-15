@@ -24,6 +24,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' })
   const [modeBusy, setModeBusy] = useState<string | null>(null)
   const [sequenceBusy, setSequenceBusy] = useState<string | null>(null)
+  const [layoutBusy, setLayoutBusy] = useState(false)
   const [masterToneBusy, setMasterToneBusy] = useState(false)
   const [mediaUploadBusy, setMediaUploadBusy] = useState(false)
   const [mediaConvertBusy, setMediaConvertBusy] = useState(false)
@@ -76,6 +77,49 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [])
+
+  const setDeviceLayout = useCallback(async (layoutId: string) => {
+    setLayoutBusy(true)
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 3500)
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/device/layout`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ layoutId }),
+        signal: controller.signal,
+      })
+      if (!res.ok) throw new Error(await readApiError(res))
+      const newState = (await res.json()) as RuntimeState
+      setLoad((prev) => {
+        if (prev.kind === 'ready') {
+          return {
+            ...prev,
+            state: newState,
+            fetchedAt: new Date(),
+          }
+        }
+        return {
+          kind: 'ready',
+          state: newState,
+          health: prev.kind === 'error' && prev.health ? prev.health : { ok: true, text: 'ok' },
+          sequences: [],
+          fetchedAt: new Date(),
+        }
+      })
+      await refreshLoad()
+    } catch (err) {
+      setLoad((prev) => ({
+        kind: 'error',
+        message: err instanceof Error ? err.message : String(err),
+        health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
+        fetchedAt: new Date(),
+      }))
+    } finally {
+      window.clearTimeout(timeout)
+      setLayoutBusy(false)
+    }
+  }, [refreshLoad])
 
   const setMode = useCallback(async (mode: OutputMode) => {
     setModeBusy(mode)
@@ -376,6 +420,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       load,
       modeBusy,
       sequenceBusy,
+      layoutBusy,
       masterToneBusy,
       mediaUploadBusy,
       mediaConvertBusy,
@@ -388,12 +433,14 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       convertMediaUpload,
       setSequenceDisplayName,
       deleteSequence,
+      setDeviceLayout,
       refreshLoad,
     }),
     [
       load,
       modeBusy,
       sequenceBusy,
+      layoutBusy,
       masterToneBusy,
       mediaUploadBusy,
       mediaConvertBusy,
@@ -406,6 +453,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       convertMediaUpload,
       setSequenceDisplayName,
       deleteSequence,
+      setDeviceLayout,
       refreshLoad,
     ],
   )

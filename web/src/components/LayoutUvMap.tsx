@@ -11,6 +11,10 @@ export type TapUvHighlight = { id: string; u: number; v: number; t0: number; uSp
 const MAP_TAP_MAX_PX = 18
 const MAP_TAP_MAX_MS = 650
 
+/** ViewBox 2×1 上の LED ドット半径（過密レイアウトでも重なりにくい程度） */
+const LED_CIRCLE_R = 0.016
+const LED_STROKE_CLASS = 'stroke-background/45 stroke-[0.0035]'
+
 /** Live / Loop 共通: 2:1 equirect 上に LED (u,v)。v=0 が上。 */
 export function LayoutUvSheet({
   uv,
@@ -110,16 +114,14 @@ export function LayoutUvSheet({
               key={led.i}
               cx={led.u * 2}
               cy={led.v}
-              r={0.028}
+              r={LED_CIRCLE_R}
               fill={
                 hasLive
                   ? `rgb(${rgb[o]!},${rgb[o + 1]!},${rgb[o + 2]!})`
                   : undefined
               }
               className={
-                hasLive
-                  ? 'stroke-background/50 stroke-[0.006]'
-                  : 'fill-cyan-400/85 stroke-background/50 stroke-[0.006]'
+                hasLive ? LED_STROKE_CLASS : cn('fill-cyan-400/85', LED_STROKE_CLASS)
               }
             />
           )
@@ -141,7 +143,7 @@ export function LayoutUvSheet({
               <circle
                 cx={h.u * 2}
                 cy={h.v}
-                r={0.022}
+                r={LED_CIRCLE_R * 0.9}
                 fill="rgba(253,224,71,0.55)"
                 opacity={0.2 + 0.8 * hiPhase}
               />

@@ -129,6 +129,33 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 
 → 実装済み。失敗時は `500` + `{ "error": "..." }`。
 
+### `GET /api/v1/layouts`
+
+`assets/compiled` にある `*.meta.json` を列挙し、利用可能なレイアウトの要約を返す。
+
+```json
+[
+  {
+    "layoutId": "prototype-icosahedron-15",
+    "displayName": "Prototype icosahedron (15 faces)",
+    "ledCount": 225,
+    "variant": "prototype"
+  }
+]
+```
+
+→ 実装済み。ディレクトリ読み取り失敗時は `500` + `{ "error": "..." }`。
+
+### `POST /api/v1/device/layout`
+
+```json
+{ "layoutId": "product-geodesic-2v-60" }
+```
+
+→ 実装済み: ランタイムの **`layoutId` / `ledCount` / `layoutHash` 期待値**を切り替え、プレビューバッファを再確保する。現在のループシーケンスの `manifest.layoutId` または LED 数が一致しない場合は **選択解除**（テストパターンへ）。`config.toml` は書き換えない。`400` + `{ "error": "..." }`（メタ JSON が無い等）。成功時は `200` + 更新後 `state`。
+
+**注意:** ESP はコンパイル時に埋め込んだ `layout_hash` / `led_count` と一致するフレームのみ受け入れる。Studio のレイアウト選択と実機ファームを揃えること。
+
 ### `GET /health`
 
 ヘルスチェック。**プレーンテキスト**。
@@ -287,6 +314,8 @@ WebSocket の **Binary** メッセージ。ビッグエンディアン。
 | `POST /api/v1/loop/clear-selection` | 2 | ✅ 実装済 |
 | `POST /api/v1/loop/pause` | 2 | ✅ 実装済 |
 | `GET /api/v1/layout/uv` | 1–2 | ✅ 実装済 |
+| `GET /api/v1/layouts` | 2 | ✅ 実装済 |
+| `POST /api/v1/device/layout` | 2 | ✅ 実装済 |
 | `GET /api/v1/ws`（state 配信） | 1–2 | ✅ 実装済 |
 | `GET /api/v1/ws`（interactive） | 1–2 | ✅ interactive UV 合成・複数エフェクト |
 | `GET /api/v1/ws`（mate） | 2 | ✅ mate 状態の WS 更新 |

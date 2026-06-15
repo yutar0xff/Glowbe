@@ -5,6 +5,7 @@ export type GlowbeRuntimeContextValue = {
   load: LoadState
   modeBusy: string | null
   sequenceBusy: string | null
+  layoutBusy: boolean
   masterToneBusy: boolean
   mediaUploadBusy: boolean
   mediaConvertBusy: boolean
@@ -28,6 +29,8 @@ export type GlowbeRuntimeContextValue = {
   setSequenceDisplayName: (sequenceId: string, displayName: string) => Promise<void>
   /** Remove a sequence from disk (server clears selection if it was playing). */
   deleteSequence: (sequenceId: string) => Promise<void>
+  /** Switch compiled LED layout (must match firmware flash). Clears loop selection if sequence mismatches. */
+  setDeviceLayout: (layoutId: string) => Promise<void>
   /** Refetch runtime state (e.g. after mate updates). */
   refreshLoad: () => Promise<void>
 }

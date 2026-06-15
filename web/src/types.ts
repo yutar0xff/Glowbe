@@ -25,6 +25,13 @@ export type MateSummary = {
   autoTremor: boolean
 }
 
+export type CompiledLayoutSummary = {
+  layoutId: string
+  displayName?: string
+  ledCount: number
+  variant?: string
+}
+
 export type RuntimeState = {
   layoutId: string
   mode: string

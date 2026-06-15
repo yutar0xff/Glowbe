@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
@@ -37,52 +36,22 @@ async fn resolve_esp_socket(config: &Config) -> Result<SocketAddr> {
     Ok(found)
 }
 
-pub async fn run(config: Config, app: SharedState, meta_path: PathBuf) -> Result<()> {
-    let meta: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(&meta_path)
-            .with_context(|| format!("read layout meta {}", meta_path.display()))?,
-    )?;
-    let led_count = meta["ledCount"].as_u64().context("ledCount in meta")? as u16;
-
+pub async fn run(config: Config, app: SharedState) -> Result<()> {
     let status_port = config.output.status_port;
     tokio::spawn(status_listener(status_port, app.clone()));
 
     let frame_interval = Duration::from_secs_f64(1.0 / config.output.target_fps as f64);
-    let mut rgb = vec![0u8; led_count as usize * 3];
     let mut frame_id = 0u32;
     let loop_start = Instant::now();
     let mut reconnect_backoff = Duration::from_millis(500);
 
-    let pattern_uv: Option<Vec<(f32, f32)>> = match media::load_layout_uv(&app.compiled_dir, &config.device.layout_id) {
-        Ok(layout) if layout.led_count == led_count as usize => {
-            let mut table = vec![(0.5f32, 0.5f32); led_count as usize];
-            for p in layout.leds {
-                if p.i < table.len() {
-                    table[p.i] = (p.u, p.v);
-                }
-            }
-            info!(
-                "loop test pattern: UV-driven hues from ledmap ({} LEDs)",
-                table.len()
-            );
-            Some(table)
-        }
-        Ok(layout) => {
-            warn!(
-                "ledmap led_count {} != runtime {}; loop test pattern uses chain fallback",
-                layout.led_count, led_count
-            );
-            None
-        }
-        Err(e) => {
-            warn!(
-                "ledmap load failed for {} ({}); loop test pattern uses chain fallback: {e:#}",
-                config.device.layout_id,
-                app.compiled_dir.display()
-            );
-            None
-        }
+    let (mut led_count, mut rgb) = {
+        let s = app.state.read().await;
+        let lc = s.led_count;
+        (lc, vec![0u8; lc as usize * 3])
     };
+    let mut pattern_uv: Option<Vec<(f32, f32)>> = None;
+    let mut pattern_layout_cache: Option<String> = None;
 
     loop {
         let esp_addr = match resolve_esp_socket(&config).await {
@@ -125,6 +94,47 @@ pub async fn run(config: Config, app: SharedState, meta_path: PathBuf) -> Result
             ticker.tick().await;
             app.metrics.mark_tick();
             app.clear_expired_interactive_pulses();
+
+            let (layout_id, lc) = {
+                let s = app.state.read().await;
+                (s.layout_id.clone(), s.led_count)
+            };
+            if pattern_layout_cache.as_deref() != Some(layout_id.as_str()) || lc != led_count {
+                led_count = lc;
+                rgb.resize(led_count as usize * 3, 0);
+                pattern_layout_cache = Some(layout_id.clone());
+                pattern_uv = match media::load_layout_uv(&app.compiled_dir, &layout_id) {
+                    Ok(layout) if layout.led_count == led_count as usize => {
+                        let mut table = vec![(0.5f32, 0.5f32); led_count as usize];
+                        for p in layout.leds {
+                            if p.i < table.len() {
+                                table[p.i] = (p.u, p.v);
+                            }
+                        }
+                        info!(
+                            "loop test pattern: UV-driven hues from ledmap ({} / {} LEDs)",
+                            layout_id,
+                            table.len()
+                        );
+                        Some(table)
+                    }
+                    Ok(layout) => {
+                        warn!(
+                            "ledmap led_count {} != runtime {}; loop test pattern uses chain fallback",
+                            layout.led_count, led_count
+                        );
+                        None
+                    }
+                    Err(e) => {
+                        warn!(
+                            "ledmap load failed for {} ({}); loop test pattern uses chain fallback: {e:#}",
+                            layout_id,
+                            app.compiled_dir.display()
+                        );
+                        None
+                    }
+                };
+            }
 
             let raw_elapsed = loop_start.elapsed();
             app.record_loop_raw_tick(raw_elapsed);
@@ -220,7 +230,6 @@ async fn status_listener(port: u16, app: SharedState) {
     };
     info!("status listen {bind_addr}");
 
-    let expected = app.expected_layout_hash;
     let mut buf = [0u8; 128];
     loop {
         match sock.recv_from(&mut buf).await {
@@ -233,6 +242,11 @@ async fn status_listener(port: u16, app: SharedState) {
                         rssi = st.rssi,
                         layout_hash = ?st.layout_hash,
                     );
+                    let expected = app
+                        .expected_layout_hash
+                        .read()
+                        .ok()
+                        .and_then(|g| *g);
                     let mismatch = match (expected, st.layout_hash) {
                         (Some(exp), Some(esp_h)) if exp != esp_h => {
                             warn!(

@@ -82,7 +82,7 @@
 
 - **STATUS offset 10 は `drops`**。実装・仕様・API（`espDrops`）で一致。
 - **STATUS 拡張（20 バイト）:** 末尾 4 バイトに `layout_hash`（FNV-1a）。ランタイムは `meta.layoutHash` と照合し `layoutMismatch` を立てる。16 バイトのみの旧ファームは照合スキップ。
-- **FRAME ペイロード上限** ランタイム・ファームとも **1472 バイト**（旧 1020 から拡大）。ESP 側 `FrameAssembler` バッファ **4096** バイト。
+- **FRAME チャンク RGB 上限:** ランタイム・ファームとも **1440 バイト**（16 バイトヘッダと合わせて IPv4 UDP で MTU 内）。ESP 側 `FrameAssembler` バッファ **4096** バイト。
 - **ワイヤ色順:** **論理 RGB**（R,G,B）。GRB 物理順は **NeoPixelBus `NeoGrbFeature`** が担当（二重変換を解消済み）。
 - **欠落時表示:** 完全フレームが揃わない場合は LED を更新せず、最後に表示したフレームを保持する。受信途絶で自動消灯しない。
 - **プレイアウト遅延:** ファーム側 `GLOWBE_PLAYOUT_LAG_FRAMES` 既定 2、リング 8。ESP32 無印で低 fps でも出ていた消灯ちらつきは、この方針で解消確認済み。
