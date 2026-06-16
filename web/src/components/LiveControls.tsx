@@ -60,6 +60,8 @@ export function LiveControls({
   const [colorHex, setColorHex] = useState('#c8f0ff')
   const [ringSpeed, setRingSpeed] = useState(1)
   const [ringThicknessDeg, setRingThicknessDeg] = useState(0)
+  const [solidBaseEnabled, setSolidBaseEnabled] = useState(false)
+  const [solidBaseHex, setSolidBaseHex] = useState('#101018')
   const [pulseHighlights, setPulseHighlights] = useState<TapUvHighlight[]>([])
   const liveRgbBufRef = useRef<Uint8Array | null>(null)
   const [liveRgbRevision, setLiveRgbRevision] = useState(0)
@@ -156,6 +158,30 @@ export function LiveControls({
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'interactive', action: 'setEffect', effect: interactiveEffect }))
   }, [interactiveEffect, wsPhase])
+
+  useEffect(() => {
+    if (wsPhase !== 'open') return
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    const t = window.setTimeout(() => {
+      const w = wsRef.current
+      if (!w || w.readyState !== WebSocket.OPEN) return
+      if (!solidBaseEnabled) {
+        w.send(JSON.stringify({ type: 'interactive', action: 'setSolid', enabled: false }))
+        return
+      }
+      const [r, g, b] = hexToRgb(solidBaseHex)
+      w.send(
+        JSON.stringify({
+          type: 'interactive',
+          action: 'setSolid',
+          enabled: true,
+          colorRgb: [r, g, b],
+        }),
+      )
+    }, 180)
+    return () => window.clearTimeout(t)
+  }, [solidBaseEnabled, solidBaseHex, wsPhase])
 
   useEffect(() => {
     if (pulseHighlights.length === 0) return
@@ -333,6 +359,36 @@ export function LiveControls({
                   </div>
                 </>
               ) : null}
+            </div>
+
+            <Separator />
+
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="solid-base"
+                  checked={solidBaseEnabled}
+                  onCheckedChange={setSolidBaseEnabled}
+                  disabled={!canInteractive}
+                />
+                <Label htmlFor="solid-base" className="text-xs font-semibold">
+                  Solid base
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="solid-base-color" className="text-xs text-muted-foreground">
+                  Base color
+                </Label>
+                <input
+                  id="solid-base-color"
+                  type="color"
+                  value={solidBaseHex}
+                  disabled={!canInteractive || !solidBaseEnabled}
+                  onChange={(e) => setSolidBaseHex(e.target.value)}
+                  className="h-9 w-12 cursor-pointer rounded-md border border-input bg-transparent disabled:opacity-40"
+                  aria-label="Interactive solid base color"
+                />
+              </div>
             </div>
 
             <Separator />

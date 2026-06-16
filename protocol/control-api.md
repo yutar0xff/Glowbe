@@ -58,7 +58,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 { "mode": "idle" | "loop" | "interactive" | "ripple" | "mate" | "mic" | "clock_digital" | "clock_analog" }
 ```
 
-→ 実装済み: **`idle`**（全消灯・**選択シーケンス解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択シーケンス）、**`interactive`**（消灯ベースで WebSocket のインタラクティブ・パルスのみ UDP に合成。シーケンス選択は保持）。**`ripple`** は **`interactive` と同義**（後方互換用）。**`mate`**（相棒モード: 球面クォータニオン＋SDF 顔。詳細は [`docs/MATE-MODE.md`](../docs/MATE-MODE.md)）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
+→ 実装済み: **`idle`**（全消灯・**選択シーケンス解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択シーケンス）、**`interactive`**（既定は全消灯ベース。WebSocket の **`setSolid`** で全 LED を同一 RGB にしたうえで、インタラクティブ・パルスを UDP 出力に合成。シーケンス選択は保持）。**`ripple`** は **`interactive` と同義**（後方互換用）。**`mate`**（相棒モード: 球面クォータニオン＋SDF 顔。詳細は [`docs/MATE-MODE.md`](../docs/MATE-MODE.md)）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
 
 ### `POST /api/v1/mate/state`
 
@@ -249,6 +249,8 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 { "type": "masterSettings", "brightness": 0.85, "gamma": 1.15 }
 { "type": "getLayoutUv" }
 { "type": "interactive", "action": "setEffect", "effect": "expandingRingDiagonal" }
+{ "type": "interactive", "action": "setSolid", "enabled": true, "colorRgb": [16, 16, 24] }
+{ "type": "interactive", "action": "setSolid", "enabled": false }
 { "type": "interactive", "action": "pulse", "u": 0.42, "v": 0.71, "effect": "sphereGaussian", "durationMs": 450, "sigmaRad": 0.14, "colorRandom": true }
 { "type": "interactive", "action": "pulse", "u": 0.42, "v": 0.71, "effect": "expandingRingDiagonal", "colorRgb": [255, 120, 40], "ringSpeed": 1.2, "ringThicknessRad": 0.09 }
 { "type": "ripple", "u": 0.42, "v": 0.71, "amplitude": 1.0, "durationMs": 450, "sigmaRad": 0.14 }
@@ -266,6 +268,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 - **`previewSubscribe`** … `enable`（既定 `true`）で、その WebSocket 接続への **バイナリ LED プレビュー**（約 30fps）を開始／停止する。成功時は `event_status`（`event`: `previewSubscribe`, `status`: `ok`）。出力モードは問わない。
 - **`getLayoutUv`** … 現在のランタイム `layoutId` の UV マップを返す（`GET /api/v1/layout/uv` と同一 JSON に **`"type": "layoutUv"`** を付与）。失敗時は `event_status`（`event`: `getLayoutUv`, `status`: `error`）。
 - **`interactive` + `action: "setEffect"`** … 以降のパルスで省略したときに使う既定エフェクトを設定（`effect`: `sphereGaussian` | `expandingRingDiagonal`）。`ripple` 型メッセージでは不可。
+- **`interactive` + `action: "setSolid"`** … インタラクティブ出力の**下地**を全 LED 同一色にするか消灯に戻す。出力モードが **`interactive` / `ripple`** のときのみ有効（それ以外は `event_status` `error`）。**`enabled`**（別名 **`enable`**）が **`false`** または省略のときは従来どおり全消灯ベース。**`true`** のときは **`colorRgb`: [r,g,b]**（各 0–255）で指定するか、**`r` / `g` / `b`** 数値（未指定は 0）で指定。成功応答は `event_status`（`action`: `setSolid`, `enabled`, 有効時は `colorRgb`）。
 - **`interactive` + `action: "pulse"`**（または `action` 省略でパルス扱い）… パルスは **最大 32 本**まで保持し、それを超えると古いものから破棄する。アクティブな全パルスを **線形光（sRGB デコード）で加算**し、合成後に **最大チャンネルが 1 を超える場合だけ線形空間で RGB を一様に縮小**してから sRGB に戻す。残光トレイルが重なるため、赤と緑のリップルが重なった所は **黄に加算混色**される。
   - 共通: **`amplitude`**（既定 1、0–4）、**`colorRandom`: true** でタップごとに鮮やかな色を自動決定、**`colorRgb`: [r,g,b]`** で固定色（`colorRandom` が true なら無視）。
   - **`sphereGaussian`**: **`durationMs`**（既定 450、100–5000）と **`sigmaRad`**（既定約 0.14 rad、0.02–0.6）で寿命とスポット半径を指定する球面ガウス。
@@ -278,6 +281,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 { "type": "state", "layoutId": "prototype-icosahedron-15", "mode": "loop", "fpsOut": 60.0 }
 { "type": "layoutUv", "layoutId": "prototype-icosahedron-15", "ledCount": 225, "leds": [ { "i": 0, "u": 0.5, "v": 0.5 } ] }
 { "type": "pong" }
+{ "type": "event_status", "event": "interactive", "status": "ok", "action": "setSolid", "enabled": true, "colorRgb": [16, 16, 24] }
 { "type": "event_status", "event": "interactive", "status": "ok", "effect": "sphereGaussian" }
 { "type": "event_status", "event": "mate", "status": "ok", "action": "setGaze" }
 { "type": "event_status", "event": "mate", "status": "error", "reason": "mate WS events apply only in output mode \"mate\"" }

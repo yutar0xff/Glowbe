@@ -141,9 +141,13 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
             let seq_elapsed = app.sequence_elapsed_for_loop(raw_elapsed);
             let t_ms = raw_elapsed.as_millis() as u32;
             match app.output_mode() {
-                OutputMode::Idle | OutputMode::Interactive => {
+                OutputMode::Idle => {
                     app.metrics.set_loop_source_frame(None);
-                    rgb.fill(0)
+                    rgb.fill(0);
+                }
+                OutputMode::Interactive => {
+                    app.metrics.set_loop_source_frame(None);
+                    app.fill_interactive_base(&mut rgb);
                 }
                 OutputMode::Loop => {
                     if let Some(sequence) = app.selected_sequence() {

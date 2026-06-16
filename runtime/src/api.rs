@@ -801,6 +801,63 @@ async fn handle_ws_text(
                     socket.send(Message::Text(reply.to_string().into())).await?;
                     return Ok(());
                 }
+                if let Some("setSolid") = v.get("action").and_then(|a| a.as_str()) {
+                    let enabled = v
+                        .get("enabled")
+                        .or_else(|| v.get("enable"))
+                        .and_then(|x| x.as_bool())
+                        .unwrap_or(false);
+                    if !enabled {
+                        app.set_interactive_solid_rgb(None);
+                        let reply = json!({
+                            "type": "event_status",
+                            "event": "interactive",
+                            "status": "ok",
+                            "action": "setSolid",
+                            "enabled": false
+                        });
+                        socket.send(Message::Text(reply.to_string().into())).await?;
+                        return Ok(());
+                    }
+                    let tri: [u8; 3] = if let Some(arr) = v.get("colorRgb").and_then(|x| x.as_array()) {
+                        if arr.len() != 3 {
+                            let reply = json!({
+                                "type": "event_status",
+                                "event": "interactive",
+                                "status": "error",
+                                "reason": "setSolid colorRgb must be [r,g,b]"
+                            });
+                            socket.send(Message::Text(reply.to_string().into())).await?;
+                            return Ok(());
+                        }
+                        let mut out = [0u8; 3];
+                        for (i, slot) in out.iter_mut().enumerate() {
+                            let x = arr[i].as_f64().unwrap_or(0.0);
+                            *slot = x.round().clamp(0.0, 255.0) as u8;
+                        }
+                        out
+                    } else {
+                        let r = v.get("r").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                        let g = v.get("g").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                        let b = v.get("b").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                        [
+                            r.round().clamp(0.0, 255.0) as u8,
+                            g.round().clamp(0.0, 255.0) as u8,
+                            b.round().clamp(0.0, 255.0) as u8,
+                        ]
+                    };
+                    app.set_interactive_solid_rgb(Some(tri));
+                    let reply = json!({
+                        "type": "event_status",
+                        "event": "interactive",
+                        "status": "ok",
+                        "action": "setSolid",
+                        "enabled": true,
+                        "colorRgb": [tri[0], tri[1], tri[2]]
+                    });
+                    socket.send(Message::Text(reply.to_string().into())).await?;
+                    return Ok(());
+                }
                 if let Some(act) = v.get("action").and_then(|a| a.as_str()) {
                     if act != "pulse" {
                         let reply = json!({

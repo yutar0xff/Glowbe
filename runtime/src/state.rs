@@ -210,6 +210,8 @@ pub struct SharedApp {
     /// Matches `interactive_uv` when populated; cleared on layout switch.
     pub(crate) interactive_uv_layout_id: StdRwLock<Option<String>>,
     pub(crate) interactive_pulses: StdRwLock<Vec<InteractivePulse>>,
+    /// `interactive` モードのベース色。`None` のときは黒。
+    pub(crate) interactive_solid: StdRwLock<Option<[u8; 3]>>,
     pub(crate) mate_state: StdRwLock<MateState>,
     /// WS `setEffect` またはパルス省略時に使う既定エフェクト。
     interactive_default_effect: AtomicU8,
@@ -264,6 +266,7 @@ pub fn new_shared(
         interactive_uv: StdRwLock::new(None),
         interactive_uv_layout_id: StdRwLock::new(None),
         interactive_pulses: StdRwLock::new(Vec::new()),
+        interactive_solid: StdRwLock::new(None),
         mate_state: StdRwLock::new(MateState::default()),
         interactive_default_effect: AtomicU8::new(InteractiveEffectKind::ExpandingRingDiagonal.code()),
         master_brightness_bits: AtomicU32::new(f32::to_bits(1.0)),
@@ -313,6 +316,9 @@ impl SharedApp {
             *g = None;
         }
         if let Ok(mut g) = self.interactive_uv_layout_id.write() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.interactive_solid.write() {
             *g = None;
         }
 
@@ -431,6 +437,31 @@ impl SharedApp {
     pub fn set_interactive_default_effect(&self, e: InteractiveEffectKind) {
         self.interactive_default_effect
             .store(e.code(), Ordering::Relaxed);
+    }
+
+    #[allow(dead_code)]
+    pub fn interactive_solid_rgb(&self) -> Option<[u8; 3]> {
+        self.interactive_solid.read().ok().and_then(|g| *g)
+    }
+
+    pub fn set_interactive_solid_rgb(&self, rgb: Option<[u8; 3]>) {
+        if let Ok(mut g) = self.interactive_solid.write() {
+            *g = rgb;
+        }
+    }
+
+    /// `interactive` のベース（`None` は全 LED 0）。
+    pub fn fill_interactive_base(&self, rgb: &mut [u8]) {
+        let solid = self.interactive_solid.read().ok().and_then(|g| *g);
+        if let Some([r, g_ch, b]) = solid {
+            for px in rgb.chunks_exact_mut(3) {
+                px[0] = r;
+                px[1] = g_ch;
+                px[2] = b;
+            }
+        } else {
+            rgb.fill(0);
+        }
     }
 
     /// インタラクティブ用 UV テーブルを読み込む（同一 `layout_id` / LED 数なら再読み込みしない）。
