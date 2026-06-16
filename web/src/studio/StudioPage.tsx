@@ -63,8 +63,8 @@ export function StudioPage() {
       <LayoutPicker />
 
       <Tabs value={modeKey} onValueChange={pickMode} className="flex flex-col gap-0">
-        <div className="space-y-3">
-          <TabsList className="grid h-11 w-full max-w-full grid-cols-2 gap-0.5 p-1 sm:grid-cols-4 sm:h-12">
+        <div className="space-y-4">
+          <TabsList variant="segmented" className="max-w-full">
             {MODES.map((mode) => {
               const { label, icon: Icon } = modeMeta[mode]
               return (
@@ -72,7 +72,7 @@ export function StudioPage() {
                   key={mode}
                   value={mode}
                   disabled={modeBusy !== null || layoutBusy}
-                  className="flex items-center justify-center gap-2 rounded-md px-2 text-xs font-medium sm:text-sm"
+                  className="box-border flex h-full min-h-11 w-full min-w-0 items-center justify-center gap-2 rounded-md px-2 py-2 text-xs font-medium after:hidden sm:min-h-0 sm:py-0.5 sm:text-sm"
                   aria-label={label}
                 >
                   <Icon className="size-4 shrink-0 opacity-80" aria-hidden />
@@ -81,7 +81,7 @@ export function StudioPage() {
               )
             })}
           </TabsList>
-          <p className="text-pretty text-sm leading-relaxed text-muted-foreground">
+          <p className="relative z-10 mt-1 text-pretty border-t border-border/40 pt-3 text-sm leading-relaxed text-muted-foreground">
             {modeMeta[modeKey].description}
           </p>
           {modeBusy !== null ? (
@@ -91,16 +91,16 @@ export function StudioPage() {
           ) : null}
         </div>
 
-        <TabsContent value="idle" className="mt-8 space-y-6 outline-none focus-visible:outline-none">
+        <TabsContent value="idle" className="mt-6 space-y-6 outline-none focus-visible:outline-none sm:mt-10">
           <IdleModePanel state={state} />
         </TabsContent>
-        <TabsContent value="loop" className="mt-8 space-y-6 outline-none focus-visible:outline-none">
+        <TabsContent value="loop" className="mt-6 space-y-6 outline-none focus-visible:outline-none sm:mt-10">
           <LoopModePanel state={state} sequences={sequences} />
         </TabsContent>
-        <TabsContent value="interactive" className="mt-8 space-y-6 outline-none focus-visible:outline-none">
+        <TabsContent value="interactive" className="mt-6 space-y-6 outline-none focus-visible:outline-none sm:mt-10">
           <InteractiveModePanel state={state} />
         </TabsContent>
-        <TabsContent value="mate" className="mt-8 space-y-6 outline-none focus-visible:outline-none">
+        <TabsContent value="mate" className="mt-6 space-y-6 outline-none focus-visible:outline-none sm:mt-10">
           <MateModePanel state={state} />
         </TabsContent>
       </Tabs>

@@ -24,7 +24,7 @@ export function AppLayout() {
       <div className="mx-auto w-full max-w-5xl px-4 pt-10 md:px-6 md:pt-14">
         <header className="mb-10 flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
           <div className="space-y-2">
-            <p className="font-mono text-xs font-bold tracking-[0.2em] text-cyan-400 uppercase">LED output</p>
+            <p className="font-mono text-xs font-bold tracking-[0.2em] text-cyan-400 uppercase">Spherical LED display</p>
             <h1 className="font-heading text-4xl font-extrabold tracking-tight md:text-5xl">Glowbe Studio</h1>
             <p className="max-w-xl text-sm text-muted-foreground md:text-base">
               Choose a mode, run your content, and watch health and metrics below.

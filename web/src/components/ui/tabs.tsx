@@ -23,12 +23,15 @@ function Tabs({
 }
 
 const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
+  "group/tabs-list items-center justify-center rounded-lg text-muted-foreground group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
   {
     variants: {
       variant: {
-        default: "bg-muted",
-        line: "gap-1 bg-transparent",
+        default:
+          "inline-flex w-fit bg-muted p-[3px] group-data-horizontal/tabs:h-8",
+        line: "inline-flex w-fit gap-1 bg-transparent p-[3px]",
+        segmented:
+          "grid h-auto w-full min-h-0 grid-cols-2 items-stretch gap-1 bg-muted p-1 sm:h-12 sm:grid-cols-4 sm:items-center sm:gap-0.5",
       },
     },
     defaultVariants: {
