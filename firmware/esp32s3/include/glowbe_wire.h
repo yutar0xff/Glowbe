@@ -10,6 +10,7 @@ constexpr uint8_t kMagic0 = 0x47;
 constexpr uint8_t kMagic1 = 0x42;
 constexpr uint8_t kVersion = 1;
 constexpr uint8_t kMsgFrame = 1;
+constexpr uint8_t kMsgLink = 4;
 constexpr uint8_t kHeaderSize = 16;
 // Datagram = kHeaderSize + chunk; IPv4 UDP payload max 1472 → chunk ≤ 1456 (use 1440).
 // Must match runtime `MAX_CHUNK_PAYLOAD`.
@@ -38,12 +39,28 @@ inline bool parseHeader(const uint8_t* data, size_t len, FrameHeader& out) {
   return true;
 }
 
+/// LINK (16 B): byte 4 — `0` = economy (modem sleep OK), non-zero = active.
+inline bool parseLink(const uint8_t* data, size_t len, bool& active_out) {
+  if (len < kHeaderSize) {
+    return false;
+  }
+  if (data[0] != kMagic0 || data[1] != kMagic1 || data[2] != kVersion || data[3] != kMsgLink) {
+    return false;
+  }
+  active_out = data[4] != 0;
+  return true;
+}
+
 class FrameAssembler {
  public:
   explicit FrameAssembler(uint16_t expected_led_count)
       : expected_led_count_(expected_led_count),
         expected_bytes_(static_cast<size_t>(expected_led_count) * 3) {
     reset();
+  }
+
+  static bool frame_before(uint32_t a, uint32_t b) {
+    return a != b && static_cast<int32_t>(a - b) < 0;
   }
 
   void reset() {
@@ -53,6 +70,8 @@ class FrameAssembler {
     memset(received_mask_, 0, sizeof(received_mask_));
     memset(chunk_sizes_, 0, sizeof(chunk_sizes_));
     memset(buffer_, 0, sizeof(buffer_));
+    have_last_completed_frame_ = false;
+    last_completed_frame_id_ = 0;
   }
 
   bool ingest(const FrameHeader& hdr, const uint8_t* payload, size_t expected_led_count) {
@@ -63,6 +82,13 @@ class FrameAssembler {
 
     const uint16_t expected_chunks = chunkCountForPayload(expected_bytes_);
     if (hdr.chunk_count != expected_chunks) {
+      return false;
+    }
+
+    if (have_last_completed_frame_ && frame_before(hdr.frame_id, last_completed_frame_id_)) {
+      return false;
+    }
+    if (chunk_count_ > 0 && frame_before(hdr.frame_id, assembling_id_)) {
       return false;
     }
 
@@ -106,6 +132,8 @@ class FrameAssembler {
         return false;
       }
     }
+    last_completed_frame_id_ = assembling_id_;
+    have_last_completed_frame_ = true;
     return true;
   }
 
@@ -159,6 +187,8 @@ class FrameAssembler {
   bool received_mask_[64] = {};
   uint8_t buffer_[4096];
   uint32_t incomplete_frame_aborts_ = 0;
+  uint32_t last_completed_frame_id_ = 0;
+  bool have_last_completed_frame_ = false;
 };
 
 }  // namespace glowbe::wire

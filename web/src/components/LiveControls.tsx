@@ -224,7 +224,7 @@ export function LiveControls({
     ws.send(JSON.stringify(payload))
   }
 
-  const canInteractive = outputMode === 'interactive' || outputMode === 'ripple'
+  const canInteractive = outputMode === 'interactive'
 
   const handleInteractiveTapUv = (u: number, v: number, uSphere?: number) => {
     if (!canInteractive) return

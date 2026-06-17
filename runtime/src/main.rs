@@ -33,8 +33,8 @@ async fn main() -> Result<()> {
     if args.first().is_some_and(|arg| arg == "convert-image") {
         return convert_image_command(&args[1..]);
     }
-    if args.first().is_some_and(|arg| arg == "gen-demo-ripple-rings") {
-        return gen_demo_ripple_rings_command(&args[1..]);
+    if args.first().is_some_and(|arg| arg == "gen-demo-expanding-rings") {
+        return gen_demo_expanding_rings_command(&args[1..]);
     }
 
     let config_path = args
@@ -142,11 +142,11 @@ fn convert_image_command(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn gen_demo_ripple_rings_command(args: &[String]) -> Result<()> {
+fn gen_demo_expanding_rings_command(args: &[String]) -> Result<()> {
     let sequence_id = args
         .first()
         .cloned()
-        .unwrap_or_else(|| "demo-ripple-rings".to_string());
+        .unwrap_or_else(|| "demo-expanding-rings".to_string());
     let config_path = args.get(1).map(String::as_str).unwrap_or("config.toml");
     let config = config::load(Path::new(config_path)).context("load config")?;
     let compiled_dir = compiled_dir(&config)?;
@@ -189,7 +189,7 @@ fn gen_demo_ripple_rings_command(args: &[String]) -> Result<()> {
         let center_v = rng.range(0.1, 0.9);
         let t0 = rng.range(0.0, 7.8);
         let ring_speed = rng.range(0.82, 1.48);
-        let d = output::ripple_dynamics(ring_speed, 0.0);
+        let d = output::ring_dynamics(ring_speed, 0.0);
         let life_s = d.lifetime + 0.5;
         let started = seq_base + Duration::from_secs_f32(t0);
         pulses.push(InteractivePulse {

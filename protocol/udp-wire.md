@@ -76,10 +76,26 @@ v1 の FRAME ペイロードには**アプリ層のチェックサムを付け�
 |-----------|-----|------|-----|
 | 16 | u32 | layout_hash | `tools/layout-compile.ts` が `.meta.json` と **`firmware/esp32s3/include/generated/<layout-id>/glowbe_layout.h`** に書く **FNV-1a 32bit**（配線・GPIO・chip 等の正規化 JSON から算出）。ランタイムが `meta.layoutHash` と照合し不一致を警告する。 |
 
-- **後方互換:** 16 バイトのみの STATUS も有効。`layout_hash` は省略扱い（照合スキップ）。
+- 16 バイト STATUS も有効。`layout_hash` は省略扱い（照合スキップ）。
 - **推奨:** 新規ファームは **20 バイト**を送信する。
 
 > 実装ノート: 現ファームの `drops` は **ヘッダ解析失敗で破棄したパケット数**を計上する。チャンク欠落などで未完成のまま別 `frame_id` に切り替わった回数は **`FrameAssembler::incomplete_frame_aborts`**（5 秒ごとのシリアル `diag` 行の `frame_aborts=`）で参照できる。STATUS UDP パケットへの載せは未実装。
+
+## メッセージ: LINK（ランタイム → ESP、任意）
+
+Wi-Fi 省電力のヒント。16 バイト固定（ペイロードなし）。
+
+| オフセット | 型 | 名前 | 値 |
+|-----------|-----|------|-----|
+| 0 | u8[2] | magic | `0x47 0x42` |
+| 2 | u8 | version | `1` |
+| 3 | u8 | msg_type | `4` = LINK |
+| 4 | u8 | link_active | `0` = economy（modem sleep OK）、`1` = active（フルレート受信） |
+| 5 | u8[11] | reserved | `0` |
+
+- **idle 静止時:** ランタイムは黒フレーム送信後に `link_active=0` を送る。ESP は **Wi-Fi 接続を維持したまま** `WiFi.setSleep(true)` でモデムスリープに入る。
+- **idle 以外へ遷移時:** フレーム送信の直前に `link_active=1` を送り、ラジオを即時起こす。
+- LINK 非対応ファームはメッセージを破棄する。トラフィック無し **約 2.5 秒**後にファーム側タイムアウトでも economy に入れる。
 
 ## 実装ノート
 

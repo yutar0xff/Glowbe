@@ -4,6 +4,7 @@
  * 表示方針:
  * - 完全フレームが揃ったときだけ LED を更新する（部分フレームでは前表示を維持）。
  * - 受信途絶・リンクタイムアウトでも消灯しない（最後に表示したフレームを保持）。
+ * - 受信 RGB が直前に投影した内容と同一なら set_rgb/show を省略（静止フレームの省電力）。
  * - オプションでプレイアウト遅延（ジッタバッファ）: `include/glowbe_playout.h` を参照。
  */
 #include <Arduino.h>
@@ -27,13 +28,20 @@
 #define GLOWBE_MDNS_HOSTNAME "glowbe-proto"
 #endif
 
+#ifndef GLOWBE_LINK_ECONOMY_AFTER_MS
+#define GLOWBE_LINK_ECONOMY_AFTER_MS 2500
+#endif
+
 namespace {
 
 constexpr uint16_t kUdpPort = 49152;
 constexpr uint16_t kStatusPort = 49153;
-constexpr uint32_t kStatusIntervalMs = 1000;
+constexpr uint32_t kStatusIntervalActiveMs = 1000;
+constexpr uint32_t kStatusIntervalEconomyMs = 10000;
 constexpr uint32_t kLinkStaleLogMs = 10000;
+constexpr uint32_t kLinkEconomyAfterMs = GLOWBE_LINK_ECONOMY_AFTER_MS;
 constexpr uint16_t kMaxPacketsPerLoop = 32;
+constexpr uint32_t kEconomyLoopDelayMs = 10;
 
 glowbe::wire::FrameAssembler assembler(GLOWBE_LED_COUNT);
 glowbe::playout::Ring g_playout;
@@ -47,10 +55,80 @@ uint16_t fps_window_count = 0;
 uint16_t fps_rx_x10 = 0;
 IPAddress last_peer;
 bool have_last_peer = false;
+bool link_economy = false;
+uint32_t wifi_ready_ms = 0;
 
-void applyCompleteFrame(const uint8_t* rgb) {
+alignas(4) uint8_t last_applied_rgb[glowbe::playout::Ring::kRgbBytes];
+bool have_last_applied = false;
+
+alignas(4) uint8_t last_ingested_rgb[glowbe::playout::Ring::kRgbBytes];
+bool have_last_ingested = false;
+
+void resetStreamState() {
+  assembler.reset();
+  g_playout.reset();
+  have_last_ingested = false;
+  have_last_applied = false;
+}
+
+bool applyCompleteFrame(const uint8_t* rgb) {
+  if (have_last_applied &&
+      memcmp(rgb, last_applied_rgb, glowbe::playout::Ring::kRgbBytes) == 0) {
+    return false;
+  }
   glowbe_led_set_rgb(rgb);
   glowbe_led_show();
+  memcpy(last_applied_rgb, rgb, glowbe::playout::Ring::kRgbBytes);
+  have_last_applied = true;
+  return true;
+}
+
+void applyCompleteFrameCallback(const uint8_t* rgb) {
+  (void)applyCompleteFrame(rgb);
+}
+
+void noteFrameRx();
+
+void setLinkEconomy(bool economy) {
+  if (link_economy == economy) {
+    return;
+  }
+  link_economy = economy;
+  WiFi.setSleep(economy);
+  Serial.printf("link: %s (wifi modem sleep %s)\n", economy ? "economy" : "active",
+                economy ? "on" : "off");
+}
+
+void noteLinkTraffic() {
+  last_udp_rx_ms = millis();
+  if (link_economy) {
+    setLinkEconomy(false);
+  }
+}
+
+void maybeEnterLinkEconomy(uint32_t now) {
+  if (link_economy) {
+    return;
+  }
+  const uint32_t anchor = last_udp_rx_ms > 0 ? last_udp_rx_ms : wifi_ready_ms;
+  if (anchor == 0 || now - anchor < kLinkEconomyAfterMs) {
+    return;
+  }
+  setLinkEconomy(true);
+}
+
+void deliverCompleteFrame() {
+  const uint8_t* rgb = assembler.buffer();
+  const size_t n = glowbe::playout::Ring::kRgbBytes;
+  if (have_last_ingested && memcmp(rgb, last_ingested_rgb, n) == 0) {
+    noteFrameRx();
+    return;
+  }
+  memcpy(last_ingested_rgb, rgb, n);
+  have_last_ingested = true;
+  g_playout.reset();
+  g_playout.push(rgb, applyCompleteFrameCallback);
+  noteFrameRx();
 }
 
 void sendStatusTo(const IPAddress& ip) {
@@ -77,6 +155,18 @@ void sendStatusTo(const IPAddress& ip) {
   glowbe::udp::send(pkt, sizeof(pkt), ip, kStatusPort);
 }
 
+void flushFpsWindow(uint32_t now) {
+  if (fps_window_start == 0) {
+    return;
+  }
+  if (now - fps_window_start < 1000) {
+    return;
+  }
+  fps_rx_x10 = static_cast<uint16_t>((fps_window_count * 1000UL * 10) / (now - fps_window_start));
+  fps_window_start = now;
+  fps_window_count = 0;
+}
+
 void noteFrameRx() {
   frames_rx++;
   const uint32_t now = millis();
@@ -84,11 +174,7 @@ void noteFrameRx() {
     fps_window_start = now;
   }
   fps_window_count++;
-  if (now - fps_window_start >= 1000) {
-    fps_rx_x10 = static_cast<uint16_t>((fps_window_count * 1000UL * 10) / (now - fps_window_start));
-    fps_window_start = now;
-    fps_window_count = 0;
-  }
+  flushFpsWindow(now);
   last_udp_rx_ms = now;
 }
 
@@ -122,7 +208,9 @@ void onWifiEvent(WiFiEvent_t event) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       Serial.println(WiFi.localIP());
-      g_playout.reset();
+      wifi_ready_ms = millis();
+      resetStreamState();
+      setLinkEconomy(false);
       startUdpListen();
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
@@ -179,6 +267,8 @@ void setup() {
 
 void loop() {
   const uint32_t now = millis();
+  flushFpsWindow(now);
+  maybeEnterLinkEconomy(now);
 
   uint8_t buf[glowbe::wire::kHeaderSize + glowbe::wire::kMaxChunkPayload];
   IPAddress from;
@@ -197,18 +287,35 @@ void loop() {
 
     last_peer = from;
     have_last_peer = true;
+    noteLinkTraffic();
+
+    if (n >= static_cast<int>(glowbe::wire::kHeaderSize) && buf[0] == glowbe::wire::kMagic0 &&
+        buf[1] == glowbe::wire::kMagic1 && buf[2] == glowbe::wire::kVersion &&
+        buf[3] == glowbe::wire::kMsgLink) {
+      bool active = true;
+      if (glowbe::wire::parseLink(buf, static_cast<size_t>(n), active)) {
+        setLinkEconomy(!active);
+      } else {
+        drops++;
+      }
+      packets_processed++;
+      continue;
+    }
 
     glowbe::wire::FrameHeader hdr;
     if (glowbe::wire::parseHeader(buf, static_cast<size_t>(n), hdr)) {
       const uint8_t* payload = buf + glowbe::wire::kHeaderSize;
       if (assembler.ingest(hdr, payload, GLOWBE_LED_COUNT)) {
-        g_playout.push(assembler.buffer(), applyCompleteFrame);
-        noteFrameRx();
+        deliverCompleteFrame();
       }
     } else {
       drops++;
     }
     packets_processed++;
+  }
+
+  if (packets_processed == 0 && link_economy) {
+    delay(kEconomyLoopDelayMs);
   }
 
   static uint32_t last_diag = 0;
@@ -217,16 +324,19 @@ void loop() {
     const bool link_stale =
         last_udp_rx_ms > 0 && (now - last_udp_rx_ms >= kLinkStaleLogMs);
     Serial.printf(
-        "diag: ip=%s frames=%lu drops=%lu frame_aborts=%lu udp_err=%lu fps_x10=%u rssi=%d%s\n",
+        "diag: ip=%s frames=%lu drops=%lu frame_aborts=%lu udp_err=%lu fps_x10=%u rssi=%d%s%s\n",
         WiFi.localIP().toString().c_str(), static_cast<unsigned long>(frames_rx),
         static_cast<unsigned long>(drops),
         static_cast<unsigned long>(assembler.incomplete_frame_aborts()),
         static_cast<unsigned long>(udp_errors), fps_rx_x10, WiFi.RSSI(),
+        link_economy ? " economy" : "",
         link_stale ? " link_stale(hold_last)" : "");
   }
 
   static uint32_t last_status = 0;
-  if (now - last_status >= kStatusIntervalMs && WiFi.status() == WL_CONNECTED) {
+  const uint32_t status_interval =
+      link_economy ? kStatusIntervalEconomyMs : kStatusIntervalActiveMs;
+  if (now - last_status >= status_interval && WiFi.status() == WL_CONNECTED) {
     last_status = now;
     sendStatusTo(have_last_peer ? last_peer : IPAddress(255, 255, 255, 255));
   }

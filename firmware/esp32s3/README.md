@@ -50,6 +50,9 @@ uv run pio device monitor
 ## Behaviour
 
 - After boot, the firmware clears LEDs once, then updates only after a **complete** frame is assembled (partial frames keep the last image).
+- **Static frames:** runtime skips UDP when RGB is unchanged; firmware skips `Show()` when a received frame matches the last projection. Serial `fps_x10` falls to **0** within about one second when no complete frames arrive (it is not `target_fps`).
+- **Mode / scene change:** runtime re-sends several identical frames after a mode or tone change; firmware drops stale `frame_id` chunks and clears the playout ring when RGB content changes.
+- **Link economy (idle):** after a static black frame is sent, runtime emits **LINK** `economy` and the ESP enables **Wi-Fi modem sleep** (`WiFi.setSleep(true)`). Leaving idle sends **LINK** `active` before frames. Association stays up; wake latency is typically ~100–300 ms. Serial diag shows `economy` when active. Override timeout with `-D GLOWBE_LINK_ECONOMY_AFTER_MS=2500` in `build_flags`.
 - **Link loss:** last frame is held (no auto blackout). Black from runtime `idle` mode is a valid full frame.
 - **Playout:** small jitter buffer by default (`glowbe_playout.h`); override with e.g. `-D GLOWBE_PLAYOUT_LAG_FRAMES=0` in `build_flags`.
 

@@ -37,7 +37,7 @@ VITE_GLOWBE_API_BASE=http://192.168.0.10:8748 npm run build
 
 ## Static hosting (SPA)
 
-Client-side routes only normalize legacy URLs to **`/`**; the app is effectively a single view. Static hosting must still serve `index.html` for unknown paths. `npm run preview` does this automatically.
+Client-side routes redirect unknown paths to **`/`**; the app is effectively a single view. Static hosting must still serve `index.html` for unknown paths. `npm run preview` does this automatically.
 
 ## Scripts
 

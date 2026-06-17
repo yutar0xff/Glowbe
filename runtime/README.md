@@ -31,16 +31,16 @@ cargo run --manifest-path runtime/Cargo.toml -- \
 
 出力: `assets/sequences/<sequence-id>/manifest.json` と `frames.bin`。生成後は runtime 起動中に `POST /api/v1/loop/select` で選択できる。
 
-## デモ: ランダム配置の ripple ring（合成シーケンス）
+## デモ: ランダム配置の expanding ring（合成シーケンス）
 
 `prototype-icosahedron-15` の ledmap を前提に、Interactive と同じ **expanding ring** 数式で複数パルスを重ねた `frames.bin` を生成する（約 12.5 秒・30fps）。
 
 ```bash
-# リポジトリルートから（第1引数省略時は id = demo-ripple-rings）
-cargo run --manifest-path runtime/Cargo.toml -- gen-demo-ripple-rings demo-ripple-rings config.toml
+# リポジトリルートから（第1引数省略時は id = demo-expanding-rings）
+cargo run --manifest-path runtime/Cargo.toml -- gen-demo-expanding-rings demo-expanding-rings config.toml
 ```
 
-`manifest.source.kind` は `synthetic-ripple-demo`。グリッド用に `source-import.png`（グラデーションのプレースホルダ）も同梱される。
+`manifest.source.kind` は `synthetic-expanding-ring-demo`。グリッド用に `source-import.png`（グラデーションのプレースホルダ）も同梱される。
 
 ## エンドポイント
 
@@ -50,7 +50,7 @@ cargo run --manifest-path runtime/Cargo.toml -- gen-demo-ripple-rings demo-rippl
 | STATUS 受信 | UDP 49153 ← ESP |
 | `GET /api/v1/state` | HTTP（`config.toml` の `[server] bind`、既定例 8748） |
 | `GET /health` | 同上（出力ループ停止時 503） |
-| `POST /api/v1/mode` | 同上（`idle` / `loop` / `interactive`、別名 `ripple`） |
+| `POST /api/v1/mode` | 同上（`idle` / `loop` / `interactive`） |
 | `POST /api/v1/master-tone` | 同上（全モード共通の最終輝度・ガンマ） |
 | `POST /api/v1/loop/select` | 同上（生成済みシーケンス選択） |
 | `GET /api/v1/sequences` | 同上（一覧・任意 `displayName`） |
@@ -61,7 +61,7 @@ cargo run --manifest-path runtime/Cargo.toml -- gen-demo-ripple-rings demo-rippl
 | `POST /api/v1/media/{uploadId}/convert` | 同上（JSON `layoutId` / `fps` / 任意 `displayName` → 非同期に `up-{uploadId}` シーケンス。ZIP は最大 3600 フレーム） |
 | `GET /api/v1/media/{uploadId}` | 同上（`stored` / `running` / `done` / `failed` と `sequenceId`） |
 | `GET /api/v1/layout/uv` | 同上（LED UV マップ） |
-| `GET /api/v1/ws` | WebSocket 同上（`state` 約 1s、`ping`/`pong`、**`getLayoutUv`** → **`layoutUv`**、`interactive`（および `ripple` 型）UV パルスを送出フレームに合成） |
+| `GET /api/v1/ws` | WebSocket 同上（`state` 約 1s、`ping`/`pong`、**`getLayoutUv`** → **`layoutUv`**、`interactive` UV パルスを送出フレームに合成） |
 
 `/api/v1/state` の JSON は camelCase（`frameLoopStaleMs`, `layoutMismatch`, `framesSent` 等）。
 

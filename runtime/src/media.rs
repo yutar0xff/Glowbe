@@ -570,12 +570,12 @@ pub fn export_sequence_source_frame_png(
                 .to_rgba8();
             rgba_to_png_bytes(&image)
         }
-        "equirectangular-image-sequence" | "equirectangular-zip" => {
+        "equirectangular-image-sequence" => {
             let rgba = read_zip_entry_rgba(&import_path, idx)?;
             rgba_to_png_bytes(&rgba)
         }
         "equirectangular-video" => extract_video_frame_png(&import_path, manifest.fps, frame_index),
-        "synthetic-ripple-demo" => fs::read(&import_path)
+        "synthetic-expanding-ring-demo" => fs::read(&import_path)
             .with_context(|| format!("read synthetic thumbnail {}", import_path.display())),
         other => anyhow::bail!("unsupported source kind for preview: {other}"),
     }
@@ -652,7 +652,7 @@ pub fn write_synthetic_demo_sequence(
         frame_count,
         fps,
         source: SequenceSource {
-            kind: "synthetic-ripple-demo".to_string(),
+            kind: "synthetic-expanding-ring-demo".to_string(),
             path: "source-import.png".to_string(),
             width: 256,
             height: 128,

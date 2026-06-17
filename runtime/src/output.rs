@@ -36,6 +36,13 @@ async fn resolve_esp_socket(config: &Config) -> Result<SocketAddr> {
     Ok(found)
 }
 
+async fn send_link_mode(sock: &UdpSocket, active: bool) {
+    let pkt = wire::encode_link(active);
+    if let Err(e) = sock.send(&pkt).await {
+        warn!("udp link mode send failed: {e}");
+    }
+}
+
 pub async fn run(config: Config, app: SharedState) -> Result<()> {
     let status_port = config.output.status_port;
     tokio::spawn(status_listener(status_port, app.clone()));
@@ -84,6 +91,11 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
         app.set_output_target_addr(esp_addr.to_string()).await;
         reconnect_backoff = Duration::from_millis(500);
 
+        let mut last_sent_rgb: Option<Vec<u8>> = None;
+        let mut last_send_epoch = app.output_send_epoch();
+        let mut force_sends_after_epoch: u8 = 0;
+        let mut idle_link_economy_sent = false;
+
         let mut sent_window = 0u64;
         let mut window_start = Instant::now();
         let mut ticker = tokio::time::interval(frame_interval);
@@ -102,6 +114,8 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
             if pattern_layout_cache.as_deref() != Some(layout_id.as_str()) || lc != led_count {
                 led_count = lc;
                 rgb.resize(led_count as usize * 3, 0);
+                last_sent_rgb = None;
+                force_sends_after_epoch = 4;
                 pattern_layout_cache = Some(layout_id.clone());
                 pattern_uv = match media::load_layout_uv(&app.compiled_dir, &layout_id) {
                     Ok(layout) if layout.led_count == led_count as usize => {
@@ -140,7 +154,11 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
             app.record_loop_raw_tick(raw_elapsed);
             let seq_elapsed = app.sequence_elapsed_for_loop(raw_elapsed);
             let t_ms = raw_elapsed.as_millis() as u32;
-            match app.output_mode() {
+            let output_mode = app.output_mode();
+            if output_mode != OutputMode::Idle {
+                idle_link_economy_sent = false;
+            }
+            match output_mode {
                 OutputMode::Idle => {
                     app.metrics.set_loop_source_frame(None);
                     rgb.fill(0);
@@ -174,11 +192,21 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
                 }
             }
 
-            if app.output_mode() == OutputMode::Interactive {
+            if output_mode == OutputMode::Interactive {
                 try_apply_interactive_overlay(&app, &mut rgb);
             }
 
             apply_master_tone(&app, &mut rgb);
+
+            let send_epoch = app.output_send_epoch();
+            if send_epoch != last_send_epoch {
+                last_send_epoch = send_epoch;
+                last_sent_rgb = None;
+                // プレイアウト遅延バッファ分 + 遅延 UDP 到着分を上書きする。
+                force_sends_after_epoch = 4;
+                idle_link_economy_sent = false;
+                send_link_mode(&sock, true).await;
+            }
 
             if let Ok(mut w) = app.preview_frame.try_write() {
                 if w.len() == rgb.len() {
@@ -187,34 +215,46 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
                 }
             }
 
-            let mut full_send_ok = true;
-            for pkt in wire::encode_frame(led_count, frame_id, &rgb) {
-                if let Err(e) = sock.send(&pkt).await {
-                    warn!("udp send failed (dropping rest of frame): {e}");
-                    full_send_ok = false;
-                    break;
+            let unchanged = last_sent_rgb.as_deref() == Some(rgb.as_slice());
+            if !unchanged || force_sends_after_epoch > 0 {
+                let mut full_send_ok = true;
+                for pkt in wire::encode_frame(led_count, frame_id, &rgb) {
+                    if let Err(e) = sock.send(&pkt).await {
+                        warn!("udp send failed (dropping rest of frame): {e}");
+                        full_send_ok = false;
+                        break;
+                    }
                 }
-            }
 
-            frame_id = frame_id.wrapping_add(1);
-
-            if full_send_ok {
-                consecutive_frame_failures = 0;
-                reconnect_backoff = Duration::from_millis(500);
-                app.metrics.increment_frames_sent();
-                sent_window += 1;
-                if window_start.elapsed() >= Duration::from_secs(1) {
-                    let fps = sent_window as f64 / window_start.elapsed().as_secs_f64();
-                    app.metrics.set_fps_out(fps);
-                    sent_window = 0;
-                    window_start = Instant::now();
+                if full_send_ok {
+                    consecutive_frame_failures = 0;
+                    reconnect_backoff = Duration::from_millis(500);
+                    app.metrics.increment_frames_sent();
+                    sent_window += 1;
+                    if window_start.elapsed() >= Duration::from_secs(1) {
+                        let fps = sent_window as f64 / window_start.elapsed().as_secs_f64();
+                        app.metrics.set_fps_out(fps);
+                        sent_window = 0;
+                        window_start = Instant::now();
+                    }
+                    match &mut last_sent_rgb {
+                        Some(buf) if buf.len() == rgb.len() => buf.copy_from_slice(&rgb),
+                        _ => last_sent_rgb = Some(rgb.clone()),
+                    }
+                    frame_id = frame_id.wrapping_add(1);
+                    if force_sends_after_epoch > 0 {
+                        force_sends_after_epoch -= 1;
+                    }
+                } else {
+                    consecutive_frame_failures += 1;
+                    if consecutive_frame_failures >= 60 {
+                        warn!("udp: {consecutive_frame_failures} consecutive failed frames; reconnect");
+                        break 'session;
+                    }
                 }
-            } else {
-                consecutive_frame_failures += 1;
-                if consecutive_frame_failures >= 60 {
-                    warn!("udp: {consecutive_frame_failures} consecutive failed frames; reconnect");
-                    break 'session;
-                }
+            } else if output_mode == OutputMode::Idle && !idle_link_economy_sent {
+                send_link_mode(&sock, false).await;
+                idle_link_economy_sent = true;
             }
         }
 
@@ -421,7 +461,7 @@ fn apply_interactive_sphere_gaussian(
 
 /// 拡大リップルの時間・空間ダイナミクス（パルス生成時の寿命算出と毎フレーム描画で共有）。
 #[derive(Debug, Clone, Copy)]
-pub struct RippleDynamics {
+pub struct RingDynamics {
     /// 波面の伝搬速度（rad/s）。球面上は等方。
     pub c: f32,
     /// 残光トレイルの時定数（s）。大きいほどゆっくり消える。
@@ -433,7 +473,7 @@ pub struct RippleDynamics {
 }
 
 /// `ring_speed` と `ring_thickness_rad` からリング用の物理パラメータを導出する。
-pub fn ripple_dynamics(ring_speed: f32, ring_thickness_rad: f32) -> RippleDynamics {
+pub fn ring_dynamics(ring_speed: f32, ring_thickness_rad: f32) -> RingDynamics {
     let speed = ring_speed.clamp(0.12, 12.0);
     // 既定 speed=1 で π を渡り切るのに ~1.2s。
     let c = 2.6 * speed;
@@ -447,7 +487,7 @@ pub fn ripple_dynamics(ring_speed: f32, ring_thickness_rad: f32) -> RippleDynami
     let pi = std::f32::consts::PI;
     let travel_full = pi / c.max(1e-3);
     let lifetime = (travel_full + tau * 5.0).clamp(0.25, 15.0);
-    RippleDynamics {
+    RingDynamics {
         c,
         tau,
         edge_w,
@@ -472,7 +512,7 @@ pub fn apply_interactive_expanding_ring_diagonal(
     if amp_base <= 0.0 {
         return;
     }
-    let d = ripple_dynamics(pulse.ring_speed, pulse.ring_thickness_rad);
+    let d = ring_dynamics(pulse.ring_speed, pulse.ring_thickness_rad);
 
     let center_dir = unit_dir_from_equirect_uv_y_up(pulse.center_u, pulse.center_v);
 
@@ -594,7 +634,7 @@ mod tests {
     }
 
     #[test]
-    fn ripple_dims_gradually_not_instantly() {
+    fn ring_wavefront_dims_gradually_not_instantly() {
         // 中心は輪が通過後に暗くなる。狭い時間窓ではクレストが滑らかに減衰する。
         let pulse = ring_pulse(1.0);
         let uv = vec![(0.5f32, 0.5f32)];

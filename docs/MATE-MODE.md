@@ -318,7 +318,7 @@ fn approach(current: f32, target: f32, dt: f32, tau: f32) -> f32 {
 ### 9.3 合成（加算発光）
 
 - パーツ発光 `× color` を**線形光バッファに加算** → sRGB エンコード → クリップ。既存 `interactive` の混色（`blend_interactive_accum` 相当）と同方式で、重なりが自然に飽和。
-- `aura_ripple` は顔中心 `f̂` からの**大円角距離**で波を作る（`angle_rad_between_unit` 再利用）。`interactive` のリップル評価をそのまま流用できる。
+- `aura_ripple` は顔中心 `f̂` からの**大円角距離**で波を作る（`angle_rad_between_unit` 再利用）。`interactive` の輪波面評価を流用できる。
 
 ### 9.4 性能
 
@@ -403,7 +403,7 @@ if app.output_mode() == OutputMode::Interactive {
 apply_master_tone(&app, &mut rgb);                   // 最終段は全モード共通
 ```
 
-- 黒ベースに顔を描く**常時レンダラ**。`apply_master_tone` は従来どおり通す。
+- 黒ベースに顔を描く**常時レンダラ**。`apply_master_tone` も適用する。
 - `idle` 遷移時のシーケンス解除など既存 `post_mode` 挙動は維持。`mate` は `loop` シーケンスと独立。
 
 ---

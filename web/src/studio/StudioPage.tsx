@@ -40,7 +40,7 @@ const modeMeta: Record<
 
 function panelMode(mode: string): OutputMode {
   if (mode === 'loop') return 'loop'
-  if (mode === 'interactive' || mode === 'ripple') return 'interactive'
+  if (mode === 'interactive') return 'interactive'
   if (mode === 'mate') return 'mate'
   return 'idle'
 }

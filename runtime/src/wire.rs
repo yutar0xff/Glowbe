@@ -2,6 +2,7 @@ pub const MAGIC0: u8 = 0x47;
 pub const MAGIC1: u8 = 0x42;
 pub const VERSION: u8 = 1;
 pub const MSG_FRAME: u8 = 1;
+pub const MSG_LINK: u8 = 4;
 pub const MSG_STATUS: u8 = 3;
 pub const HEADER_SIZE: usize = 16;
 /// Max RGB bytes per chunk. One datagram is 16-byte header + chunk; IPv4 UDP payload max is
@@ -41,6 +42,17 @@ pub fn encode_frame(led_count: u16, frame_id: u32, rgb: &[u8]) -> Vec<Vec<u8>> {
     packets
 }
 
+/// Wi-Fi link power hint (16-byte datagram, no payload). `active: true` = full radio; `false` = modem sleep OK.
+pub fn encode_link(active: bool) -> Vec<u8> {
+    let mut pkt = vec![0u8; HEADER_SIZE];
+    pkt[0] = MAGIC0;
+    pkt[1] = MAGIC1;
+    pkt[2] = VERSION;
+    pkt[3] = MSG_LINK;
+    pkt[4] = u8::from(active);
+    pkt
+}
+
 pub fn parse_status(data: &[u8]) -> Option<Status> {
     if data.len() < HEADER_SIZE {
         return None;
@@ -73,7 +85,7 @@ pub struct Status {
     /// Discarded/dropped packets (low 16 bits), per Glowbe Wire v1 STATUS offset 10.
     pub drops: u16,
     pub rssi: i8,
-    /// Layout fingerprint from ESP (bytes 16–19 LE); `None` if packet is legacy 16-byte STATUS.
+    /// Layout fingerprint from ESP (bytes 16–19 LE); `None` on 16-byte STATUS packets.
     pub layout_hash: Option<u32>,
 }
 
@@ -86,6 +98,16 @@ impl Status {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn encode_link_active_and_economy() {
+        let on = encode_link(true);
+        assert_eq!(on.len(), HEADER_SIZE);
+        assert_eq!(&on[0..4], &[MAGIC0, MAGIC1, VERSION, MSG_LINK]);
+        assert_eq!(on[4], 1);
+        let off = encode_link(false);
+        assert_eq!(off[4], 0);
+    }
 
     #[test]
     fn encode_single_chunk_prototype() {

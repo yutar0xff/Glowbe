@@ -518,7 +518,7 @@ export function LoopModePanel({
             <p className="text-sm text-muted-foreground">
               Add sequences using the tooling described in the project README, upload and convert above, or run{' '}
               <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                cargo run --manifest-path runtime/Cargo.toml -- gen-demo-ripple-rings demo-ripple-rings config.toml
+                cargo run --manifest-path runtime/Cargo.toml -- gen-demo-expanding-rings demo-expanding-rings config.toml
               </code>
               .
             </p>

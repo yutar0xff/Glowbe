@@ -15,7 +15,7 @@ use crate::metrics::OutputMetrics;
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InteractiveEffectKind {
-    /// 球面上ガウス（従来のソフト・リップル）。
+    /// 球面上ガウス（ソフトスポット）。
     SphereGaussian = 0,
     /// タップ中心から大円角距離で等方に拡大する波面と残光トレイル。
     ExpandingRingDiagonal = 1,
@@ -24,8 +24,8 @@ pub enum InteractiveEffectKind {
 impl InteractiveEffectKind {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "sphereGaussian" | "sphere_gaussian" => Some(Self::SphereGaussian),
-            "expandingRingDiagonal" | "expanding_ring_diagonal" => Some(Self::ExpandingRingDiagonal),
+            "sphereGaussian" => Some(Self::SphereGaussian),
+            "expandingRingDiagonal" => Some(Self::ExpandingRingDiagonal),
             _ => None,
         }
     }
@@ -95,7 +95,7 @@ impl OutputMode {
         match id {
             "idle" => Some(Self::Idle),
             "loop" => Some(Self::Loop),
-            "interactive" | "ripple" => Some(Self::Interactive),
+            "interactive" => Some(Self::Interactive),
             "mate" => Some(Self::Mate),
             _ => None,
         }
@@ -223,6 +223,8 @@ pub struct SharedApp {
     pub(crate) preview_frame: StdRwLock<Vec<u8>>,
     /// `preview_frame` が更新されるたびに増分（WebSocket プレビュー用）。
     pub(crate) preview_seq: AtomicU32,
+    /// UDP 静止スキップのキャッシュ無効化（モード変更など）。
+    output_send_epoch: AtomicU32,
     /// 出力ループが毎フレーム書き込む `loop_start` からの経過（一時停止 API が参照）。
     pub(crate) loop_raw_elapsed_tick: StdRwLock<Duration>,
     pub(crate) loop_playback_timing: StdRwLock<LoopPlaybackTiming>,
@@ -273,12 +275,21 @@ pub fn new_shared(
         master_gamma_bits: AtomicU32::new(f32::to_bits(1.0)),
         preview_frame: StdRwLock::new(vec![0u8; preview_len]),
         preview_seq: AtomicU32::new(0),
+        output_send_epoch: AtomicU32::new(0),
         loop_raw_elapsed_tick: StdRwLock::new(Duration::ZERO),
         loop_playback_timing: StdRwLock::new(LoopPlaybackTiming::default()),
     })
 }
 
 impl SharedApp {
+    pub fn output_send_epoch(&self) -> u32 {
+        self.output_send_epoch.load(Ordering::Acquire)
+    }
+
+    pub fn bump_output_send_epoch(&self) {
+        self.output_send_epoch.fetch_add(1, Ordering::Release);
+    }
+
     /// Switch the active compiled layout (UV, LED count, hash). Clears loop selection if the
     /// loaded sequence does not match the new layout. Does not persist `config.toml`.
     pub async fn switch_runtime_layout(&self, new_layout_id: String) -> anyhow::Result<()> {
@@ -330,6 +341,7 @@ impl SharedApp {
         st.layout_id = new_layout_id;
         st.led_count = led_count;
         st.layout_mismatch = false;
+        self.bump_output_send_epoch();
         Ok(())
     }
 
@@ -340,6 +352,7 @@ impl SharedApp {
     pub async fn set_output_mode(&self, mode: OutputMode) {
         self.reset_loop_playback_timing();
         self.mode_code.store(mode.code(), Ordering::Relaxed);
+        self.bump_output_send_epoch();
         let mut state = self.state.write().await;
         state.mode = mode.as_str().to_string();
     }
@@ -353,6 +366,7 @@ impl SharedApp {
         if let Ok(mut slot) = self.sequence.write() {
             *slot = Some(Arc::new(sequence));
         }
+        self.bump_output_send_epoch();
         let mut state = self.state.write().await;
         state.loop_sequence_id = Some(id);
     }
@@ -361,6 +375,7 @@ impl SharedApp {
         if let Ok(mut slot) = self.sequence.write() {
             *slot = None;
         }
+        self.bump_output_send_epoch();
         let mut state = self.state.write().await;
         state.loop_sequence_id = None;
         self.reset_loop_playback_timing();
@@ -439,15 +454,11 @@ impl SharedApp {
             .store(e.code(), Ordering::Relaxed);
     }
 
-    #[allow(dead_code)]
-    pub fn interactive_solid_rgb(&self) -> Option<[u8; 3]> {
-        self.interactive_solid.read().ok().and_then(|g| *g)
-    }
-
     pub fn set_interactive_solid_rgb(&self, rgb: Option<[u8; 3]>) {
         if let Ok(mut g) = self.interactive_solid.write() {
             *g = rgb;
         }
+        self.bump_output_send_epoch();
     }
 
     /// `interactive` のベース（`None` は全 LED 0）。
@@ -518,6 +529,7 @@ impl SharedApp {
             .store(f32::to_bits(b), Ordering::Relaxed);
         self.master_gamma_bits
             .store(f32::to_bits(g), Ordering::Relaxed);
+        self.bump_output_send_epoch();
     }
 
     pub fn push_interactive_pulse(&self, pulse: InteractivePulse) {
