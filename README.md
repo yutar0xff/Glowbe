@@ -6,6 +6,14 @@
 - 実装状況・引き継ぎ（正本）: [`docs/STATUS.md`](docs/STATUS.md)
 - 環境変数: [`docs/ENV.md`](docs/ENV.md)
 
+## セキュリティ・運用
+
+Glowbe は **同一 LAN 内の信頼できるネットワーク**向けです。
+
+- **HTTP API・WebSocket・UDP（FRAME / STATUS / LINK）に認証はありません。** ランタイムを `0.0.0.0` で公開したり、インターネットに晒さないでください。
+- Wi-Fi 認証情報は `firmware/esp32s3/include/wifi_config.h`（gitignore）にのみ置きます。
+- 機密設定は `config.toml` および `web/.env.*.local`（いずれも gitignore）に置きます。
+
 ## リポジトリ構成
 
 | パス | 内容 |
@@ -24,6 +32,8 @@
 ## クイックスタート（プロトタイプ）
 
 ### 1. レイアウトコンパイル
+
+`tools/layout-compile.ts` は、現時点では幾何プリセット展開のため **隣接クローンの [archived-glowbe](https://github.com/yutar0xff/archived-glowbe)**（`../archived-Glowbe/packages/core`）を参照します。リポジトリに同梱済みの `assets/compiled/` と `firmware/esp32s3/include/generated/` があれば、再コンパイルなしでもランタイム・ファームのビルドは可能です。**レイアウトコンパイルは将来的に本リポジトリ内で自己完結する予定**です。
 
 ```bash
 npx tsx tools/layout-compile.ts config/layouts/prototype.layout.json
@@ -92,4 +102,4 @@ Phase 2: 正距円筒 **単一画像** および **ZIP 連番**（最大 3600 �
 
 ## ライセンス
 
-TBD
+[MIT](LICENSE)
