@@ -78,7 +78,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [syncDevices])
 
-  const setActiveDevice = useCallback((deviceId: string) => {
+  const setActiveDevice = useCallback((deviceId: string | null) => {
     writeActiveDeviceToUrl(deviceId)
     setActiveDeviceId(deviceId)
   }, [])
@@ -350,6 +350,9 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         espIp: input.espIp ?? null,
         mdnsHostname: input.mdnsHostname ?? null,
         layoutId: input.layoutId,
+        outputFps: input.outputFps,
+        masterBrightness: input.masterBrightness ?? 1,
+        masterGamma: input.masterGamma ?? 1,
       }),
     })
     if (!res.ok) throw new Error(await readApiError(res))
@@ -367,6 +370,9 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         espIp: record.espIp ?? null,
         mdnsHostname: record.mdnsHostname ?? null,
         layoutId: record.layoutId,
+        outputFps: record.outputFps,
+        masterBrightness: record.masterBrightness ?? 1,
+        masterGamma: record.masterGamma ?? 1,
       }),
     })
     if (!res.ok) throw new Error(await readApiError(res))

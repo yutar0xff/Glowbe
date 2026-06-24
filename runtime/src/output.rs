@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -8,7 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::config::Config;
 use crate::device_slot::DeviceSlot;
-use crate::devices::DeviceRecord;
+use crate::devices::{self, DeviceRecord};
 use crate::discover;
 use crate::mate;
 use crate::media;
@@ -18,6 +20,38 @@ use crate::state::{
     InteractiveEffectKind, InteractivePulse, OutputMode, SharedState,
 };
 use crate::wire;
+
+static OUTPUT_CONFIG: OnceLock<Config> = OnceLock::new();
+static OUTPUT_LOOPS_STARTED: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// 起動済み output ループが無ければデバイス用タスクを spawn する（`POST /devices` 用）。
+pub fn ensure_device_output_loop(app: &SharedState, device_id: &str) -> bool {
+    let config = match OUTPUT_CONFIG.get() {
+        Some(c) => c.clone(),
+        None => return false,
+    };
+    let slot = match app.device(device_id) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let mut started = match OUTPUT_LOOPS_STARTED.lock() {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+    if !started.insert(device_id.to_string()) {
+        return true;
+    }
+    drop(started);
+    let app2 = app.clone();
+    let id = device_id.to_string();
+    tokio::spawn(async move {
+        if let Err(e) = device_output_loop(config, app2, slot).await {
+            tracing::error!("device {id} output loop ended: {e:#}");
+        }
+    });
+    true
+}
 
 async fn resolve_esp_socket(config: &Config, record: &DeviceRecord) -> Result<SocketAddr> {
     if let Some(host) = record.esp_ip_host() {
@@ -37,7 +71,7 @@ async fn resolve_esp_socket(config: &Config, record: &DeviceRecord) -> Result<So
             move || {
                 discover::glowbe_udp_all(Duration::from_secs(8))
                     .into_iter()
-                    .find(|s| s.hostname == hostname)
+                    .find(|s| devices::mdns_hosts_match(&s.hostname, &hostname))
                     .map(|s| s.addr)
             }
         })
@@ -80,6 +114,7 @@ async fn send_link_mode(sock: &UdpSocket, active: bool) {
 }
 
 pub async fn run(config: Config, app: SharedState) -> Result<()> {
+    let _ = OUTPUT_CONFIG.set(config.clone());
     let status_port = config.output.status_port;
     tokio::spawn(status_listener(status_port, app.clone()));
 
@@ -87,19 +122,10 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
     if slots.is_empty() {
         anyhow::bail!("no devices registered");
     }
-    let mut handles = Vec::new();
-    for slot in slots {
-        let cfg = config.clone();
-        let app2 = app.clone();
-        handles.push(tokio::spawn(async move {
-            if let Err(e) = device_output_loop(cfg, app2, slot).await {
-                tracing::error!("device output loop ended: {e:#}");
-            }
-        }));
+    for slot in &slots {
+        ensure_device_output_loop(&app, &slot.id());
     }
-    for h in handles {
-        let _ = h.await;
-    }
+    std::future::pending::<()>().await;
     Ok(())
 }
 
@@ -109,8 +135,8 @@ async fn device_output_loop(
     slot: std::sync::Arc<DeviceSlot>,
 ) -> Result<()> {
     let device_id = slot.id();
-    let frame_interval = Duration::from_secs_f64(1.0 / config.output.target_fps as f64);
-    let mut frame_id;
+    let mut frame_id: u32 = 0;
+    let mut frame_id_seeded = false;
     let loop_start = Instant::now();
     let mut reconnect_backoff = Duration::from_millis(500);
 
@@ -124,6 +150,8 @@ async fn device_output_loop(
 
     loop {
         let record = slot.record_snapshot();
+        let target_fps = record.output_fps;
+        let frame_interval = Duration::from_secs_f64(1.0 / target_fps as f64);
         let esp_addr = match resolve_esp_socket(&config, &record).await {
             Ok(a) => a,
             Err(e) => {
@@ -147,16 +175,23 @@ async fn device_output_loop(
             continue;
         }
 
-        frame_id = wire_frame_id_baseline(&slot).await;
+        let baseline = wire_frame_id_baseline(&slot).await;
+        if !frame_id_seeded {
+            frame_id = baseline;
+            frame_id_seeded = true;
+        } else if frame_id_before(frame_id, baseline) {
+            frame_id = baseline;
+        }
         info!(
-            "device {device_id} output -> {} @ {} fps ({} LEDs, frame_id={frame_id})",
-            esp_addr, config.output.target_fps, led_count
+            "device {device_id} output -> {} @ {target_fps} fps ({} LEDs, frame_id={frame_id})",
+            esp_addr, led_count
         );
         slot.set_output_target_addr(esp_addr.to_string()).await;
         reconnect_backoff = Duration::from_millis(500);
 
         let session_esp_ip = record.esp_ip_host().map(str::to_string);
         let session_mdns = record.mdns_host().map(str::to_string);
+        let mut session_output_fps = target_fps;
 
         let mut last_sent_rgb: Option<Vec<u8>> = None;
         let mut last_send_epoch = slot.output_send_epoch();
@@ -178,6 +213,24 @@ async fn device_output_loop(
             if cur_ip != session_esp_ip || cur_mdns != session_mdns {
                 warn!("device {device_id}: connection target changed; reconnecting");
                 break 'session;
+            }
+            if rec.output_fps != session_output_fps {
+                info!(
+                    "device {device_id}: output_fps changed {session_output_fps} -> {}",
+                    rec.output_fps
+                );
+                session_output_fps = rec.output_fps;
+                let frame_interval =
+                    Duration::from_secs_f64(1.0 / session_output_fps as f64);
+                ticker = tokio::time::interval(frame_interval);
+                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                sent_window = 0;
+                window_start = Instant::now();
+                last_sent_rgb = None;
+                force_sends_after_epoch = 4;
+                idle_link_economy_sent = false;
+                send_link_mode(&sock, true).await;
+                continue;
             }
 
             slot.metrics.mark_tick();

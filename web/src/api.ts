@@ -16,9 +16,13 @@ export function readActiveDeviceFromUrl(): string | null {
   return id && id.trim() ? id.trim() : null
 }
 
-export function writeActiveDeviceToUrl(deviceId: string) {
+export function writeActiveDeviceToUrl(deviceId: string | null) {
   const u = new URL(location.href)
-  u.searchParams.set(DEVICE_URL_PARAM, deviceId)
+  if (deviceId) {
+    u.searchParams.set(DEVICE_URL_PARAM, deviceId)
+  } else {
+    u.searchParams.delete(DEVICE_URL_PARAM)
+  }
   history.replaceState(null, '', `${u.pathname}${u.search}${u.hash}`)
 }
 

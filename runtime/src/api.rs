@@ -37,6 +37,7 @@ struct StateResponse {
     mode: String,
     fps_out: f64,
     fps_rx: Option<f64>,
+    target_fps: u32,
     esp_frames_complete: Option<u32>,
     esp_rssi: Option<i8>,
     esp_drops: Option<u16>,
@@ -171,6 +172,11 @@ struct DeviceCreateRequest {
     #[serde(default)]
     mdns_hostname: Option<String>,
     layout_id: String,
+    output_fps: u32,
+    #[serde(default = "default_master_brightness")]
+    master_brightness: f64,
+    #[serde(default = "default_master_gamma")]
+    master_gamma: f64,
 }
 
 #[derive(Deserialize)]
@@ -183,6 +189,19 @@ struct DeviceUpdateRequest {
     #[serde(default)]
     mdns_hostname: Option<String>,
     layout_id: String,
+    output_fps: u32,
+    #[serde(default = "default_master_brightness")]
+    master_brightness: f64,
+    #[serde(default = "default_master_gamma")]
+    master_gamma: f64,
+}
+
+fn default_master_brightness() -> f64 {
+    crate::devices::DEFAULT_MASTER_BRIGHTNESS
+}
+
+fn default_master_gamma() -> f64 {
+    crate::devices::DEFAULT_MASTER_GAMMA
 }
 
 type ApiError = (StatusCode, Json<ErrorResponse>);
@@ -1581,6 +1600,7 @@ fn state_response(slot: &DeviceSlot, s: &RuntimeState) -> StateResponse {
         mode: s.mode.clone(),
         fps_out: slot.metrics.fps_out(),
         fps_rx: s.fps_rx,
+        target_fps: slot.record_snapshot().output_fps,
         esp_frames_complete: s.esp_frames_complete,
         esp_rssi: s.esp_rssi,
         esp_drops: s.esp_drops,
@@ -1687,6 +1707,13 @@ async fn post_master_tone(
         Err(e) => return e.into_response(),
     };
     slot.set_master_tone(req.brightness as f32, req.gamma as f32);
+    let device_id = slot.id();
+    if let Err(e) = app.with_registry_mut(|reg| {
+        reg.update_master_tone(&device_id, req.brightness, req.gamma)?;
+        Ok(())
+    }) {
+        tracing::warn!(device = %device_id, "persist master tone failed: {e}");
+    }
     let s = slot.state.read().await;
     (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
 }
@@ -1768,6 +1795,9 @@ async fn post_device(
         esp_ip: req.esp_ip,
         mdns_hostname: req.mdns_hostname,
         layout_id: req.layout_id,
+        output_fps: req.output_fps,
+        master_brightness: req.master_brightness,
+        master_gamma: req.master_gamma,
     };
     if let Err(e) = app.with_registry_mut(|reg| {
         reg.upsert(rec.clone(), &app.compiled_dir)?;
@@ -1786,6 +1816,12 @@ async fn post_device(
             Json(ErrorResponse { error: e }),
         )
             .into_response();
+    }
+    if !crate::output::ensure_device_output_loop(&app, &created_id) {
+        tracing::warn!(
+            device = %created_id,
+            "device slot created but output loop was not started (restart runtime if UDP stays offline)"
+        );
     }
     match app.registry_snapshot() {
         Ok(reg) => (
@@ -1836,6 +1872,9 @@ async fn patch_device(
         esp_ip: req.esp_ip,
         mdns_hostname: req.mdns_hostname,
         layout_id: req.layout_id,
+        output_fps: req.output_fps,
+        master_brightness: req.master_brightness,
+        master_gamma: req.master_gamma,
     };
     if let Err(e) = app.with_registry_mut(|reg| {
         reg.upsert(rec.clone(), &app.compiled_dir)?;

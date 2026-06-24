@@ -37,7 +37,7 @@ export type GlowbeRuntimeContextValue = {
   refreshLoad: () => Promise<void>
   /** Refetch device registry from runtime. */
   refreshDevices: () => Promise<void>
-  setActiveDevice: (deviceId: string) => void
+  setActiveDevice: (deviceId: string | null) => void
   upsertDevice: (input: DeviceCreateInput) => Promise<string | undefined>
   updateDevice: (record: DeviceRecord) => Promise<void>
   deleteDevice: (deviceId: string) => Promise<void>

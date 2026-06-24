@@ -12,6 +12,7 @@
 #include <WiFi.h>
 #include <cstring>
 
+#include "glowbe_brightness.h"
 #include "glowbe_layout.h"
 #include "glowbe_playout.h"
 #include "glowbe_udp.h"
@@ -233,6 +234,9 @@ void setup() {
   delay(500);
   Serial.printf("Glowbe layout=%s leds=%d lines=%d driver=%s\n", GLOWBE_LAYOUT_ID, GLOWBE_LED_COUNT,
                 GLOWBE_DATA_LINES, glowbe_led_driver_name());
+  Serial.printf("brightness: 4A x %u%% -> %umA budget, led scale %u/255 (~%u%%)\n",
+                kGlowbeSupplyUtilizationPercent, kGlowbeSupplyBudgetMa, kGlowbeLedBrightness,
+                static_cast<unsigned>((static_cast<uint32_t>(kGlowbeLedBrightness) * 100u) / 255u));
 #if GLOWBE_PLAYOUT_LAG_FRAMES > 0
   Serial.printf("playout: lag_frames=%d ring_cap=%d\n", GLOWBE_PLAYOUT_LAG_FRAMES, GLOWBE_PLAYOUT_RING_CAP);
 #else

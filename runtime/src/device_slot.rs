@@ -62,6 +62,11 @@ impl DeviceSlot {
         } else {
             record.display_name.clone()
         };
+        let brightness = record.master_brightness.clamp(0.0, 1.0) as f32;
+        let gamma = record
+            .master_gamma
+            .clamp(crate::devices::MIN_MASTER_GAMMA, crate::devices::MAX_MASTER_GAMMA)
+            as f32;
         Ok(Arc::new(Self {
             record: StdRwLock::new(DeviceRecord {
                 display_name: display,
@@ -84,8 +89,8 @@ impl DeviceSlot {
             interactive_default_effect: AtomicU8::new(
                 InteractiveEffectKind::ExpandingRingDiagonal.code(),
             ),
-            master_brightness_bits: AtomicU32::new(f32::to_bits(1.0)),
-            master_gamma_bits: AtomicU32::new(f32::to_bits(1.0)),
+            master_brightness_bits: AtomicU32::new(f32::to_bits(brightness)),
+            master_gamma_bits: AtomicU32::new(f32::to_bits(gamma)),
             preview_frame: StdRwLock::new(vec![0u8; preview_len]),
             preview_seq: AtomicU32::new(0),
             output_send_epoch: AtomicU32::new(0),
@@ -110,6 +115,7 @@ impl DeviceSlot {
     }
 
     pub fn update_record(&self, rec: DeviceRecord) {
+        self.set_master_tone(rec.master_brightness as f32, rec.master_gamma as f32);
         if let Ok(mut g) = self.record.write() {
             *g = rec;
         }
@@ -324,7 +330,7 @@ impl DeviceSlot {
     }
 
     pub fn set_master_tone(&self, brightness: f32, gamma: f32) {
-        let b = brightness.clamp(0.0, 2.0);
+        let b = brightness.clamp(0.0, 1.0);
         let g = gamma.clamp(0.45, 3.5);
         self.master_brightness_bits
             .store(f32::to_bits(b), Ordering::Relaxed);

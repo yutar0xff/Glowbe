@@ -1,11 +1,10 @@
 import { useMemo } from 'react'
 import { AlertTriangle, Loader2, OctagonAlert } from 'lucide-react'
-import { MasterToneDrawer } from '@/components/MasterToneDrawer'
 import { StatusPill } from '@/components/StatusPill'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { StudioPage } from '@/studio/StudioPage'
 import { formatNumber } from '@/format'
-import { effectiveFpsOut, effectiveFpsRx } from '@/lib/metrics'
+import { effectiveFpsOut } from '@/lib/metrics'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 export function AppLayout() {
@@ -23,12 +22,7 @@ export function AppLayout() {
 
   const fpsLabel = useMemo(() => {
     if (!state) return null
-    const out = effectiveFpsOut(state)
-    const rx = effectiveFpsRx(state)
-    if (rx !== null && rx > 0) {
-      return `FPS ${formatNumber(out)} / ${formatNumber(rx)}`
-    }
-    return `FPS ${formatNumber(out)}`
+    return `FPS ${formatNumber(effectiveFpsOut(state))}`
   }, [state])
 
   return (
@@ -51,7 +45,6 @@ export function AppLayout() {
             ) : null}
             <StatusPill label={health?.ok ? 'health: ok' : 'health: stale/error'} tone={health?.ok ? 'ok' : 'bad'} />
             <StatusPill label={`runtime: ${runtimeTone}`} tone={runtimeTone} />
-            {load.kind === 'ready' ? <MasterToneDrawer /> : null}
           </div>
         </header>
 

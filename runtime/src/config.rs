@@ -30,7 +30,6 @@ pub struct Device {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Output {
     pub udp_port: u16,
-    pub target_fps: u32,
     #[serde(default = "default_status_port")]
     pub status_port: u16,
 }

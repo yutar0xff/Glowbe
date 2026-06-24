@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { CalendarClock, Pause, Play, Pencil, Square, Trash2, Upload } from 'lucide-react'
-import { LiveMetricsRow } from '@/components/LiveMetricsRow'
 import { LayoutUvSheet } from '@/components/LayoutUvMap'
 import { LayoutUvSphereCanvas } from '@/components/LayoutUvSphereCanvas'
 import { formatDate } from '@/format'
@@ -352,8 +351,6 @@ export function LoopModePanel({
 
   return (
     <div className="space-y-6">
-      <LiveMetricsRow state={state} />
-
       {showSourcePreview ? (
         <Card>
           <CardHeader>

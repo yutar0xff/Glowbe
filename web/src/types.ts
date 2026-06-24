@@ -37,6 +37,7 @@ export type RuntimeState = {
   deviceId: string
   layoutId: string
   mode: string
+  targetFps: number
   fpsOut: number
   fpsRx: number | null
   espFramesComplete: number | null
@@ -116,6 +117,9 @@ export type DeviceRecord = {
   espIp?: string | null
   mdnsHostname?: string | null
   layoutId: string
+  outputFps: number
+  masterBrightness?: number
+  masterGamma?: number
 }
 
 export type DiscoveredEsp = {
@@ -136,4 +140,7 @@ export type DeviceCreateInput = {
   espIp?: string | null
   mdnsHostname?: string | null
   layoutId: string
+  outputFps: number
+  masterBrightness?: number
+  masterGamma?: number
 }

@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 use flume::RecvTimeoutError;
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 
+use crate::devices::normalize_mdns_hostname;
+
 #[derive(Debug, Clone)]
 pub struct GlowbeService {
     pub hostname: String,
@@ -38,7 +40,8 @@ pub fn glowbe_udp_all(timeout: Duration) -> Vec<GlowbeService> {
     while Instant::now() < deadline {
         match receiver.recv_timeout(Duration::from_millis(250)) {
             Ok(ServiceEvent::ServiceResolved(info)) => {
-                let hostname = info.get_hostname().trim_end_matches('.').to_string();
+                let raw_host = info.get_hostname().trim_end_matches('.').to_string();
+                let hostname = normalize_mdns_hostname(&raw_host).unwrap_or(raw_host);
                 for addr in info.get_addresses() {
                     if let IpAddr::V4(v4) = addr {
                         let port = info.get_port();

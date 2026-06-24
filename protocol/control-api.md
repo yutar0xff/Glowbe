@@ -34,7 +34,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 }
 ```
 
-- `masterBrightness`: 全モード共通の最終輝度係数（0–2、1 が既定）。UDP 直前に各チャンネルへ乗算。
+- `masterBrightness`: 全モード共通の最終輝度係数（0–1、1 = 100% が既定）。UDP 直前に各チャンネルへ乗算。Studio UI では 0–100% 表示。ファーム側では layout の LED 総数と 4 A 電源の 80%（3.2 A）・LED 白 15 mA を前提にした上限（`kGlowbeLedBrightness`）を別途適用。
 - `masterGamma`: 全モード共通のガンマ補正（約 0.45–3.5、1 が既定）。`out = clamp( ((in/255)×brightness)^(1/gamma) × 255 )`。
 - `frameLoopStaleMs`: 直近のフレームループ tick からの経過時間（ms）。出力タスクが停止すると急増する。
 - `layoutMismatch`: ESP STATUS の `layout_hash` とランタイムの `meta.layoutHash` が食い違うとき `true`（いずれか欠損時は照合しない）。
@@ -118,7 +118,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 { "brightness": 1.0, "gamma": 1.0 }
 ```
 
-→ 実装済み: **全出力モード**で、フレームを UDP に送る直前に適用するマスター補正。`brightness` は 0–2（クランプ）、`gamma` は約 0.45–3.5（クランプ）。`200` + 更新後 `state` オブジェクト。
+→ 実装済み: **全出力モード**で、フレームを UDP に送る直前に適用するマスター補正。`brightness` は 0–1（クランプ、1 = 100%）、`gamma` は約 0.45–3.5（クランプ）。`200` + 更新後 `state` オブジェクト。
 
 ### `GET /api/v1/layout/uv`
 

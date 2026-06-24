@@ -10,6 +10,12 @@ use uuid::{Uuid, Version};
 
 use crate::config::Config;
 
+pub const DEFAULT_OUTPUT_FPS: u32 = 120;
+pub const DEFAULT_MASTER_BRIGHTNESS: f64 = 1.0;
+pub const DEFAULT_MASTER_GAMMA: f64 = 1.0;
+pub const MIN_MASTER_GAMMA: f64 = 0.45;
+pub const MAX_MASTER_GAMMA: f64 = 3.5;
+
 /// 新規デバイス用の UUID v7（時系列ソート可能）。
 pub fn new_device_id() -> String {
     Uuid::now_v7().to_string()
@@ -19,6 +25,29 @@ pub fn is_uuid_v7(id: &str) -> bool {
     Uuid::parse_str(id)
         .ok()
         .is_some_and(|u| u.get_version() == Some(Version::SortRand))
+}
+
+/// mDNS ホストラベル（`.local` や末尾の `.` なし）に正規化する。
+pub fn normalize_mdns_hostname(raw: &str) -> Option<String> {
+    let mut s = raw.trim().trim_end_matches('.').to_string();
+    if s.is_empty() {
+        return None;
+    }
+    if let Some(stripped) = s.strip_suffix(".local") {
+        s = stripped.trim_end_matches('.').to_string();
+    }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+pub fn mdns_hosts_match(a: &str, b: &str) -> bool {
+    match (normalize_mdns_hostname(a), normalize_mdns_hostname(b)) {
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    }
 }
 
 fn validate_device_id(id: &str) -> Result<()> {
@@ -53,6 +82,26 @@ pub struct DeviceRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mdns_hostname: Option<String>,
     pub layout_id: String,
+    pub output_fps: u32,
+    #[serde(default = "default_master_brightness")]
+    pub master_brightness: f64,
+    #[serde(default = "default_master_gamma")]
+    pub master_gamma: f64,
+}
+
+fn default_master_brightness() -> f64 {
+    DEFAULT_MASTER_BRIGHTNESS
+}
+
+fn default_master_gamma() -> f64 {
+    DEFAULT_MASTER_GAMMA
+}
+
+fn clamp_master_tone(rec: &mut DeviceRecord) {
+    rec.master_brightness = rec.master_brightness.clamp(0.0, 1.0);
+    rec.master_gamma = rec
+        .master_gamma
+        .clamp(MIN_MASTER_GAMMA, MAX_MASTER_GAMMA);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,6 +152,15 @@ impl DeviceRegistry {
                 anyhow::bail!("unsupported devices file format/version");
             }
             let mut devices = file.devices;
+            let mut tone_clamped = false;
+            for rec in &mut devices {
+                let before_b = rec.master_brightness;
+                let before_g = rec.master_gamma;
+                clamp_master_tone(rec);
+                if rec.master_brightness != before_b || rec.master_gamma != before_g {
+                    tone_clamped = true;
+                }
+            }
             if migrate_legacy_device_ids(&mut devices) {
                 let reg = Self {
                     path,
@@ -117,6 +175,9 @@ impl DeviceRegistry {
                 devices,
             };
             reg.validate_all(compiled_dir)?;
+            if tone_clamped {
+                reg.save()?;
+            }
             return Ok(reg);
         }
 
@@ -148,6 +209,12 @@ impl DeviceRegistry {
     }
 
     pub fn upsert(&mut self, rec: DeviceRecord, compiled_dir: &Path) -> Result<()> {
+        let mut rec = rec;
+        rec.mdns_hostname = rec
+            .mdns_hostname
+            .as_deref()
+            .and_then(normalize_mdns_hostname);
+        clamp_master_tone(&mut rec);
         validate_record(&rec, compiled_dir)?;
         let replace_id = self
             .devices
@@ -160,6 +227,17 @@ impl DeviceRegistry {
         } else {
             self.devices.push(rec);
         }
+        self.save()
+    }
+
+    pub fn update_master_tone(&mut self, id: &str, brightness: f64, gamma: f64) -> Result<()> {
+        let pos = self
+            .devices
+            .iter()
+            .position(|d| d.id == id)
+            .ok_or_else(|| anyhow::anyhow!("device not found: {id}"))?;
+        self.devices[pos].master_brightness = brightness.clamp(0.0, 1.0);
+        self.devices[pos].master_gamma = gamma.clamp(MIN_MASTER_GAMMA, MAX_MASTER_GAMMA);
         self.save()
     }
 
@@ -206,9 +284,8 @@ impl DeviceRegistry {
             .filter_map(|d| {
                 d.mdns_hostname
                     .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(|h| (h.to_string(), d.id.clone()))
+                    .and_then(normalize_mdns_hostname)
+                    .map(|h| (h, d.id.clone()))
             })
             .collect();
         discovered
@@ -255,6 +332,9 @@ fn seed_from_config(config: &Config) -> Vec<DeviceRecord> {
             esp_ip: config.device.esp_ip.clone(),
             mdns_hostname: None,
             layout_id: config.device.layout_id.clone(),
+            output_fps: DEFAULT_OUTPUT_FPS,
+            master_brightness: DEFAULT_MASTER_BRIGHTNESS,
+            master_gamma: DEFAULT_MASTER_GAMMA,
         }]
     };
     migrate_legacy_device_ids(&mut devices);
@@ -268,6 +348,9 @@ fn validate_record(rec: &DeviceRecord, compiled_dir: &Path) -> Result<()> {
         || rec.layout_id.contains('\\')
     {
         anyhow::bail!("layout_id invalid");
+    }
+    if rec.output_fps == 0 {
+        anyhow::bail!("output_fps must be at least 1");
     }
     let meta = compiled_dir.join(format!("{}.meta.json", rec.layout_id));
     if !meta.is_file() {
@@ -323,6 +406,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn normalize_mdns_hostname_strips_local_suffix() {
+        assert_eq!(
+            normalize_mdns_hostname("glowbe-60faces.local."),
+            Some("glowbe-60faces".into())
+        );
+        assert_eq!(
+            normalize_mdns_hostname("  glowbe-proto.local  "),
+            Some("glowbe-proto".into())
+        );
+        assert!(mdns_hosts_match("glowbe-60faces", "glowbe-60faces.local"));
+    }
+
+    #[test]
     fn device_id_must_be_uuid_v7() {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets/compiled");
         let rec = DeviceRecord {
@@ -331,6 +427,9 @@ mod tests {
             esp_ip: Some("192.168.0.1".into()),
             mdns_hostname: None,
             layout_id: "prototype-icosahedron-15".into(),
+            output_fps: DEFAULT_OUTPUT_FPS,
+            master_brightness: DEFAULT_MASTER_BRIGHTNESS,
+            master_gamma: DEFAULT_MASTER_GAMMA,
         };
         assert!(validate_record(&rec, &dir).is_ok());
         let bad = DeviceRecord {
@@ -352,6 +451,9 @@ mod tests {
                 esp_ip: Some("10.0.0.1".into()),
                 mdns_hostname: None,
                 layout_id: "prototype-icosahedron-15".into(),
+                output_fps: DEFAULT_OUTPUT_FPS,
+                master_brightness: DEFAULT_MASTER_BRIGHTNESS,
+                master_gamma: DEFAULT_MASTER_GAMMA,
             }],
         };
         let updated = DeviceRecord {
@@ -360,6 +462,9 @@ mod tests {
             esp_ip: Some("10.0.0.1".into()),
             mdns_hostname: None,
             layout_id: "prototype-icosahedron-15".into(),
+            output_fps: 60,
+            master_brightness: DEFAULT_MASTER_BRIGHTNESS,
+            master_gamma: DEFAULT_MASTER_GAMMA,
         };
         assert!(reg.upsert(updated, &dir).is_ok());
         assert_eq!(reg.devices[0].display_name, "A2");
