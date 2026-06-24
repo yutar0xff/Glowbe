@@ -1,6 +1,9 @@
 mod api;
 mod config;
+mod device_slot;
+mod devices;
 mod discover;
+mod master_tone;
 mod mate;
 mod media;
 mod metrics;
@@ -18,7 +21,8 @@ use anyhow::{Context, Result};
 use tokio::net::TcpListener;
 use tracing::info;
 
-use crate::state::{InteractiveEffectKind, InteractivePulse, new_shared, SharedState};
+use crate::devices::{devices_json_path, DeviceRegistry};
+use crate::state::{new_shared, InteractiveEffectKind, InteractivePulse};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -33,7 +37,10 @@ async fn main() -> Result<()> {
     if args.first().is_some_and(|arg| arg == "convert-image") {
         return convert_image_command(&args[1..]);
     }
-    if args.first().is_some_and(|arg| arg == "gen-demo-expanding-rings") {
+    if args
+        .first()
+        .is_some_and(|arg| arg == "gen-demo-expanding-rings")
+    {
         return gen_demo_expanding_rings_command(&args[1..]);
     }
 
@@ -48,25 +55,18 @@ async fn main() -> Result<()> {
     let uploads_dir = uploads_dir(&config)?;
     std::fs::create_dir_all(&uploads_dir)
         .with_context(|| format!("create uploads dir {}", uploads_dir.display()))?;
-    let meta_path = compiled_dir.join(format!("{}.meta.json", config.device.layout_id));
-    let meta_raw = std::fs::read_to_string(&meta_path)
-        .with_context(|| format!("read {}", meta_path.display()))?;
-    let meta: serde_json::Value = serde_json::from_str(&meta_raw).context("parse meta json")?;
-    let led_count = meta["ledCount"].as_u64().context("ledCount")? as u16;
-    let expected_layout_hash = meta
-        .get("layoutHash")
-        .and_then(|v| v.as_u64())
-        .map(|x| x as u32);
+    let devices_path = devices_json_path(&config).context("devices path")?;
+    let registry =
+        DeviceRegistry::load_or_seed(devices_path, &config, &compiled_dir).context("devices")?;
 
-    let app: SharedState = new_shared(
-        config.device.layout_id.clone(),
-        led_count,
-        config.modes.default.clone(),
-        expected_layout_hash,
+    let app = new_shared(
+        registry,
+        &config.modes.default,
         compiled_dir.clone(),
         sequences_dir,
         uploads_dir,
-    );
+    )
+    .context("init shared state")?;
 
     let bind: SocketAddr = config.server.bind.parse().context("server.bind")?;
     let router = api::router(app.clone());
@@ -181,7 +181,7 @@ fn gen_demo_expanding_rings_command(args: &[String]) -> Result<()> {
         }
     }
 
-    let mut rng = Xor(0xDEB1_71DE_D00);
+    let mut rng = Xor(0x0DEB_171D_ED00);
     let seq_base = Instant::now();
     let mut pulses: Vec<InteractivePulse> = Vec::new();
     for _ in 0..18 {
@@ -211,13 +211,8 @@ fn gen_demo_expanding_rings_command(args: &[String]) -> Result<()> {
     let fps = 30u32;
     let sec = 12.5f32;
     let frame_count = (sec * fps as f32).ceil() as u32;
-    let frames = output::encode_demo_expanding_ring_sequence_bytes(
-        &uv,
-        &pulses,
-        seq_base,
-        fps,
-        frame_count,
-    );
+    let frames =
+        output::encode_demo_expanding_ring_sequence_bytes(&uv, &pulses, seq_base, fps, frame_count);
 
     let out = sequences_dir.join(&sequence_id);
     if out.exists() {

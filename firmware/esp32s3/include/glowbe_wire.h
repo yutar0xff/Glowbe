@@ -15,6 +15,8 @@ constexpr uint8_t kHeaderSize = 16;
 // Datagram = kHeaderSize + chunk; IPv4 UDP payload max 1472 → chunk ≤ 1456 (use 1440).
 // Must match runtime `MAX_CHUNK_PAYLOAD`.
 constexpr size_t kMaxChunkPayload = 1440;
+/// Backward `frame_id` jump larger than this resets assembly (runtime restart).
+constexpr int32_t kStreamResetFrameLag = 10000;
 
 struct FrameHeader {
   uint32_t frame_id;
@@ -86,7 +88,13 @@ class FrameAssembler {
     }
 
     if (have_last_completed_frame_ && frame_before(hdr.frame_id, last_completed_frame_id_)) {
-      return false;
+      const int32_t delta =
+          static_cast<int32_t>(hdr.frame_id - last_completed_frame_id_);
+      if (delta < -kStreamResetFrameLag) {
+        reset();
+      } else {
+        return false;
+      }
     }
     if (chunk_count_ > 0 && frame_before(hdr.frame_id, assembling_id_)) {
       return false;

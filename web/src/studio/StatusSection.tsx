@@ -1,6 +1,7 @@
 import { Braces } from 'lucide-react'
 import { MetricCard } from '@/components/MetricCard'
 import { formatNumber, formatUptime } from '@/format'
+import { effectiveFpsOut, effectiveFpsRx } from '@/lib/metrics'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -14,8 +15,8 @@ export function StatusSection() {
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <MetricCard label="Mode" value={state.mode} hint={playingSequenceId ?? '—'} />
-        <MetricCard label="FPS Out" value={formatNumber(state.fpsOut)} hint={`${state.framesSent} frames sent`} />
-        <MetricCard label="FPS Rx" value={formatNumber(state.fpsRx)} hint="device-reported" />
+        <MetricCard label="Target FPS" value={String(state.targetFps)} hint={`out ${formatNumber(effectiveFpsOut(state))}`} />
+        <MetricCard label="FPS Rx" value={formatNumber(effectiveFpsRx(state))} hint="device-reported" />
         <MetricCard
           label="ESP Frames"
           value={state.espFramesComplete === null ? '-' : String(state.espFramesComplete)}

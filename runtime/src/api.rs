@@ -1,6 +1,6 @@
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{DefaultBodyLimit, Multipart, Path};
+use axum::extract::{DefaultBodyLimit, Multipart, Path, Query};
 use axum::http::header;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -16,8 +16,11 @@ use std::time::{Duration, Instant};
 use tokio::time;
 use uuid::Uuid;
 
-use crate::media;
+use crate::device_slot::DeviceSlot;
+use crate::devices::DeviceRecord;
+use crate::discover;
 use crate::mate;
+use crate::media;
 use crate::state::{
     InteractiveEffectKind, InteractivePulse, MediaUploadEntry, MediaUploadPhase, OutputMode,
     RuntimeState, SharedState,
@@ -29,10 +32,12 @@ const PREVIEW_FRAME_MAGIC: u32 = 0x4742_5031;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct StateResponse {
+    device_id: String,
     layout_id: String,
     mode: String,
     fps_out: f64,
     fps_rx: Option<f64>,
+    target_fps: u32,
     esp_frames_complete: Option<u32>,
     esp_rssi: Option<i8>,
     esp_drops: Option<u16>,
@@ -141,6 +146,74 @@ fn default_media_fps() -> u32 {
     30
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceIdQuery {
+    #[serde(default)]
+    device_id: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceListResponse {
+    default_device_id: String,
+    devices: Vec<DeviceRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    created_device_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceCreateRequest {
+    #[serde(default)]
+    display_name: String,
+    #[serde(default)]
+    esp_ip: Option<String>,
+    #[serde(default)]
+    mdns_hostname: Option<String>,
+    layout_id: String,
+    output_fps: u32,
+    #[serde(default = "default_master_brightness")]
+    master_brightness: f64,
+    #[serde(default = "default_master_gamma")]
+    master_gamma: f64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceUpdateRequest {
+    #[serde(default)]
+    display_name: String,
+    #[serde(default)]
+    esp_ip: Option<String>,
+    #[serde(default)]
+    mdns_hostname: Option<String>,
+    layout_id: String,
+    output_fps: u32,
+    #[serde(default = "default_master_brightness")]
+    master_brightness: f64,
+    #[serde(default = "default_master_gamma")]
+    master_gamma: f64,
+}
+
+fn default_master_brightness() -> f64 {
+    crate::devices::DEFAULT_MASTER_BRIGHTNESS
+}
+
+fn default_master_gamma() -> f64 {
+    crate::devices::DEFAULT_MASTER_GAMMA
+}
+
+type ApiError = (StatusCode, Json<ErrorResponse>);
+
+fn resolve_slot(app: &SharedState, q: &DeviceIdQuery) -> Result<Arc<DeviceSlot>, ApiError> {
+    let id = app
+        .resolve_device_id(q.device_id.as_deref())
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))?;
+    app.device(&id)
+        .map_err(|e| (StatusCode::NOT_FOUND, Json(ErrorResponse { error: e })))
+}
+
 fn safe_disk_ext(file_name: Option<&str>) -> Result<&'static str, &'static str> {
     let ext = file_name
         .and_then(|n| std::path::Path::new(n).extension())
@@ -237,9 +310,7 @@ async fn post_media_upload(app: SharedState, mut multipart: Multipart) -> impl I
         Err(msg) => {
             return (
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                Json(ErrorResponse {
-                    error: msg.into(),
-                }),
+                Json(ErrorResponse { error: msg.into() }),
             )
                 .into_response();
         }
@@ -459,52 +530,81 @@ pub fn router(app: SharedState) -> Router {
     let app_health = app.clone();
     let main = Router::new()
         .route(
+            "/api/v1/devices",
+            get({
+                let app = app.clone();
+                move || get_devices(app.clone())
+            })
+            .post({
+                let app = app.clone();
+                move |body| post_device(app.clone(), body)
+            }),
+        )
+        .route(
+            "/api/v1/devices/discovered",
+            get({
+                let app = app.clone();
+                move || get_devices_discovered(app.clone())
+            }),
+        )
+        .route(
+            "/api/v1/devices/{device_id}",
+            patch({
+                let app = app.clone();
+                move |path, body| patch_device(app.clone(), path, body)
+            })
+            .delete({
+                let app = app.clone();
+                move |path| delete_device(app.clone(), path)
+            }),
+        )
+        .route(
             "/api/v1/state",
             get({
                 let app = app.clone();
-                move || get_state(app.clone())
+                move |q| get_state(app.clone(), q)
             }),
         )
         .route(
             "/api/v1/mode",
             post({
                 let app = app.clone();
-                move |body| post_mode(app.clone(), body)
+                move |q, body| post_mode(app.clone(), q, body)
             }),
         )
         .route(
             "/api/v1/loop/select",
             post({
                 let app = app.clone();
-                move |body| post_loop_select(app.clone(), body)
+                move |q, body| post_loop_select(app.clone(), q, body)
             }),
         )
         .route(
             "/api/v1/loop/clear-selection",
             post({
                 let app = app.clone();
-                move || post_loop_clear_selection(app.clone())
+                move |q| post_loop_clear_selection(app.clone(), q)
             }),
         )
         .route(
             "/api/v1/loop/pause",
             post({
                 let app = app.clone();
-                move |body| post_loop_pause(app.clone(), body)
+                move |q, body| post_loop_pause(app.clone(), q, body)
             }),
         )
         .route(
             "/api/v1/master-tone",
             post({
                 let app = app.clone();
-                move |body| post_master_tone(app.clone(), body)
+                move |q, body| post_master_tone(app.clone(), q, body)
             }),
         )
         .route(
             "/api/v1/mate/state",
             post({
                 let app = app.clone();
-                move |body| post_mate_state(app.clone(), body)
+                move |q, body| post_mate_state(app.clone(), q, body)
             }),
         )
         .route(
@@ -542,7 +642,7 @@ pub fn router(app: SharedState) -> Router {
             "/api/v1/layout/uv",
             get({
                 let app = app.clone();
-                move || get_layout_uv(app.clone())
+                move |q| get_layout_uv(app.clone(), q)
             }),
         )
         .route(
@@ -556,7 +656,7 @@ pub fn router(app: SharedState) -> Router {
             "/api/v1/device/layout",
             post({
                 let app = app.clone();
-                move |body| post_device_layout(app.clone(), body)
+                move |q, body| post_device_layout(app.clone(), q, body)
             }),
         )
         .route(
@@ -577,7 +677,7 @@ pub fn router(app: SharedState) -> Router {
             "/api/v1/ws",
             get({
                 let app = app.clone();
-                move |ws| ws_handler(ws, app.clone())
+                move |ws, q| ws_handler(ws, q, app.clone())
             }),
         )
         .route(
@@ -591,12 +691,26 @@ pub fn router(app: SharedState) -> Router {
     upload_router.merge(main)
 }
 
-async fn ws_handler(ws: WebSocketUpgrade, app: SharedState) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| ws_loop(socket, app))
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    Query(q): Query<DeviceIdQuery>,
+    app: SharedState,
+) -> impl IntoResponse {
+    let device_id = match app.resolve_device_id(q.device_id.as_deref()) {
+        Ok(id) => id,
+        Err(e) => {
+            return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })).into_response();
+        }
+    };
+    ws.on_upgrade(move |socket| ws_loop(socket, app, device_id))
 }
 
-async fn ws_loop(mut socket: WebSocket, app: SharedState) {
-    if send_ws_state(&mut socket, &app).await.is_err() {
+async fn ws_loop(mut socket: WebSocket, app: SharedState, device_id: String) {
+    let slot = match app.device(&device_id) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    if send_ws_state(&mut socket, &slot).await.is_err() {
         return;
     }
 
@@ -609,12 +723,12 @@ async fn ws_loop(mut socket: WebSocket, app: SharedState) {
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                if send_ws_state(&mut socket, &app).await.is_err() {
+                if send_ws_state(&mut socket, &slot).await.is_err() {
                     return;
                 }
             }
             _ = preview_ticker.tick(), if preview_wanted.load(Ordering::Relaxed) => {
-                if send_preview_frame(&mut socket, &app).await.is_err() {
+                if send_preview_frame(&mut socket, &slot).await.is_err() {
                     return;
                 }
             }
@@ -624,7 +738,7 @@ async fn ws_loop(mut socket: WebSocket, app: SharedState) {
                 };
                 match msg {
                     Message::Text(text) => {
-                        if handle_ws_text(&mut socket, &text, &app, &preview_wanted).await.is_err() {
+                        if handle_ws_text(&mut socket, &text, &app, &slot, &preview_wanted).await.is_err() {
                             return;
                         }
                     }
@@ -641,18 +755,18 @@ async fn ws_loop(mut socket: WebSocket, app: SharedState) {
     }
 }
 
-async fn send_preview_frame(socket: &mut WebSocket, app: &SharedState) -> Result<(), axum::Error> {
-    let led_count = { app.state.read().await.led_count };
+async fn send_preview_frame(socket: &mut WebSocket, slot: &DeviceSlot) -> Result<(), axum::Error> {
+    let led_count = { slot.state.read().await.led_count };
     let expected = led_count as usize * 3;
     let (seq, rgb) = {
-        let guard = match app.preview_frame.read() {
+        let guard = match slot.preview_frame.read() {
             Ok(g) => g,
             Err(_) => return Ok(()),
         };
         if guard.len() != expected {
             return Ok(());
         }
-        let seq = app.preview_seq.load(Ordering::Acquire);
+        let seq = slot.preview_seq.load(Ordering::Acquire);
         (seq, guard.clone())
     };
     let mut buf = Vec::with_capacity(12 + rgb.len());
@@ -664,11 +778,11 @@ async fn send_preview_frame(socket: &mut WebSocket, app: &SharedState) -> Result
     socket.send(Message::Binary(buf.into())).await
 }
 
-async fn send_ws_state(socket: &mut WebSocket, app: &SharedState) -> Result<(), axum::Error> {
-    let s = app.state.read().await;
+async fn send_ws_state(socket: &mut WebSocket, slot: &DeviceSlot) -> Result<(), axum::Error> {
+    let s = slot.state.read().await;
     let msg = WsStateMessage {
         kind: "state",
-        state: state_response(app, &s),
+        state: state_response(slot, &s),
     };
     let text = serde_json::to_string(&msg).expect("serialize ws state");
     socket.send(Message::Text(text.into())).await
@@ -678,6 +792,7 @@ async fn handle_ws_text(
     socket: &mut WebSocket,
     text: &str,
     app: &SharedState,
+    slot: &DeviceSlot,
     preview_wanted: &Arc<AtomicBool>,
 ) -> Result<(), axum::Error> {
     let v: serde_json::Value = match serde_json::from_str(text) {
@@ -697,17 +812,14 @@ async fn handle_ws_text(
     match kind {
         "getLayoutUv" => {
             let layout_id = {
-                let s = app.state.read().await;
+                let s = slot.state.read().await;
                 s.layout_id.clone()
             };
             match media::load_layout_uv(&app.compiled_dir, &layout_id) {
                 Ok(uv) => {
                     let mut payload = serde_json::to_value(&uv).expect("serialize layout uv");
                     if let serde_json::Value::Object(ref mut m) = payload {
-                        m.insert(
-                            "type".into(),
-                            serde_json::Value::String("layoutUv".into()),
-                        );
+                        m.insert("type".into(), serde_json::Value::String("layoutUv".into()));
                     }
                     socket
                         .send(Message::Text(payload.to_string().into()))
@@ -740,8 +852,8 @@ async fn handle_ws_text(
             socket.send(Message::Text(reply.to_string().into())).await?;
         }
         "masterSettings" => {
-            let cur_b = app.master_brightness();
-            let cur_g = app.master_gamma();
+            let cur_b = slot.master_brightness();
+            let cur_g = slot.master_gamma();
             let brightness = v
                 .get("brightness")
                 .and_then(|x| x.as_f64())
@@ -752,18 +864,18 @@ async fn handle_ws_text(
                 .and_then(|x| x.as_f64())
                 .map(|x| x as f32)
                 .unwrap_or(cur_g);
-            app.set_master_tone(brightness, gamma);
+            slot.set_master_tone(brightness, gamma);
             let reply = json!({
                 "type": "event_status",
                 "event": "masterSettings",
                 "status": "ok",
-                "brightness": f64::from(app.master_brightness()),
-                "gamma": f64::from(app.master_gamma())
+                "brightness": f64::from(slot.master_brightness()),
+                "gamma": f64::from(slot.master_gamma())
             });
             socket.send(Message::Text(reply.to_string().into())).await?;
         }
         "interactive" => {
-            if app.output_mode() != OutputMode::Interactive {
+            if slot.output_mode() != OutputMode::Interactive {
                 let reply = json!({
                     "type": "event_status",
                     "event": "interactive",
@@ -789,7 +901,7 @@ async fn handle_ws_text(
                     socket.send(Message::Text(reply.to_string().into())).await?;
                     return Ok(());
                 };
-                app.set_interactive_default_effect(ef);
+                slot.set_interactive_default_effect(ef);
                 let reply = json!({
                     "type": "event_status",
                     "event": "interactive",
@@ -801,12 +913,9 @@ async fn handle_ws_text(
                 return Ok(());
             }
             if let Some("setSolid") = v.get("action").and_then(|a| a.as_str()) {
-                let enabled = v
-                    .get("enabled")
-                    .and_then(|x| x.as_bool())
-                    .unwrap_or(false);
+                let enabled = v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false);
                 if !enabled {
-                    app.set_interactive_solid_rgb(None);
+                    slot.set_interactive_solid_rgb(None);
                     let reply = json!({
                         "type": "event_status",
                         "event": "interactive",
@@ -844,7 +953,7 @@ async fn handle_ws_text(
                         b.round().clamp(0.0, 255.0) as u8,
                     ]
                 };
-                app.set_interactive_solid_rgb(Some(tri));
+                slot.set_interactive_solid_rgb(Some(tri));
                 let reply = json!({
                     "type": "event_status",
                     "event": "interactive",
@@ -871,10 +980,7 @@ async fn handle_ws_text(
 
             let u = v.get("u").and_then(|x| x.as_f64()).unwrap_or(0.5) as f32;
             let v_coord = v.get("v").and_then(|x| x.as_f64()).unwrap_or(0.5) as f32;
-            let amplitude = v
-                .get("amplitude")
-                .and_then(|x| x.as_f64())
-                .unwrap_or(1.0) as f32;
+            let amplitude = v.get("amplitude").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
             let u = u.clamp(0.0, 1.0);
             let v_coord = v_coord.clamp(0.0, 1.0);
             let amplitude = amplitude.clamp(0.0, 4.0);
@@ -883,26 +989,31 @@ async fn handle_ws_text(
                 .and_then(|x| x.as_u64())
                 .unwrap_or(450)
                 .clamp(100, 5000) as u32;
-            let sigma_rad = v
-                .get("sigmaRad")
-                .and_then(|x| x.as_f64())
-                .unwrap_or(0.14) as f32;
+            let sigma_rad = v.get("sigmaRad").and_then(|x| x.as_f64()).unwrap_or(0.14) as f32;
             let sigma_rad = sigma_rad.clamp(0.02f32, 0.6f32);
             let effect = v
                 .get("effect")
                 .and_then(|e| e.as_str())
                 .and_then(InteractiveEffectKind::parse)
-                .unwrap_or_else(|| app.interactive_default_effect());
+                .unwrap_or_else(|| slot.interactive_default_effect());
 
             let (layout_id, led_count) = {
-                let s = app.state.read().await;
+                let s = slot.state.read().await;
                 (s.layout_id.clone(), s.led_count as usize)
             };
 
-            let reply = match app.ensure_interactive_uv(&layout_id, led_count) {
+            let reply = match slot.ensure_interactive_uv(&app.compiled_dir, &layout_id, led_count) {
                 Ok(()) => {
-                    let pulse = build_interactive_pulse(&v, u, v_coord, amplitude, duration_ms, sigma_rad, effect);
-                    app.push_interactive_pulse(pulse);
+                    let pulse = build_interactive_pulse(
+                        &v,
+                        u,
+                        v_coord,
+                        amplitude,
+                        duration_ms,
+                        sigma_rad,
+                        effect,
+                    );
+                    slot.push_interactive_pulse(pulse);
                     json!({
                         "type": "event_status",
                         "event": "interactive",
@@ -920,7 +1031,7 @@ async fn handle_ws_text(
             socket.send(Message::Text(reply.to_string().into())).await?;
         }
         "mate" => {
-            if app.output_mode() != OutputMode::Mate {
+            if slot.output_mode() != OutputMode::Mate {
                 let reply = json!({
                     "type": "event_status",
                     "event": "mate",
@@ -1050,6 +1161,15 @@ async fn handle_ws_text(
                     if let Some(x) = v.get("brightness").and_then(|x| x.as_f64()) {
                         ap.insert("brightness".into(), json!(x));
                     }
+                    if let Some(x) = v.get("faceAngularRadiusDeg").and_then(|x| x.as_f64()) {
+                        ap.insert("faceAngularRadiusDeg".into(), json!(x));
+                    }
+                    if let Some(x) = v.get("featureScale").and_then(|x| x.as_f64()) {
+                        ap.insert("featureScale".into(), json!(x));
+                    }
+                    if let Some(x) = v.get("eyeSpacing").and_then(|x| x.as_f64()) {
+                        ap.insert("eyeSpacing".into(), json!(x));
+                    }
                     if let Some(x) = v.get("faceScale").and_then(|x| x.as_f64()) {
                         ap.insert("faceScale".into(), json!(x));
                     }
@@ -1064,7 +1184,7 @@ async fn handle_ws_text(
                             "type": "event_status",
                             "event": "mate",
                             "status": "error",
-                            "reason": "setAppearance requires color, brightness, faceScale, partsScale, and/or useExpressionTint"
+                            "reason": "setAppearance requires color, brightness, faceAngularRadiusDeg, featureScale, eyeSpacing, faceScale, partsScale, and/or useExpressionTint"
                         });
                         socket.send(Message::Text(reply.to_string().into())).await?;
                         return Ok(());
@@ -1124,7 +1244,7 @@ async fn handle_ws_text(
                 }
             };
 
-            match app.mate_apply_json(&patch) {
+            match slot.mate_apply_json(&patch) {
                 Ok(()) => {
                     let reply = json!({
                         "type": "event_status",
@@ -1208,9 +1328,13 @@ async fn get_sequence_source_frame(
     }
 }
 
-async fn get_state(app: SharedState) -> Json<StateResponse> {
-    let s = app.state.read().await;
-    Json(state_response(&app, &s))
+async fn get_state(
+    app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
+) -> Result<Json<StateResponse>, ApiError> {
+    let slot = resolve_slot(&app, &q)?;
+    let s = slot.state.read().await;
+    Ok(Json(state_response(&slot, &s)))
 }
 
 #[derive(Deserialize)]
@@ -1233,10 +1357,7 @@ async fn patch_sequence_display(
         )
             .into_response();
     }
-    let manifest_path = app
-        .sequences_dir
-        .join(&sequence_id)
-        .join("manifest.json");
+    let manifest_path = app.sequences_dir.join(&sequence_id).join("manifest.json");
     if !manifest_path.is_file() {
         return (
             StatusCode::NOT_FOUND,
@@ -1282,17 +1403,32 @@ async fn delete_sequence(app: SharedState, Path(sequence_id): Path<String>) -> i
             .into_response();
     }
 
-    let should_clear = {
-        let s = app.state.read().await;
-        s.loop_sequence_id.as_deref() == Some(sequence_id.as_str())
-    };
+    let should_clear = app.devices_ordered().iter().any(|slot| {
+        slot.state
+            .try_read()
+            .ok()
+            .and_then(|s| s.loop_sequence_id.clone())
+            == Some(sequence_id.clone())
+    });
     if should_clear {
-        app.clear_sequence().await;
+        for slot in app.devices_ordered() {
+            let clear = slot
+                .state
+                .try_read()
+                .ok()
+                .and_then(|s| s.loop_sequence_id.clone())
+                == Some(sequence_id.clone());
+            if clear {
+                slot.clear_sequence().await;
+            }
+        }
     }
 
     let sequences_dir = app.sequences_dir.clone();
     let id = sequence_id.clone();
-    let res = tokio::task::spawn_blocking(move || media::delete_sequence_directory(&sequences_dir, &id)).await;
+    let res =
+        tokio::task::spawn_blocking(move || media::delete_sequence_directory(&sequences_dir, &id))
+            .await;
 
     match res {
         Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
@@ -1343,12 +1479,24 @@ async fn get_layout_catalog(app: SharedState) -> impl IntoResponse {
 
 async fn post_device_layout(
     app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
     Json(req): Json<DeviceLayoutRequest>,
 ) -> impl IntoResponse {
-    match app.switch_runtime_layout(req.layout_id).await {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    match slot.switch_layout(&app.compiled_dir, req.layout_id).await {
         Ok(()) => {
-            let s = app.state.read().await;
-            (StatusCode::OK, Json(state_response(&app, &s))).into_response()
+            let mut rec = slot.record_snapshot();
+            rec.layout_id = slot.state.read().await.layout_id.clone();
+            let _ = app.with_registry_mut(|reg| {
+                reg.upsert(rec.clone(), &app.compiled_dir)?;
+                Ok(())
+            });
+            slot.update_record(rec);
+            let s = slot.state.read().await;
+            (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
         }
         Err(e) => (
             StatusCode::BAD_REQUEST,
@@ -1360,9 +1508,13 @@ async fn post_device_layout(
     }
 }
 
-async fn get_layout_uv(app: SharedState) -> impl IntoResponse {
+async fn get_layout_uv(app: SharedState, Query(q): Query<DeviceIdQuery>) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
     let layout_id = {
-        let s = app.state.read().await;
+        let s = slot.state.read().await;
         s.layout_id.clone()
     };
     match media::load_layout_uv(&app.compiled_dir, &layout_id) {
@@ -1377,7 +1529,15 @@ async fn get_layout_uv(app: SharedState) -> impl IntoResponse {
     }
 }
 
-async fn post_mode(app: SharedState, Json(req): Json<ModeRequest>) -> impl IntoResponse {
+async fn post_mode(
+    app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
+    Json(req): Json<ModeRequest>,
+) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
     let Some(mode) = OutputMode::parse(req.mode.as_str()) else {
         return (
             StatusCode::BAD_REQUEST,
@@ -1389,33 +1549,35 @@ async fn post_mode(app: SharedState, Json(req): Json<ModeRequest>) -> impl IntoR
     };
 
     if mode == OutputMode::Idle {
-        app.clear_sequence().await;
+        slot.clear_sequence().await;
     }
-    app.set_output_mode(mode).await;
+    slot.set_output_mode(mode).await;
     if mode == OutputMode::Mate {
         let (layout_id, led_count) = {
-            let s = app.state.read().await;
+            let s = slot.state.read().await;
             (s.layout_id.clone(), s.led_count as usize)
         };
-        if let Err(e) = app.ensure_interactive_uv(&layout_id, led_count) {
+        if let Err(e) = slot.ensure_interactive_uv(&app.compiled_dir, &layout_id, led_count) {
             tracing::warn!("mate: ensure_interactive_uv failed: {e:#}");
         }
     }
-    let s = app.state.read().await;
-    (StatusCode::OK, Json(state_response(&app, &s))).into_response()
+    let s = slot.state.read().await;
+    (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
 }
 
-fn state_response(app: &SharedState, s: &RuntimeState) -> StateResponse {
+fn state_response(slot: &DeviceSlot, s: &RuntimeState) -> StateResponse {
     let mate = if s.mode == "mate" {
-        Some(app.mate_summary())
+        Some(slot.mate_summary())
     } else {
         None
     };
     StateResponse {
+        device_id: slot.id(),
         layout_id: s.layout_id.clone(),
         mode: s.mode.clone(),
-        fps_out: app.metrics.fps_out(),
+        fps_out: slot.metrics.fps_out(),
         fps_rx: s.fps_rx,
+        target_fps: slot.record_snapshot().output_fps,
         esp_frames_complete: s.esp_frames_complete,
         esp_rssi: s.esp_rssi,
         esp_drops: s.esp_drops,
@@ -1424,21 +1586,26 @@ fn state_response(app: &SharedState, s: &RuntimeState) -> StateResponse {
         led_count: s.led_count,
         loop_sequence_id: s.loop_sequence_id.clone(),
         uptime_sec: s.uptime_sec(),
-        frame_loop_stale_ms: app.metrics.frame_loop_stale_ms(),
+        frame_loop_stale_ms: slot.metrics.frame_loop_stale_ms(),
         layout_mismatch: s.layout_mismatch,
-        frames_sent: app.metrics.frames_sent(),
-        master_brightness: f64::from(app.master_brightness()),
-        master_gamma: f64::from(app.master_gamma()),
-        loop_source_frame: app.metrics.loop_source_frame(),
+        frames_sent: slot.metrics.frames_sent(),
+        master_brightness: f64::from(slot.master_brightness()),
+        master_gamma: f64::from(slot.master_gamma()),
+        loop_source_frame: slot.metrics.loop_source_frame(),
         mate,
-        loop_playback_paused: app.loop_playback_paused(),
+        loop_playback_paused: slot.loop_playback_paused(),
     }
 }
 
 async fn post_loop_select(
     app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
     Json(req): Json<LoopSelectRequest>,
 ) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
     let sequence = match media::load_sequence(&app.sequences_dir, &req.sequence_id) {
         Ok(sequence) => sequence,
         Err(e) => {
@@ -1453,7 +1620,7 @@ async fn post_loop_select(
     };
 
     let (layout_id, led_count) = {
-        let s = app.state.read().await;
+        let s = slot.state.read().await;
         (s.layout_id.clone(), s.led_count)
     };
     if sequence.layout_id != layout_id || sequence.led_count != led_count as usize {
@@ -1469,43 +1636,75 @@ async fn post_loop_select(
             .into_response();
     }
 
-    app.set_sequence(sequence).await;
-    app.set_output_mode(OutputMode::Loop).await;
-    let s = app.state.read().await;
-    (StatusCode::OK, Json(state_response(&app, &s))).into_response()
+    slot.set_sequence(sequence).await;
+    slot.set_output_mode(OutputMode::Loop).await;
+    let s = slot.state.read().await;
+    (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
 }
 
-async fn post_loop_clear_selection(app: SharedState) -> impl IntoResponse {
-    app.clear_sequence().await;
-    app.set_output_mode(OutputMode::Loop).await;
-    let s = app.state.read().await;
-    (StatusCode::OK, Json(state_response(&app, &s))).into_response()
+async fn post_loop_clear_selection(
+    app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
+) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    slot.clear_sequence().await;
+    slot.set_output_mode(OutputMode::Loop).await;
+    let s = slot.state.read().await;
+    (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
 }
 
 async fn post_loop_pause(
     app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
     Json(req): Json<LoopPauseRequest>,
 ) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
     if req.paused {
-        app.pause_loop_playback();
+        slot.pause_loop_playback();
     } else {
-        app.resume_loop_playback();
+        slot.resume_loop_playback();
     }
-    let s = app.state.read().await;
-    (StatusCode::OK, Json(state_response(&app, &s))).into_response()
+    let s = slot.state.read().await;
+    (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
 }
 
 async fn post_master_tone(
     app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
     Json(req): Json<MasterToneRequest>,
 ) -> impl IntoResponse {
-    app.set_master_tone(req.brightness as f32, req.gamma as f32);
-    let s = app.state.read().await;
-    (StatusCode::OK, Json(state_response(&app, &s))).into_response()
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    slot.set_master_tone(req.brightness as f32, req.gamma as f32);
+    let device_id = slot.id();
+    if let Err(e) = app.with_registry_mut(|reg| {
+        reg.update_master_tone(&device_id, req.brightness, req.gamma)?;
+        Ok(())
+    }) {
+        tracing::warn!(device = %device_id, "persist master tone failed: {e}");
+    }
+    let s = slot.state.read().await;
+    (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
 }
 
-async fn post_mate_state(app: SharedState, Json(req): Json<serde_json::Value>) -> impl IntoResponse {
-    if app.output_mode() != OutputMode::Mate {
+async fn post_mate_state(
+    app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
+    Json(req): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    if slot.output_mode() != OutputMode::Mate {
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -1514,22 +1713,196 @@ async fn post_mate_state(app: SharedState, Json(req): Json<serde_json::Value>) -
         )
             .into_response();
     }
-    if let Err(e) = app.mate_apply_json(&req) {
+    if let Err(e) = slot.mate_apply_json(&req) {
+        return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })).into_response();
+    }
+    let s = slot.state.read().await;
+    (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
+}
+
+async fn get_devices(app: SharedState) -> impl IntoResponse {
+    match app.registry_snapshot() {
+        Ok(reg) => (
+            StatusCode::OK,
+            Json(DeviceListResponse {
+                default_device_id: app.default_device_id.clone(),
+                devices: reg.devices().to_vec(),
+                created_device_id: None,
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e }),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_devices_discovered(app: SharedState) -> impl IntoResponse {
+    let discovered =
+        tokio::task::spawn_blocking(|| discover::glowbe_udp_all(Duration::from_secs(8)))
+            .await
+            .unwrap_or_default();
+    let merged = match app.registry_snapshot() {
+        Ok(reg) => reg.merge_discovered(&discovered),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error: e }),
+            )
+                .into_response();
+        }
+    };
+    (StatusCode::OK, Json(merged)).into_response()
+}
+
+async fn post_device(app: SharedState, Json(req): Json<DeviceCreateRequest>) -> impl IntoResponse {
+    let rec = DeviceRecord {
+        id: crate::devices::new_device_id(),
+        display_name: req.display_name,
+        esp_ip: req.esp_ip,
+        mdns_hostname: req.mdns_hostname,
+        layout_id: req.layout_id,
+        output_fps: req.output_fps,
+        master_brightness: req.master_brightness,
+        master_gamma: req.master_gamma,
+    };
+    if let Err(e) = app.with_registry_mut(|reg| {
+        reg.upsert(rec.clone(), &app.compiled_dir)?;
+        Ok(())
+    }) {
+        return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })).into_response();
+    }
+    let created_id = rec.id.clone();
+    if let Err(e) = app.upsert_device_slot(rec, &app.default_mode) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e }),
+        )
+            .into_response();
+    }
+    if !crate::output::ensure_device_output_loop(&app, &created_id) {
+        tracing::warn!(
+            device = %created_id,
+            "device slot created but output loop was not started (restart runtime if UDP stays offline)"
+        );
+    }
+    match app.registry_snapshot() {
+        Ok(reg) => (
+            StatusCode::CREATED,
+            Json(DeviceListResponse {
+                default_device_id: app.default_device_id.clone(),
+                devices: reg.devices().to_vec(),
+                created_device_id: Some(created_id),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e }),
+        )
+            .into_response(),
+    }
+}
+
+async fn patch_device(
+    app: SharedState,
+    Path(device_id): Path<String>,
+    Json(req): Json<DeviceUpdateRequest>,
+) -> impl IntoResponse {
+    if !crate::devices::is_uuid_v7(&device_id) {
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: e,
+                error: "device id must be UUID version 7".into(),
             }),
         )
             .into_response();
     }
-    let s = app.state.read().await;
-    (StatusCode::OK, Json(state_response(&app, &s))).into_response()
+    let slot = match app.device(&device_id) {
+        Ok(s) => s,
+        Err(e) => {
+            return (StatusCode::NOT_FOUND, Json(ErrorResponse { error: e })).into_response();
+        }
+    };
+    let old_layout = slot.state.read().await.layout_id.clone();
+    let rec = DeviceRecord {
+        id: device_id,
+        display_name: req.display_name,
+        esp_ip: req.esp_ip,
+        mdns_hostname: req.mdns_hostname,
+        layout_id: req.layout_id,
+        output_fps: req.output_fps,
+        master_brightness: req.master_brightness,
+        master_gamma: req.master_gamma,
+    };
+    if let Err(e) = app.with_registry_mut(|reg| {
+        reg.upsert(rec.clone(), &app.compiled_dir)?;
+        Ok(())
+    }) {
+        return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })).into_response();
+    }
+    slot.update_record(rec.clone());
+    slot.bump_output_send_epoch();
+    if old_layout != rec.layout_id {
+        if let Err(e) = slot.switch_layout(&app.compiled_dir, rec.layout_id).await {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("{e:#}"),
+                }),
+            )
+                .into_response();
+        }
+    }
+    match app.registry_snapshot() {
+        Ok(reg) => (
+            StatusCode::OK,
+            Json(DeviceListResponse {
+                default_device_id: app.default_device_id.clone(),
+                devices: reg.devices().to_vec(),
+                created_device_id: None,
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e }),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_device(app: SharedState, Path(device_id): Path<String>) -> impl IntoResponse {
+    if let Err(e) = app.with_registry_mut(|reg| {
+        reg.remove(&device_id)?;
+        Ok(())
+    }) {
+        let code = if e.contains("not found") {
+            StatusCode::NOT_FOUND
+        } else {
+            StatusCode::BAD_REQUEST
+        };
+        return (code, Json(ErrorResponse { error: e })).into_response();
+    }
+    if let Err(e) = app.remove_device_slot(&device_id) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e }),
+        )
+            .into_response();
+    }
+    StatusCode::NO_CONTENT.into_response()
 }
 
 async fn health(app: SharedState) -> impl IntoResponse {
     const STALE_MS: u64 = 1000;
-    if app.metrics.frame_loop_stale_ms() > STALE_MS {
+    let stale = app
+        .devices_ordered()
+        .iter()
+        .all(|slot| slot.metrics.frame_loop_stale_ms() > STALE_MS);
+    if stale && !app.devices_ordered().is_empty() {
         (
             StatusCode::SERVICE_UNAVAILABLE,
             "stale: output loop tick too old",
@@ -1604,7 +1977,10 @@ fn build_interactive_pulse(
     sigma_rad: f32,
     effect: InteractiveEffectKind,
 ) -> InteractivePulse {
-    let color_random = v.get("colorRandom").and_then(|x| x.as_bool()).unwrap_or(false);
+    let color_random = v
+        .get("colorRandom")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     let time_seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
@@ -1612,16 +1988,13 @@ fn build_interactive_pulse(
     let tap_seed = (u.to_bits() as u64) ^ ((v_coord.to_bits() as u64) << 32);
     let (cr, cg, cb) = if color_random {
         vivid_rgb_from_seed(time_seed ^ tap_seed)
-    } else if let Some(c) = v.get("colorRgb").and_then(parse_color_rgb) {
-        c
     } else {
-        (200, 240, 255)
+        v.get("colorRgb")
+            .and_then(parse_color_rgb)
+            .unwrap_or((200, 240, 255))
     };
 
-    let ring_speed = v
-        .get("ringSpeed")
-        .and_then(|x| x.as_f64())
-        .unwrap_or(1.0) as f32;
+    let ring_speed = v.get("ringSpeed").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
     let ring_speed = ring_speed.clamp(0.12f32, 12.0f32);
 
     let ring_thickness_rad = v

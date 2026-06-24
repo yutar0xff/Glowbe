@@ -6,8 +6,7 @@ pub fn fill_loop_rgb(t_ms: u32, rgb: &mut [u8], uv: Option<&[(f32, f32)]>) {
     let led_count = rgb.len() / 3;
     match uv {
         Some(coords) if coords.len() == led_count => {
-            for idx in 0..led_count {
-                let (u, v) = coords[idx];
+            for (idx, &(u, v)) in coords.iter().enumerate() {
                 let hue = hue_from_uv_time(u, v, t_ms);
                 let (r, g, b) = hsv_to_rgb(hue, 220, 180);
                 let o = idx * 3;
@@ -71,7 +70,11 @@ mod tests {
         let uv_b = [(1.0f32, 1.0f32), (0.0f32, 0.0f32)];
         fill_loop_rgb(t, &mut a, Some(&uv_a));
         fill_loop_rgb(t, &mut b, Some(&uv_b));
-        assert_eq!(&a[0..3], &b[3..6], "LED0 with (0,0) should match LED1 with (0,0) swapped");
+        assert_eq!(
+            &a[0..3],
+            &b[3..6],
+            "LED0 with (0,0) should match LED1 with (0,0) swapped"
+        );
         assert_eq!(&a[3..6], &b[0..3]);
     }
 

@@ -231,26 +231,26 @@ fn is_zip_file(path: &Path) -> Result<bool> {
 
 fn is_image_zip_entry(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    lower.ends_with(".png")
-        || lower.ends_with(".jpg")
-        || lower.ends_with(".jpeg")
+    lower.ends_with(".png") || lower.ends_with(".jpg") || lower.ends_with(".jpeg")
 }
 
 fn is_video_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| {
-            matches!(
-                e.to_ascii_lowercase().as_str(),
-                "mp4" | "webm" | "mov" | "mkv"
-            )
-        })
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+        matches!(
+            e.to_ascii_lowercase().as_str(),
+            "mp4" | "webm" | "mov" | "mkv"
+        )
+    })
 }
 
-fn zip_collect_image_names<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Vec<String>> {
+fn zip_collect_image_names<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
+) -> Result<Vec<String>> {
     let mut names: Vec<String> = Vec::new();
     for i in 0..archive.len() {
-        let f = archive.by_index(i).with_context(|| format!("zip index {i}"))?;
+        let f = archive
+            .by_index(i)
+            .with_context(|| format!("zip index {i}"))?;
         if !f.is_file() {
             continue;
         }
@@ -274,7 +274,8 @@ fn build_frames_from_zip(
     ledmap: &LedMap,
     progress: Option<&Arc<AtomicU8>>,
 ) -> Result<(Vec<u8>, u32, SequenceSource)> {
-    let file = fs::File::open(source_path).with_context(|| format!("open {}", source_path.display()))?;
+    let file =
+        fs::File::open(source_path).with_context(|| format!("open {}", source_path.display()))?;
     let mut archive =
         zip::ZipArchive::new(std::io::BufReader::new(file)).context("open zip archive")?;
 
@@ -457,8 +458,7 @@ fn copy_upload_to_sequence_import(source_path: &Path, out_dir: &Path) -> Result<
         .to_ascii_lowercase();
     let name = format!("source-import.{ext}");
     let dest = out_dir.join(&name);
-    fs::copy(source_path, &dest)
-        .with_context(|| format!("copy import to {}", dest.display()))?;
+    fs::copy(source_path, &dest).with_context(|| format!("copy import to {}", dest.display()))?;
     Ok(name)
 }
 
@@ -612,6 +612,7 @@ fn write_gradient_placeholder_png(path: &Path, w: u32, h: u32) -> Result<()> {
 }
 
 /// 合成デモ用: `frames.bin` + `manifest.json` + グリッド用プレースホルダ PNG。
+#[allow(clippy::too_many_arguments)]
 pub fn write_synthetic_demo_sequence(
     sequences_dir: &Path,
     sequence_id: &str,
@@ -673,6 +674,7 @@ pub fn write_synthetic_demo_sequence(
 }
 
 /// 正距円筒 **単一画像**、**ZIP 内 PNG/JPEG 連番**、または **動画（ffmpeg）** からシーケンスを生成する。
+#[allow(clippy::too_many_arguments)]
 pub fn convert_uploaded_media_to_sequence(
     source_path: &Path,
     sequence_id: &str,
@@ -802,7 +804,8 @@ pub fn set_sequence_display_name(
         }
     }
     let out = serde_json::to_vec_pretty(&v).context("serialize manifest")?;
-    fs::write(&path, [out, b"\n".to_vec()].concat()).with_context(|| format!("write {}", path.display()))?;
+    fs::write(&path, [out, b"\n".to_vec()].concat())
+        .with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }
 

@@ -4,9 +4,13 @@ use std::path::Path;
 use anyhow::Result;
 use serde::Deserialize;
 
+use crate::devices::DeviceRecord;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub device: Device,
+    #[serde(default)]
+    pub devices: Vec<DeviceRecord>,
     pub output: Output,
     pub server: Server,
     #[serde(default)]
@@ -23,19 +27,9 @@ pub struct Device {
     pub layout_id: String,
 }
 
-impl Device {
-    pub fn esp_ip_host(&self) -> Option<&str> {
-        self.esp_ip
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-    }
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct Output {
     pub udp_port: u16,
-    pub target_fps: u32,
     #[serde(default = "default_status_port")]
     pub status_port: u16,
 }
@@ -60,6 +54,9 @@ pub struct Assets {
     /// Staging for `POST /api/v1/media/upload` before convert. Relative paths are from cwd.
     #[serde(default)]
     pub uploads_dir: Option<String>,
+    /// Persistent device registry JSON. Default: `assets/devices.json` under repo root.
+    #[serde(default)]
+    pub devices_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

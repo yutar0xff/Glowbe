@@ -1,8 +1,10 @@
 import { createContext, useContext } from 'react'
-import type { LoadState, OutputMode } from './types'
+import type { DeviceCreateInput, DeviceRecord, LoadState, OutputMode } from './types'
 
 export type GlowbeRuntimeContextValue = {
   load: LoadState
+  activeDeviceId: string | null
+  devices: DeviceRecord[]
   modeBusy: string | null
   sequenceBusy: string | null
   layoutBusy: boolean
@@ -33,6 +35,12 @@ export type GlowbeRuntimeContextValue = {
   setDeviceLayout: (layoutId: string) => Promise<void>
   /** Refetch runtime state (e.g. after mate updates). */
   refreshLoad: () => Promise<void>
+  /** Refetch device registry from runtime. */
+  refreshDevices: () => Promise<void>
+  setActiveDevice: (deviceId: string | null) => void
+  upsertDevice: (input: DeviceCreateInput) => Promise<string | undefined>
+  updateDevice: (record: DeviceRecord) => Promise<void>
+  deleteDevice: (deviceId: string) => Promise<void>
 }
 
 export const GlowbeRuntimeContext = createContext<GlowbeRuntimeContextValue | null>(null)

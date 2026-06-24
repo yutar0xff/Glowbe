@@ -1,8 +1,10 @@
 import { startTransition, useEffect, useState } from 'react'
 import type { LayoutUvResponse } from '@/types'
-import { API_BASE } from '@/api'
+import { API_BASE, apiDeviceQuery } from '@/api'
+import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 
 export function useLayoutUv(layoutId: string, ledCount: number) {
+  const { activeDeviceId } = useGlowbeRuntime()
   const [uv, setUv] = useState<LayoutUvResponse | null>(null)
   const [uvError, setUvError] = useState<string | null>(null)
   const [uvLoading, setUvLoading] = useState(true)
@@ -16,7 +18,8 @@ export function useLayoutUv(layoutId: string, ledCount: number) {
     })
     ;(async () => {
       try {
-        const r = await fetch(`${API_BASE}/api/v1/layout/uv`)
+        const q = apiDeviceQuery(activeDeviceId)
+        const r = await fetch(`${API_BASE}/api/v1/layout/uv${q}`)
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as LayoutUvResponse
         if (cancelled) return
@@ -43,7 +46,7 @@ export function useLayoutUv(layoutId: string, ledCount: number) {
     return () => {
       cancelled = true
     }
-  }, [layoutId, ledCount])
+  }, [layoutId, ledCount, activeDeviceId])
 
   return { uv, uvError, uvLoading }
 }

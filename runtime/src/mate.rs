@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::device_slot::DeviceSlot;
 use crate::sphere::unit_dir_from_equirect_uv_y_up;
 
 // --- クォータニオン (w, x, y, z) = w + xi + yj + zk、ハミルトン積 ---
@@ -151,36 +152,16 @@ fn mat3_cols_to_quat(c0: [f32; 3], c1: [f32; 3], c2: [f32; 3]) -> [f32; 4] {
     let tr = m00 + m11 + m22;
     let q = if tr > 0.0 {
         let s = 0.5 / (tr + 1.0).sqrt();
-        [
-            0.25 / s,
-            (m21 - m12) * s,
-            (m02 - m20) * s,
-            (m10 - m01) * s,
-        ]
+        [0.25 / s, (m21 - m12) * s, (m02 - m20) * s, (m10 - m01) * s]
     } else if m00 > m11 && m00 > m22 {
         let s = 2.0 * (1.0 + m00 - m11 - m22).sqrt();
-        [
-            (m21 - m12) / s,
-            0.25 * s,
-            (m01 + m10) / s,
-            (m02 + m20) / s,
-        ]
+        [(m21 - m12) / s, 0.25 * s, (m01 + m10) / s, (m02 + m20) / s]
     } else if m11 > m22 {
         let s = 2.0 * (1.0 + m11 - m00 - m22).sqrt();
-        [
-            (m02 - m20) / s,
-            (m01 + m10) / s,
-            0.25 * s,
-            (m12 + m21) / s,
-        ]
+        [(m02 - m20) / s, (m01 + m10) / s, 0.25 * s, (m12 + m21) / s]
     } else {
         let s = 2.0 * (1.0 + m22 - m00 - m11).sqrt();
-        [
-            (m10 - m01) / s,
-            (m02 + m20) / s,
-            (m12 + m21) / s,
-            0.25 * s,
-        ]
+        [(m10 - m01) / s, (m02 + m20) / s, (m12 + m21) / s, 0.25 * s]
     };
     quat_normalize([
         if q[0].is_finite() { q[0] } else { 0.0 },
@@ -315,6 +296,7 @@ impl Expression {
                 cb: 255,
                 tremor: 0.0,
                 melt: 0.0,
+                cheek_flush: 0.0,
             },
             Self::Happy => ExprChannels {
                 eye_curve: 0.75,
@@ -327,6 +309,7 @@ impl Expression {
                 cb: 200,
                 tremor: 0.0,
                 melt: 0.0,
+                cheek_flush: 0.82,
             },
             Self::Sad => ExprChannels {
                 eye_curve: -0.15,
@@ -339,6 +322,7 @@ impl Expression {
                 cb: 255,
                 tremor: 0.0,
                 melt: 0.25,
+                cheek_flush: 0.0,
             },
             Self::Angry => ExprChannels {
                 eye_curve: -0.65,
@@ -351,6 +335,7 @@ impl Expression {
                 cb: 100,
                 tremor: 0.35,
                 melt: 0.0,
+                cheek_flush: 0.0,
             },
             Self::Sleepy => ExprChannels {
                 eye_curve: 0.0,
@@ -363,6 +348,7 @@ impl Expression {
                 cb: 220,
                 tremor: 0.0,
                 melt: 0.1,
+                cheek_flush: 0.0,
             },
             Self::Surprised => ExprChannels {
                 eye_curve: 0.0,
@@ -375,6 +361,7 @@ impl Expression {
                 cb: 240,
                 tremor: 0.08,
                 melt: 0.0,
+                cheek_flush: 0.0,
             },
             Self::Curious => ExprChannels {
                 eye_curve: 0.2,
@@ -387,6 +374,7 @@ impl Expression {
                 cb: 255,
                 tremor: 0.05,
                 melt: 0.0,
+                cheek_flush: 0.0,
             },
             Self::Playful => ExprChannels {
                 eye_curve: 0.45,
@@ -399,6 +387,7 @@ impl Expression {
                 cb: 255,
                 tremor: 0.12,
                 melt: 0.0,
+                cheek_flush: 0.58,
             },
         }
     }
@@ -416,6 +405,7 @@ struct ExprChannels {
     cb: u8,
     tremor: f32,
     melt: f32,
+    cheek_flush: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -545,10 +535,12 @@ pub struct MateState {
     pub gaze_pull: f32,
     pub cluster: f32,
     pub dynamics: DynamicsCfg,
-    /// 立体射影のスケールと目・口の中心位置（顔全体の占有範囲）。
-    pub face_scale: f32,
-    /// 目楕円・口カプセルなどパーツ形状のサイズ（中心間隔は `face_scale` のみ）。
-    pub parts_scale: f32,
+    /// 顔キャンバスの球面半開角（度）。パーツ配置・クリップ領域。製品 1260 LED 向け既定 58°。
+    pub face_angular_radius_deg: f32,
+    /// 目・口などパーツの大きさ（顔半径に対する比）。
+    pub feature_scale: f32,
+    /// 両目の間隔（顔直径に対する比、0–1）。
+    pub eye_spacing: f32,
     pub brightness: f32,
     pub color: [u8; 3],
     pub color_override: Option<[u8; 3]>,
@@ -565,6 +557,7 @@ pub struct MateState {
     pub cur_mouth_width: f32,
     pub cur_tremor: f32,
     pub cur_melt: f32,
+    pub cur_cheek_flush: f32,
     pub blink_mul: f32,
     pub breath_phase: f32,
     pub orbit_phase: f32,
@@ -589,9 +582,10 @@ impl Default for MateState {
             gaze_pull: 0.55,
             cluster: 0.15,
             dynamics: DynamicsCfg::default(),
-            face_scale: 1.0,
-            parts_scale: 1.0,
-            brightness: 1.0,
+            face_angular_radius_deg: 58.0,
+            feature_scale: 0.32,
+            eye_spacing: 0.52,
+            brightness: 0.92,
             color: [200, 240, 255],
             color_override: None,
             manual_mouth_open: None,
@@ -605,6 +599,7 @@ impl Default for MateState {
             cur_mouth_width: 0.55,
             cur_tremor: 0.0,
             cur_melt: 0.0,
+            cur_cheek_flush: 0.0,
             blink_mul: 1.0,
             breath_phase: 0.0,
             orbit_phase: 0.0,
@@ -612,7 +607,7 @@ impl Default for MateState {
             next_blink: now + Duration::from_millis(2800),
             next_saccade: now + Duration::from_millis(900),
             next_wander_step: now + Duration::from_millis(400),
-            rng: 0xC0FFEE_DEAD_BEEF,
+            rng: 0xC0FFEEDEADBEEF,
         }
     }
 }
@@ -647,13 +642,11 @@ impl MateState {
                 let side = normalize3(cross3([0.0, 1.0, 0.0], ax));
                 if side[0].abs() + side[1].abs() + side[2].abs() < 1e-4 {
                     let side = [1.0, 0.0, 0.0];
-                    normalize3(
-                        [
-                            side[0] * w.cos() + ax[0] * w.sin(),
-                            side[1] * w.cos() + ax[1] * w.sin(),
-                            side[2] * w.cos() + ax[2] * w.sin(),
-                        ],
-                    )
+                    normalize3([
+                        side[0] * w.cos() + ax[0] * w.sin(),
+                        side[1] * w.cos() + ax[1] * w.sin(),
+                        side[2] * w.cos() + ax[2] * w.sin(),
+                    ])
                 } else {
                     let s = w.sin();
                     let c = w.cos();
@@ -696,16 +689,20 @@ impl MateState {
         self.cur_mouth_width = approach(self.cur_mouth_width, tgt.mouth_width, dt, tau_shape);
         self.cur_tremor = approach(self.cur_tremor, tgt.tremor, dt, tau_shape);
         self.cur_melt = approach(self.cur_melt, tgt.melt, dt, tau_shape);
+        self.cur_cheek_flush = approach(self.cur_cheek_flush, tgt.cheek_flush, dt, tau_shape);
 
         let tau_color = 0.38 / self.mood.spring_mul();
         if let Some(c) = self.color_override {
             self.color = c;
         } else {
-            self.color[0] = (approach(self.color[0] as f32, tgt.cr as f32, dt, tau_color).round() as i32)
+            self.color[0] = (approach(self.color[0] as f32, tgt.cr as f32, dt, tau_color).round()
+                as i32)
                 .clamp(0, 255) as u8;
-            self.color[1] = (approach(self.color[1] as f32, tgt.cg as f32, dt, tau_color).round() as i32)
+            self.color[1] = (approach(self.color[1] as f32, tgt.cg as f32, dt, tau_color).round()
+                as i32)
                 .clamp(0, 255) as u8;
-            self.color[2] = (approach(self.color[2] as f32, tgt.cb as f32, dt, tau_color).round() as i32)
+            self.color[2] = (approach(self.color[2] as f32, tgt.cb as f32, dt, tau_color).round()
+                as i32)
                 .clamp(0, 255) as u8;
         }
 
@@ -742,19 +739,26 @@ impl MateState {
                 self.wander_dir[2] + self.rng_range(-0.2, 0.2),
             ]);
             self.wander_dir = nudge;
-            self.next_wander_step = now + Duration::from_millis(self.rng_range(280.0, 720.0) as u64);
+            self.next_wander_step =
+                now + Duration::from_millis(self.rng_range(280.0, 720.0) as u64);
         }
 
         let anchor = self.anchor_dir(t);
         let gdir = self.gaze_dir_world();
         let blended = slerp_dirs(anchor, gdir, self.gaze_pull);
         let q_tgt = look_quaternion_forward(blended);
-        let k = (self.dynamics.stiffness * 0.12 * self.mood.spring_mul() * (1.0 + self.dynamics.floatiness))
+        let k = (self.dynamics.stiffness
+            * 0.12
+            * self.mood.spring_mul()
+            * (1.0 + self.dynamics.floatiness))
             .clamp(0.5, 24.0);
         let alpha = 1.0 - (-dt * k).exp();
         self.q_face = slerp_quat(self.q_face, q_tgt, alpha);
 
-        let wmag = (self.omega[0] * self.omega[0] + self.omega[1] * self.omega[1] + self.omega[2] * self.omega[2]).sqrt();
+        let wmag = (self.omega[0] * self.omega[0]
+            + self.omega[1] * self.omega[1]
+            + self.omega[2] * self.omega[2])
+            .sqrt();
         let damp = self.dynamics.damping.clamp(0.0, 0.999);
         self.omega[0] *= damp;
         self.omega[1] *= damp;
@@ -858,11 +862,26 @@ impl MateState {
             if let Some(b) = ap.get("brightness").and_then(|x| x.as_f64()) {
                 self.brightness = (b as f32).clamp(0.0, 2.0);
             }
+            if let Some(a) = ap.get("faceAngularRadiusDeg").and_then(|x| x.as_f64()) {
+                self.face_angular_radius_deg = (a as f32).clamp(30.0, 85.0);
+            }
+            if let Some(a) = ap.get("featureScale").and_then(|x| x.as_f64()) {
+                self.feature_scale = (a as f32).clamp(0.12, 0.65);
+            }
+            if let Some(a) = ap.get("eyeSpacing").and_then(|x| x.as_f64()) {
+                self.eye_spacing = (a as f32).clamp(0.30, 0.75);
+            }
             if let Some(fs) = ap.get("faceScale").and_then(|x| x.as_f64()) {
-                self.face_scale = (fs as f32).clamp(0.35, 15.0);
+                if ap.get("faceAngularRadiusDeg").is_none() {
+                    self.face_angular_radius_deg = (2.0 * (0.25 * fs as f32).atan())
+                        .to_degrees()
+                        .clamp(30.0, 85.0);
+                }
             }
             if let Some(ps) = ap.get("partsScale").and_then(|x| x.as_f64()) {
-                self.parts_scale = (ps as f32).clamp(0.15, 6.0);
+                if ap.get("featureScale").is_none() {
+                    self.feature_scale = (0.32 * ps as f32).clamp(0.12, 0.65);
+                }
             }
         }
         if let Some(a) = v.get("auto").and_then(|x| x.as_object()) {
@@ -894,8 +913,9 @@ impl MateState {
             idle_speed: self.idle_speed,
             color: self.color,
             brightness: self.brightness,
-            face_scale: self.face_scale,
-            parts_scale: self.parts_scale,
+            face_angular_radius_deg: self.face_angular_radius_deg,
+            feature_scale: self.feature_scale,
+            eye_spacing: self.eye_spacing,
             dynamics: self.dynamics,
             auto_breath: self.auto.breath,
             auto_blink: self.auto.blink,
@@ -918,8 +938,9 @@ pub struct MateSummary {
     pub idle_speed: f32,
     pub color: [u8; 3],
     pub brightness: f32,
-    pub face_scale: f32,
-    pub parts_scale: f32,
+    pub face_angular_radius_deg: f32,
+    pub feature_scale: f32,
+    pub eye_spacing: f32,
     pub dynamics: DynamicsCfg,
     pub auto_breath: bool,
     pub auto_blink: bool,
@@ -927,83 +948,74 @@ pub struct MateSummary {
     pub auto_tremor: bool,
 }
 
-pub fn render_mate_face(state: &MateState, uv: &[(f32, f32)], rgb: &mut [u8]) {
-    if uv.len() * 3 != rgb.len() {
-        return;
-    }
-    let mut acc = vec![0f32; rgb.len()];
-    let q = quat_normalize(state.q_face);
-    let g_world = state.gaze_dir_world();
-    let g_local = normalize3(rotate_vec_world_to_local(q, g_world));
-    let cluster_s = g_local[0] * state.cluster * 0.12;
-    let cluster_t = g_local[1] * state.cluster * 0.12;
-    let breath_t = (state.breath_phase - 0.5) * 0.045;
-    let trem = if state.auto.tremor || state.cur_tremor > 0.05 {
-        state.cur_tremor * 0.012 * ((state.breath_phase * 37.0).sin())
-    } else {
-        0.0
-    };
-
-    let eye_open = (state.cur_eye_open * state.blink_mul).clamp(0.04, 1.0);
-    let layout = state.face_scale;
-    let parts = state.parts_scale;
-    let ex = 0.22 * layout;
-    let ey = 0.11 * layout;
-    let mouth_y = -0.17 * layout;
-    let mouth_w = state.cur_mouth_width * 0.2 * layout * parts;
-    let mouth_h = (0.035 + state.cur_mouth_open * 0.12) * layout * parts;
-    let eye_rx = 0.09 * layout * parts * eye_open;
-    let eye_ry = 0.085 * layout * parts * eye_open;
-    let curve = state.cur_eye_curve;
-
-    let pr = ((state.color[0] as f32 * state.brightness).round() as u8).min(255);
-    let pg = ((state.color[1] as f32 * state.brightness).round() as u8).min(255);
-    let pb = ((state.color[2] as f32 * state.brightness).round() as u8).min(255);
-
-    for (i, &(u, v)) in uv.iter().enumerate() {
-        let n = unit_dir_from_equirect_uv_y_up(u, v);
-        let nl = rotate_vec_world_to_local(q, n);
-        if nl[2] < 0.04 {
-            continue;
-        }
-        let inv = 1.0 / (1.0 + nl[2]).max(1e-4);
-        let mut s = nl[0] * inv * layout + cluster_s + trem;
-        let mut t = nl[1] * inv * layout + cluster_t + breath_t + trem * 0.7;
-        let melt = state.cur_melt;
-        s *= 1.0 - melt * 0.15;
-        t += melt * 0.06 * (s.abs());
-
-        let mut acc_i = 0f32;
-        for (cx, cy) in [(-ex, ey), (ex, ey)] {
-            let dx = s - cx;
-            let dy = t - cy;
-            let mut d_ell = ((dx * dx) / (eye_rx * eye_rx) + (dy * dy) / (eye_ry * eye_ry)).sqrt() - 1.0;
-            if curve > 0.1 {
-                d_ell += curve * 0.35 * (dy - eye_ry * 0.2).max(0.0);
-            } else if curve < -0.1 {
-                d_ell -= curve * 0.35 * (dy + eye_ry * 0.15).max(0.0);
-            }
-            let hi = smooth01((-d_ell - 0.02) / 0.06);
-            acc_i = acc_i.max(hi);
-        }
-        let mx = s;
-        let my = t - mouth_y;
-        let mw = mouth_w;
-        let mh = mouth_h;
-        let mut d_m = sd_rounded_x_capsule(mx, my, mw, mh, state.cur_mouth_curve * 0.08 * parts);
-        d_m -= state.cur_mouth_open * 0.02 * parts;
-        let hm = smooth01((-d_m - 0.015) / 0.055);
-        acc_i = acc_i.max(hm);
-
-        if acc_i > 1e-4 {
-            add_tinted_to_accum(&mut acc, i, acc_i, pr, pg, pb);
-        }
-    }
-    let out = finalize_black_base(&acc);
-    rgb.copy_from_slice(&out);
+/// 製品 `product-geodesic-2v-60`（1260 LED）の平均角ピッチに合わせたフェザー幅（ラジアン）。
+fn product_feather_rad() -> f32 {
+    const LED_COUNT: f32 = 1260.0;
+    let led_angular = (4.0 * PI / LED_COUNT).sqrt();
+    (2.5_f32.to_radians()).max(0.45 * led_angular)
 }
 
-fn sd_rounded_x_capsule(x: f32, y: f32, half_w: f32, half_h: f32, curve: f32) -> f32 {
+struct FaceGeom {
+    layout: f32,
+    alpha_rad: f32,
+    feather_rad: f32,
+    feather_norm: f32,
+    feature: f32,
+    eye_ex: f32,
+    eye_y: f32,
+    brow_y: f32,
+    mouth_y: f32,
+}
+
+impl FaceGeom {
+    fn from_state(state: &MateState) -> Self {
+        let alpha_rad = state.face_angular_radius_deg.to_radians();
+        let layout = (alpha_rad * 0.5).tan();
+        let feather_rad = product_feather_rad();
+        let layout_safe = layout.max(1e-4);
+        let feature = state.feature_scale;
+        Self {
+            layout,
+            alpha_rad,
+            feather_rad,
+            feather_norm: feather_rad.tan().max(0.04) / layout_safe,
+            feature,
+            eye_ex: state.eye_spacing * 0.5,
+            eye_y: 0.22,
+            brow_y: 0.22 + feature * 0.52,
+            mouth_y: -0.38,
+        }
+    }
+}
+
+#[inline]
+fn sd_ellipse_norm(x: f32, y: f32, cx: f32, cy: f32, rx: f32, ry: f32) -> f32 {
+    let dx = (x - cx) / rx.max(1e-4);
+    let dy = (y - cy) / ry.max(1e-4);
+    (dx * dx + dy * dy).sqrt() - 1.0
+}
+
+#[inline]
+fn sd_circle_norm(x: f32, y: f32, cx: f32, cy: f32, r: f32) -> f32 {
+    let dx = x - cx;
+    let dy = y - cy;
+    (dx * dx + dy * dy).sqrt() - r.max(1e-4)
+}
+
+/// 線分 ab 周りのカプセル SDF（半径 r）。
+fn sd_capsule_seg(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32, r: f32) -> f32 {
+    let pax = px - ax;
+    let pay = py - ay;
+    let bax = bx - ax;
+    let bay = by - ay;
+    let denom = bax * bax + bay * bay + 1e-8;
+    let h = ((pax * bax + pay * bay) / denom).clamp(0.0, 1.0);
+    let dx = pax - bax * h;
+    let dy = pay - bay * h;
+    (dx * dx + dy * dy).sqrt() - r.max(1e-4)
+}
+
+fn sd_rounded_x_capsule_norm(x: f32, y: f32, half_w: f32, half_h: f32, curve: f32) -> f32 {
     let yy = y + curve * (x / half_w.max(1e-4)).clamp(-1.0, 1.0) * half_h * 0.5;
     let px = x.abs() - half_w;
     let py = yy.abs() - half_h;
@@ -1014,14 +1026,153 @@ fn sd_rounded_x_capsule(x: f32, y: f32, half_w: f32, half_h: f32, curve: f32) ->
     outside + inside
 }
 
+#[inline]
+fn sdf_to_weight(d: f32, edge: f32, feather: f32) -> f32 {
+    smooth01((-d - edge) / feather.max(1e-4))
+}
+
+pub fn render_mate_face(state: &MateState, uv: &[(f32, f32)], rgb: &mut [u8]) {
+    if uv.len() * 3 != rgb.len() {
+        return;
+    }
+    let mut acc = vec![0f32; rgb.len()];
+    let q = quat_normalize(state.q_face);
+    let geom = FaceGeom::from_state(state);
+    let g_world = state.gaze_dir_world();
+    let g_local = normalize3(rotate_vec_world_to_local(q, g_world));
+    let cluster_s = g_local[0] * state.cluster * geom.layout * 0.07;
+    let cluster_t = g_local[1] * state.cluster * geom.layout * 0.07;
+    let breath_t = (state.breath_phase - 0.5) * geom.layout * 0.04;
+    let trem = if state.auto.tremor || state.cur_tremor > 0.05 {
+        state.cur_tremor * 0.009 * geom.layout * ((state.breath_phase * 37.0).sin())
+    } else {
+        0.0
+    };
+
+    let eye_open = (state.cur_eye_open * state.blink_mul).clamp(0.06, 1.0);
+    let feature = geom.feature;
+    let sclera_rx = feature * 0.44 * eye_open;
+    let sclera_ry = feature * 0.40 * eye_open;
+    let pupil_r = feature * 0.17 * eye_open.sqrt();
+    let brow_r = feature * 0.125;
+    let mouth_w = state.cur_mouth_width * feature * 1.02;
+    let mouth_h = (0.058 + state.cur_mouth_open * 0.16) * feature;
+    let curve = state.cur_eye_curve;
+    let pull = state.gaze_pull;
+    let pupil_ox = g_local[0] * feature * 0.32 * (1.0 - pull * 0.6);
+    let pupil_oy = g_local[1] * feature * 0.28 * (1.0 - pull * 0.6);
+
+    let pr = (state.color[0] as f32 * state.brightness).round() as u8;
+    let pg = (state.color[1] as f32 * state.brightness).round() as u8;
+    let pb = (state.color[2] as f32 * state.brightness).round() as u8;
+    let cheek_r = (pr as f32 * 0.72 + 24.0).round() as u8;
+    let cheek_g = (pg as f32 * 0.58 + 12.0).round() as u8;
+    let cheek_b = (pb as f32 * 0.55 + 8.0).round() as u8;
+    let cheek_strength = state.cur_cheek_flush;
+
+    let feather = geom.feather_norm;
+    let brow_tilt = curve * feature * 0.22;
+
+    for (i, &(u, v)) in uv.iter().enumerate() {
+        let n = unit_dir_from_equirect_uv_y_up(u, v);
+        let nl = rotate_vec_world_to_local(q, n);
+        if nl[2] < 0.0 {
+            continue;
+        }
+        let cos_theta = nl[2].clamp(-1.0, 1.0);
+        let theta = cos_theta.acos();
+        if theta > geom.alpha_rad + geom.feather_rad {
+            continue;
+        }
+
+        let inv = 1.0 / (1.0 + nl[2]).max(1e-4);
+        let s = nl[0] * inv * geom.layout + cluster_s + trem;
+        let t = nl[1] * inv * geom.layout + cluster_t + breath_t + trem * 0.7;
+        let mut nx = s / geom.layout;
+        let mut ny = t / geom.layout;
+        let melt = state.cur_melt;
+        nx *= 1.0 - melt * 0.12;
+        ny += melt * 0.08 * nx.abs();
+
+        let mut acc_i = 0.0f32;
+        let mut cheek_w_max = 0.0f32;
+
+        if cheek_strength > 0.02 {
+            let cheek_y = geom.eye_y - feature * 0.38;
+            let cheek_x = geom.eye_ex + feature * 0.28;
+            let cheek_rx = feature * 0.24;
+            let cheek_ry = feature * 0.18;
+            for side in [-1.0f32, 1.0] {
+                let d_cheek = sd_ellipse_norm(nx, ny, side * cheek_x, cheek_y, cheek_rx, cheek_ry);
+                let w_cheek = sdf_to_weight(d_cheek, 0.02, feather * 1.1) * cheek_strength;
+                cheek_w_max = cheek_w_max.max(w_cheek);
+                acc_i = acc_i.max(w_cheek * 0.38);
+            }
+        }
+
+        for side in [-1.0f32, 1.0] {
+            let cx = side * geom.eye_ex;
+            let cy = geom.eye_y;
+            let mut d_sclera = sd_ellipse_norm(nx, ny, cx, cy, sclera_rx, sclera_ry);
+            if curve > 0.1 {
+                d_sclera += curve * 0.30 * (ny - cy - sclera_ry * 0.15).max(0.0);
+            } else if curve < -0.1 {
+                d_sclera -= curve * 0.30 * (ny - cy + sclera_ry * 0.12).max(0.0);
+            }
+            let w_sclera = sdf_to_weight(d_sclera, 0.012, feather);
+            acc_i = acc_i.max(w_sclera * 0.82);
+
+            let pcx = cx + pupil_ox;
+            let pcy = cy + pupil_oy;
+            let d_pupil = sd_circle_norm(nx, ny, pcx, pcy, pupil_r);
+            let w_pupil = sdf_to_weight(d_pupil, 0.008, feather * 0.85);
+            acc_i = acc_i.max(w_pupil * 1.0);
+
+            let hcx = pcx - pupil_r * 0.35;
+            let hcy = pcy + pupil_r * 0.30;
+            let d_hi = sd_circle_norm(nx, ny, hcx, hcy, pupil_r * 0.28);
+            let w_hi = sdf_to_weight(d_hi, 0.004, feather * 0.7);
+            acc_i = acc_i.max(w_hi * 1.12);
+        }
+
+        let brow_lx = -geom.eye_ex - feature * 0.08;
+        let brow_rx = geom.eye_ex + feature * 0.08;
+        let brow_ly = geom.brow_y + brow_tilt;
+        let brow_ry = geom.brow_y - brow_tilt;
+        let d_brow = sd_capsule_seg(nx, ny, brow_lx, brow_ly, brow_rx, brow_ry, brow_r);
+        let w_brow = sdf_to_weight(d_brow, 0.010, feather * 1.05);
+        acc_i = acc_i.max(w_brow * 0.92);
+
+        let mx = nx;
+        let my = ny - geom.mouth_y;
+        let mut d_m =
+            sd_rounded_x_capsule_norm(mx, my, mouth_w, mouth_h, state.cur_mouth_curve * 0.10);
+        d_m -= state.cur_mouth_open * 0.012;
+        let w_mouth = sdf_to_weight(d_m, 0.014, feather * 1.05);
+        acc_i = acc_i.max(w_mouth * 0.95);
+
+        if acc_i > 1e-4 {
+            let (tr, tg, tb) = if cheek_w_max > 0.12 {
+                (cheek_r, cheek_g, cheek_b)
+            } else {
+                (pr, pg, pb)
+            };
+            add_tinted_to_accum(&mut acc, i, acc_i, tr, tg, tb);
+        }
+    }
+    let out = finalize_black_base(&acc);
+    rgb.copy_from_slice(&out);
+}
+
 pub fn tick_and_render_mate(
-    app: &crate::state::SharedApp,
+    slot: &DeviceSlot,
+    compiled_dir: &std::path::Path,
     loop_start: Instant,
     now: Instant,
     dt: f32,
     rgb: &mut [u8],
 ) {
-    let Ok(mut guard) = app.mate_state.write() else {
+    let Ok(mut guard) = slot.mate_state.write() else {
         rgb.fill(0);
         return;
     };
@@ -1030,7 +1181,20 @@ pub fn tick_and_render_mate(
     let st = guard.clone();
     drop(guard);
 
-    let uv_lock = app.interactive_uv.read().ok();
+    let layout_id = slot
+        .state
+        .try_read()
+        .ok()
+        .map(|s| s.layout_id.clone())
+        .unwrap_or_default();
+    let led_count = rgb.len() / 3;
+    if let Err(e) = slot.ensure_interactive_uv(compiled_dir, &layout_id, led_count) {
+        tracing::warn!("mate: ensure_interactive_uv: {e:#}");
+        rgb.fill(0);
+        return;
+    }
+
+    let uv_lock = slot.interactive_uv.read().ok();
     let Some(uv) = uv_lock.as_ref().and_then(|g| g.as_ref()) else {
         rgb.fill(0);
         return;
@@ -1040,4 +1204,94 @@ pub fn tick_and_render_mate(
         return;
     }
     render_mate_face(&st, uv, rgb);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+    use std::path::PathBuf;
+
+    fn product_uv() -> Vec<(f32, f32)> {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../assets/compiled/product-geodesic-2v-60.ledmap.json");
+        let raw = std::fs::read_to_string(&path).expect("product ledmap");
+        let v: Value = serde_json::from_str(&raw).expect("ledmap json");
+        v["leds"]
+            .as_array()
+            .expect("leds array")
+            .iter()
+            .map(|led| {
+                let u = led["u"].as_f64().unwrap() as f32;
+                let vv = led["v"].as_f64().unwrap() as f32;
+                (u, vv)
+            })
+            .collect()
+    }
+
+    fn count_lit(rgb: &[u8]) -> usize {
+        rgb.chunks_exact(3)
+            .filter(|px| px[0] > 8 || px[1] > 8 || px[2] > 8)
+            .count()
+    }
+
+    #[test]
+    fn product_parts_only_light_up() {
+        let uv = product_uv();
+        assert_eq!(uv.len(), 1260);
+        let mut state = MateState::default();
+        state.q_face = [1.0, 0.0, 0.0, 0.0];
+        state.blink_mul = 1.0;
+        state.cur_eye_open = 1.0;
+        let mut rgb = vec![0u8; uv.len() * 3];
+        render_mate_face(&state, &uv, &mut rgb);
+        let lit = count_lit(&rgb);
+        assert!(
+            lit >= 45 && lit <= 200,
+            "expected parts-only lighting (no canvas fill), got {lit} lit LEDs"
+        );
+    }
+
+    #[test]
+    fn product_eyes_have_enough_leds() {
+        let uv = product_uv();
+        let mut state = MateState::default();
+        state.q_face = [1.0, 0.0, 0.0, 0.0];
+        state.blink_mul = 1.0;
+        state.cur_eye_open = 1.0;
+        let mut rgb = vec![0u8; uv.len() * 3];
+        render_mate_face(&state, &uv, &mut rgb);
+        let geom = FaceGeom::from_state(&state);
+        let feature = geom.feature;
+        let sclera_rx = feature * 0.44;
+        let sclera_ry = feature * 0.40;
+        let mut left_eye = 0usize;
+        let mut right_eye = 0usize;
+        for (i, &(u, vv)) in uv.iter().enumerate() {
+            let n = unit_dir_from_equirect_uv_y_up(u, vv);
+            let nl = rotate_vec_world_to_local(state.q_face, n);
+            if nl[2] < 0.0 {
+                continue;
+            }
+            let inv = 1.0 / (1.0 + nl[2]).max(1e-4);
+            let nx = nl[0] * inv;
+            let ny = nl[1] * inv;
+            let o = i * 3;
+            if rgb[o] < 12 && rgb[o + 1] < 12 && rgb[o + 2] < 12 {
+                continue;
+            }
+            let dl = sd_ellipse_norm(nx, ny, -geom.eye_ex, geom.eye_y, sclera_rx, sclera_ry);
+            let dr = sd_ellipse_norm(nx, ny, geom.eye_ex, geom.eye_y, sclera_rx, sclera_ry);
+            if dl < 0.15 {
+                left_eye += 1;
+            }
+            if dr < 0.15 {
+                right_eye += 1;
+            }
+        }
+        assert!(
+            left_eye >= 20 && right_eye >= 20,
+            "expected >=20 LEDs per sclera, got L={left_eye} R={right_eye}"
+        );
+    }
 }

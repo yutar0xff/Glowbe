@@ -6,7 +6,11 @@ import { parsePreviewRgbFrame } from '@/lib/preview-frame'
  * Dedicated WebSocket with `previewSubscribe` (separate from Interactive/Mate sockets).
  * When `enabled` is false, no connection is opened.
  */
-export function useGlowbeStandaloneLedPreview(enabled: boolean, ledCount: number) {
+export function useGlowbeStandaloneLedPreview(
+  enabled: boolean,
+  ledCount: number,
+  deviceId?: string | null,
+) {
   const bufRef = useRef<Uint8Array | null>(null)
   const [revision, setRevision] = useState(0)
 
@@ -18,7 +22,7 @@ export function useGlowbeStandaloneLedPreview(enabled: boolean, ledCount: number
     }
 
     let cancelled = false
-    const ws = new WebSocket(resolveGlowbeWsUrl())
+    const ws = new WebSocket(resolveGlowbeWsUrl(deviceId))
     ws.binaryType = 'arraybuffer'
 
     ws.onopen = () => {
@@ -51,7 +55,7 @@ export function useGlowbeStandaloneLedPreview(enabled: boolean, ledCount: number
       ws.close()
       bufRef.current = null
     }
-  }, [enabled, ledCount])
+  }, [enabled, ledCount, deviceId])
 
   return { liveRgbBuf: bufRef, liveRgbRevision: revision }
 }

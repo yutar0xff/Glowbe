@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-constexpr uint8_t kGlowbeLedBrightness = 30;
+#include "glowbe_brightness.h"
 
 void glowbe_led_init();
 /// 前回の DMA 送出が完了するまで待つ（Wi-Fi 負荷下でのチラつき緩和）。

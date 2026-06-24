@@ -6,7 +6,7 @@ import {
 } from 'react'
 import { Loader2, Wifi } from 'lucide-react'
 import type { MateSummary, RuntimeState } from '@/types'
-import { API_BASE, resolveGlowbeWsUrl } from '@/api'
+import { API_BASE, apiDeviceQuery, resolveGlowbeWsUrl } from '@/api'
 import { parsePreviewRgbFrame } from '@/lib/preview-frame'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { useLayoutUv } from '@/hooks/use-layout-uv'
@@ -67,9 +67,10 @@ function defaultMateControls(): MateSummary {
     cluster: 0.15,
     idleSpeed: 0.35,
     color: [200, 240, 255],
-    brightness: 1,
-    faceScale: 1,
-    partsScale: 1,
+    brightness: 0.92,
+    faceAngularRadiusDeg: 58,
+    featureScale: 0.32,
+    eyeSpacing: 0.52,
     dynamics: {
       stiffness: 6,
       damping: 0.72,
@@ -105,7 +106,7 @@ function connectionLabel(phase: 'idle' | 'connecting' | 'open' | 'closed'): stri
 }
 
 export function MateModePanel({ state }: { state: RuntimeState }) {
-  const { refreshLoad } = useGlowbeRuntime()
+  const { refreshLoad, activeDeviceId } = useGlowbeRuntime()
   const canMate = state.mode === 'mate'
   const { uv, uvError, uvLoading } = useLayoutUv(state.layoutId, state.ledCount)
   const [wsPhase, setWsPhase] = useState<'idle' | 'connecting' | 'open' | 'closed'>('idle')
@@ -147,7 +148,7 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
         reconnectTimer.current = undefined
       }
       wsRef.current?.close()
-      const url = resolveGlowbeWsUrl()
+      const url = resolveGlowbeWsUrl(activeDeviceId)
       setWsPhase('connecting')
       const ws = new WebSocket(url)
       ws.binaryType = 'arraybuffer'
@@ -197,7 +198,7 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
       }
     }
     openWebSocket()
-  }, [])
+  }, [activeDeviceId])
 
   useEffect(() => {
     mountedRef.current = true
@@ -219,7 +220,7 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
       liveRgbBufRef.current = null
       setLiveRgbRevision(0)
     }
-  }, [connectWs, state.layoutId])
+  }, [connectWs, state.layoutId, activeDeviceId])
 
   useEffect(() => {
     if (pulseHighlights.length === 0) return
@@ -236,7 +237,8 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 3500)
     try {
-      const res = await fetch(`${API_BASE}/api/v1/mate/state`, {
+      const q = apiDeviceQuery(activeDeviceId)
+      const res = await fetch(`${API_BASE}/api/v1/mate/state${q}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
@@ -254,7 +256,7 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
     } finally {
       window.clearTimeout(timeout)
     }
-  }, [])
+  }, [activeDeviceId])
 
   const followExpressionTint = useCallback(async () => {
     const ws = wsRef.current
@@ -336,8 +338,10 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
                 <strong className="text-foreground">Brightness</strong> — mate render gain before master tone.
               </li>
               <li>
-                <strong className="text-foreground">Face scale</strong> — footprint on the sphere and spacing
-                between eye and mouth centers. <strong>Parts scale</strong> — size of eyes and mouth only.
+                <strong className="text-foreground">Face angular radius</strong> — where parts are placed and
+                clipped on the sphere (58° ≈ one quarter).{' '}
+                <strong className="text-foreground">Feature scale</strong> — eye and mouth size.{' '}
+                <strong className="text-foreground">Eye spacing</strong> — distance between eyes.
               </li>
               <li>
                 <strong className="text-foreground">Fixed color</strong> — locks LED tint; use{' '}
@@ -668,43 +672,64 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <div className="flex justify-between gap-2">
-                <Label className="text-xs font-semibold">Face scale</Label>
+                <Label className="text-xs font-semibold">Face angular radius</Label>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {ctrl.faceScale.toFixed(2)}
+                  {ctrl.faceAngularRadiusDeg.toFixed(0)}°
                 </span>
               </div>
-              <Hint>Stereographic footprint and distance between eye and mouth centers.</Hint>
+              <Hint>Part placement region (half-angle); parts only light up, no face fill.</Hint>
               <Slider
                 disabled={!canMate}
                 min={35}
-                max={1500}
+                max={75}
                 step={1}
-                value={[Math.round(ctrl.faceScale * 100)]}
+                value={[Math.round(ctrl.faceAngularRadiusDeg)]}
                 onValueChange={(v) => {
-                  const faceScale = v[0]! / 100
-                  setCtrl((c) => ({ ...c, faceScale }))
-                  sendMate({ action: 'setAppearance', faceScale })
+                  const faceAngularRadiusDeg = v[0]!
+                  setCtrl((c) => ({ ...c, faceAngularRadiusDeg }))
+                  sendMate({ action: 'setAppearance', faceAngularRadiusDeg })
                 }}
               />
             </div>
             <div className="space-y-2">
               <div className="flex justify-between gap-2">
-                <Label className="text-xs font-semibold">Parts scale</Label>
+                <Label className="text-xs font-semibold">Feature scale</Label>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {ctrl.partsScale.toFixed(2)}
+                  {ctrl.featureScale.toFixed(2)}
                 </span>
               </div>
-              <Hint>Eye ellipse and mouth capsule size only (centers follow face scale).</Hint>
+              <Hint>Eye, brow, and mouth size relative to the part region.</Hint>
               <Slider
                 disabled={!canMate}
-                min={15}
-                max={600}
+                min={12}
+                max={55}
                 step={1}
-                value={[Math.round(ctrl.partsScale * 100)]}
+                value={[Math.round(ctrl.featureScale * 100)]}
                 onValueChange={(v) => {
-                  const partsScale = v[0]! / 100
-                  setCtrl((c) => ({ ...c, partsScale }))
-                  sendMate({ action: 'setAppearance', partsScale })
+                  const featureScale = v[0]! / 100
+                  setCtrl((c) => ({ ...c, featureScale }))
+                  sendMate({ action: 'setAppearance', featureScale })
+                }}
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <div className="flex justify-between gap-2">
+                <Label className="text-xs font-semibold">Eye spacing</Label>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {ctrl.eyeSpacing.toFixed(2)}
+                </span>
+              </div>
+              <Hint>Horizontal distance between eye centers (fraction of face width).</Hint>
+              <Slider
+                disabled={!canMate}
+                min={30}
+                max={70}
+                step={1}
+                value={[Math.round(ctrl.eyeSpacing * 100)]}
+                onValueChange={(v) => {
+                  const eyeSpacing = v[0]! / 100
+                  setCtrl((c) => ({ ...c, eyeSpacing }))
+                  sendMate({ action: 'setAppearance', eyeSpacing })
                 }}
               />
             </div>

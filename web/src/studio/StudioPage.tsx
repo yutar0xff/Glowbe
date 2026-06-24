@@ -3,11 +3,10 @@ import type { OutputMode } from '@/types'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { IdleModePanel } from './IdleModePanel'
+import { DeviceManagerSection } from './DeviceManagerSection'
 import { InteractiveModePanel } from './InteractiveModePanel'
 import { LoopModePanel } from './LoopModePanel'
 import { MateModePanel } from './MateModePanel'
-import { LayoutPicker } from './LayoutPicker'
 import { StatusSection } from './StatusSection'
 
 const MODES: OutputMode[] = ['idle', 'loop', 'interactive', 'mate']
@@ -60,10 +59,11 @@ export function StudioPage() {
 
   return (
     <div className="flex flex-col gap-8 md:gap-10">
-      <LayoutPicker />
+      <DeviceManagerSection />
 
       <Tabs value={modeKey} onValueChange={pickMode} className="flex flex-col gap-0">
         <div className="space-y-4">
+          <span className="text-sm font-medium text-muted-foreground">Mode</span>
           <TabsList variant="segmented" className="max-w-full">
             {MODES.map((mode) => {
               const { label, icon: Icon } = modeMeta[mode]
@@ -91,9 +91,7 @@ export function StudioPage() {
           ) : null}
         </div>
 
-        <TabsContent value="idle" className="mt-6 space-y-6 outline-none focus-visible:outline-none sm:mt-10">
-          <IdleModePanel state={state} />
-        </TabsContent>
+        <TabsContent value="idle" className="mt-6 outline-none focus-visible:outline-none sm:mt-10" />
         <TabsContent value="loop" className="mt-6 space-y-6 outline-none focus-visible:outline-none sm:mt-10">
           <LoopModePanel state={state} sequences={sequences} />
         </TabsContent>

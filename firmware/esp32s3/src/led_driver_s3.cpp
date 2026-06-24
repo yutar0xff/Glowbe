@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <NeoPixelBus.h>
 
+#include "glowbe_dim.h"
 #include "glowbe_layout.h"
 #include "led_driver.h"
 
@@ -27,10 +28,7 @@ Strip* g_lines[16];
 uint8_t g_line_count = 0;
 
 RgbColor dimRgb(uint8_t r, uint8_t g, uint8_t b) {
-  const uint16_t k = kGlowbeLedBrightness;
-  return RgbColor(static_cast<uint8_t>((static_cast<uint16_t>(r) * k) / 255u),
-                    static_cast<uint8_t>((static_cast<uint16_t>(g) * k) / 255u),
-                    static_cast<uint8_t>((static_cast<uint16_t>(b) * k) / 255u));
+  return RgbColor(glowbe_dim_channel(r), glowbe_dim_channel(g), glowbe_dim_channel(b));
 }
 
 }  // namespace

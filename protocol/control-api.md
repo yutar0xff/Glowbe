@@ -34,7 +34,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 }
 ```
 
-- `masterBrightness`: 全モード共通の最終輝度係数（0–2、1 が既定）。UDP 直前に各チャンネルへ乗算。
+- `masterBrightness`: 全モード共通の最終輝度係数（0–1、1 = 100% が既定）。UDP 直前に各チャンネルへ乗算。Studio UI では 0–100% 表示。ファーム側では layout の LED 総数と 4 A 電源の 80%（3.2 A）・LED 白 15 mA を前提にした上限（`kGlowbeLedBrightness`）を別途適用。
 - `masterGamma`: 全モード共通のガンマ補正（約 0.45–3.5、1 が既定）。`out = clamp( ((in/255)×brightness)^(1/gamma) × 255 )`。
 - `frameLoopStaleMs`: 直近のフレームループ tick からの経過時間（ms）。出力タスクが停止すると急増する。
 - `layoutMismatch`: ESP STATUS の `layout_hash` とランタイムの `meta.layoutHash` が食い違うとき `true`（いずれか欠損時は照合しない）。
@@ -73,7 +73,14 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
   "gazePull": 0.55,
   "cluster": 0.15,
   "dynamics": { "stiffness": 6.0, "damping": 0.72, "floatiness": 0.35, "trailLag": 0.28 },
-  "appearance": { "color": [200, 240, 255], "brightness": 1.0, "faceScale": 1.0, "partsScale": 1.0, "useExpressionTint": true },
+  "appearance": {
+    "color": [200, 240, 255],
+    "brightness": 0.92,
+    "faceAngularRadiusDeg": 58,
+    "featureScale": 0.32,
+    "eyeSpacing": 0.52,
+    "useExpressionTint": true
+  },
   "auto": { "breath": true, "blink": true, "saccade": true, "tremor": false },
   "mouthOpen": 0.2,
   "clearMouthOpen": true,
@@ -111,7 +118,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 { "brightness": 1.0, "gamma": 1.0 }
 ```
 
-→ 実装済み: **全出力モード**で、フレームを UDP に送る直前に適用するマスター補正。`brightness` は 0–2（クランプ）、`gamma` は約 0.45–3.5（クランプ）。`200` + 更新後 `state` オブジェクト。
+→ 実装済み: **全出力モード**で、フレームを UDP に送る直前に適用するマスター補正。`brightness` は 0–1（クランプ、1 = 100%）、`gamma` は約 0.45–3.5（クランプ）。`200` + 更新後 `state` オブジェクト。
 
 ### `GET /api/v1/layout/uv`
 
@@ -260,7 +267,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 { "type": "mate", "action": "setGaze", "u": 0.42, "v": 0.71, "gazePull": 0.6 }
 { "type": "mate", "action": "setDynamics", "stiffness": 8.0, "damping": 0.65 }
 { "type": "mate", "action": "setAppearance", "color": [255, 200, 220], "brightness": 0.95 }
-{ "type": "mate", "action": "setAppearance", "faceScale": 2.5, "partsScale": 1.2 }
+{ "type": "mate", "action": "setAppearance", "faceAngularRadiusDeg": 58, "featureScale": 0.32, "eyeSpacing": 0.52 }
 { "type": "mate", "action": "clearMouthOpen" }
 ```
 
