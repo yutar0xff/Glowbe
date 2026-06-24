@@ -16,9 +16,7 @@ use crate::mate;
 use crate::media;
 use crate::pattern;
 use crate::sphere::{angle_rad_between_unit, unit_dir_from_equirect_uv_y_up};
-use crate::state::{
-    InteractiveEffectKind, InteractivePulse, OutputMode, SharedState,
-};
+use crate::state::{InteractiveEffectKind, InteractivePulse, OutputMode, SharedState};
 use crate::wire;
 
 static OUTPUT_CONFIG: OnceLock<Config> = OnceLock::new();
@@ -57,12 +55,7 @@ async fn resolve_esp_socket(config: &Config, record: &DeviceRecord) -> Result<So
     if let Some(host) = record.esp_ip_host() {
         let addr: SocketAddr = format!("{}:{}", host, config.output.udp_port)
             .parse()
-            .with_context(|| {
-                format!(
-                    "invalid esp_ip / port: {host}:{}",
-                    config.output.udp_port
-                )
-            })?;
+            .with_context(|| format!("invalid esp_ip / port: {host}:{}", config.output.udp_port))?;
         return Ok(addr);
     }
     if let Some(hostname) = record.mdns_host() {
@@ -220,8 +213,7 @@ async fn device_output_loop(
                     rec.output_fps
                 );
                 session_output_fps = rec.output_fps;
-                let frame_interval =
-                    Duration::from_secs_f64(1.0 / session_output_fps as f64);
+                let frame_interval = Duration::from_secs_f64(1.0 / session_output_fps as f64);
                 ticker = tokio::time::interval(frame_interval);
                 ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 sent_window = 0;
@@ -371,7 +363,7 @@ async fn device_output_loop(
                     }
                     frame_id = frame_id.wrapping_add(1);
                     if force_sends_after_epoch > 0 {
-                        force_sends_after_epoch -= 1;
+                        force_sends_after_epoch = force_sends_after_epoch.saturating_sub(1);
                     }
                 } else {
                     consecutive_frame_failures += 1;
@@ -433,11 +425,7 @@ async fn status_listener(port: u16, app: SharedState) {
                     );
                     let from_ip = from.ip().to_string();
                     if let Some(slot) = app.find_device_by_status_ip(&from_ip) {
-                        let expected = slot
-                            .expected_layout_hash
-                            .read()
-                            .ok()
-                            .and_then(|g| *g);
+                        let expected = slot.expected_layout_hash.read().ok().and_then(|g| *g);
                         let mismatch = match (expected, st.layout_hash) {
                             (Some(exp), Some(esp_h)) if exp != esp_h => {
                                 warn!(
@@ -467,8 +455,7 @@ async fn status_listener(port: u16, app: SharedState) {
                             }
                             _ => false,
                         };
-                        slot.apply_status(from.to_string(), &st, mismatch)
-                            .await;
+                        slot.apply_status(from.to_string(), &st, mismatch).await;
                     } else {
                         debug!(from = %from, "STATUS from unregistered ESP");
                     }

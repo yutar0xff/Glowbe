@@ -231,12 +231,7 @@ impl DeviceSlot {
         esp_frames_complete.map(|n| n.wrapping_add(1)).unwrap_or(0)
     }
 
-    pub async fn apply_status(
-        &self,
-        from: String,
-        st: &crate::wire::Status,
-        mismatch: bool,
-    ) {
+    pub async fn apply_status(&self, from: String, st: &crate::wire::Status, mismatch: bool) {
         let mut s = self.state.write().await;
         s.fps_rx = Some(st.fps_rx());
         s.esp_frames_complete = Some(st.frames_complete);
@@ -375,10 +370,7 @@ impl DeviceSlot {
         compiled_dir: &std::path::Path,
         new_layout_id: String,
     ) -> anyhow::Result<()> {
-        if new_layout_id.is_empty()
-            || new_layout_id.contains('/')
-            || new_layout_id.contains('\\')
-        {
+        if new_layout_id.is_empty() || new_layout_id.contains('/') || new_layout_id.contains('\\') {
             anyhow::bail!("layout id must be non-empty and must not contain path separators");
         }
         let meta_path = compiled_dir.join(format!("{}.meta.json", new_layout_id));

@@ -300,11 +300,7 @@ impl SharedApp {
         f(&mut g).map_err(|e| e.to_string())
     }
 
-    pub fn upsert_device_slot(
-        &self,
-        rec: DeviceRecord,
-        default_mode: &str,
-    ) -> Result<(), String> {
+    pub fn upsert_device_slot(&self, rec: DeviceRecord, default_mode: &str) -> Result<(), String> {
         let slot = DeviceSlot::from_record(rec.clone(), default_mode, &self.compiled_dir)
             .map_err(|e| e.to_string())?;
         let mut slots = self
@@ -339,9 +335,7 @@ impl SharedApp {
         if self.default_device_id == id {
             if let Some(next) = order.first() {
                 // default_device_id is not interior-mutable; caller must handle via new_shared on restart
-                tracing::warn!(
-                    "removed default device {id}; restart recommended (next: {next})"
-                );
+                tracing::warn!("removed default device {id}; restart recommended (next: {next})");
             }
         }
         Ok(())

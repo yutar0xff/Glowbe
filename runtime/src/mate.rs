@@ -152,36 +152,16 @@ fn mat3_cols_to_quat(c0: [f32; 3], c1: [f32; 3], c2: [f32; 3]) -> [f32; 4] {
     let tr = m00 + m11 + m22;
     let q = if tr > 0.0 {
         let s = 0.5 / (tr + 1.0).sqrt();
-        [
-            0.25 / s,
-            (m21 - m12) * s,
-            (m02 - m20) * s,
-            (m10 - m01) * s,
-        ]
+        [0.25 / s, (m21 - m12) * s, (m02 - m20) * s, (m10 - m01) * s]
     } else if m00 > m11 && m00 > m22 {
         let s = 2.0 * (1.0 + m00 - m11 - m22).sqrt();
-        [
-            (m21 - m12) / s,
-            0.25 * s,
-            (m01 + m10) / s,
-            (m02 + m20) / s,
-        ]
+        [(m21 - m12) / s, 0.25 * s, (m01 + m10) / s, (m02 + m20) / s]
     } else if m11 > m22 {
         let s = 2.0 * (1.0 + m11 - m00 - m22).sqrt();
-        [
-            (m02 - m20) / s,
-            (m01 + m10) / s,
-            0.25 * s,
-            (m12 + m21) / s,
-        ]
+        [(m02 - m20) / s, (m01 + m10) / s, 0.25 * s, (m12 + m21) / s]
     } else {
         let s = 2.0 * (1.0 + m22 - m00 - m11).sqrt();
-        [
-            (m10 - m01) / s,
-            (m02 + m20) / s,
-            (m12 + m21) / s,
-            0.25 * s,
-        ]
+        [(m10 - m01) / s, (m02 + m20) / s, (m12 + m21) / s, 0.25 * s]
     };
     quat_normalize([
         if q[0].is_finite() { q[0] } else { 0.0 },
@@ -627,7 +607,7 @@ impl Default for MateState {
             next_blink: now + Duration::from_millis(2800),
             next_saccade: now + Duration::from_millis(900),
             next_wander_step: now + Duration::from_millis(400),
-            rng: 0xC0FFEE_DEAD_BEEF,
+            rng: 0xC0FFEEDEADBEEF,
         }
     }
 }
@@ -662,13 +642,11 @@ impl MateState {
                 let side = normalize3(cross3([0.0, 1.0, 0.0], ax));
                 if side[0].abs() + side[1].abs() + side[2].abs() < 1e-4 {
                     let side = [1.0, 0.0, 0.0];
-                    normalize3(
-                        [
-                            side[0] * w.cos() + ax[0] * w.sin(),
-                            side[1] * w.cos() + ax[1] * w.sin(),
-                            side[2] * w.cos() + ax[2] * w.sin(),
-                        ],
-                    )
+                    normalize3([
+                        side[0] * w.cos() + ax[0] * w.sin(),
+                        side[1] * w.cos() + ax[1] * w.sin(),
+                        side[2] * w.cos() + ax[2] * w.sin(),
+                    ])
                 } else {
                     let s = w.sin();
                     let c = w.cos();
@@ -717,11 +695,14 @@ impl MateState {
         if let Some(c) = self.color_override {
             self.color = c;
         } else {
-            self.color[0] = (approach(self.color[0] as f32, tgt.cr as f32, dt, tau_color).round() as i32)
+            self.color[0] = (approach(self.color[0] as f32, tgt.cr as f32, dt, tau_color).round()
+                as i32)
                 .clamp(0, 255) as u8;
-            self.color[1] = (approach(self.color[1] as f32, tgt.cg as f32, dt, tau_color).round() as i32)
+            self.color[1] = (approach(self.color[1] as f32, tgt.cg as f32, dt, tau_color).round()
+                as i32)
                 .clamp(0, 255) as u8;
-            self.color[2] = (approach(self.color[2] as f32, tgt.cb as f32, dt, tau_color).round() as i32)
+            self.color[2] = (approach(self.color[2] as f32, tgt.cb as f32, dt, tau_color).round()
+                as i32)
                 .clamp(0, 255) as u8;
         }
 
@@ -758,19 +739,26 @@ impl MateState {
                 self.wander_dir[2] + self.rng_range(-0.2, 0.2),
             ]);
             self.wander_dir = nudge;
-            self.next_wander_step = now + Duration::from_millis(self.rng_range(280.0, 720.0) as u64);
+            self.next_wander_step =
+                now + Duration::from_millis(self.rng_range(280.0, 720.0) as u64);
         }
 
         let anchor = self.anchor_dir(t);
         let gdir = self.gaze_dir_world();
         let blended = slerp_dirs(anchor, gdir, self.gaze_pull);
         let q_tgt = look_quaternion_forward(blended);
-        let k = (self.dynamics.stiffness * 0.12 * self.mood.spring_mul() * (1.0 + self.dynamics.floatiness))
+        let k = (self.dynamics.stiffness
+            * 0.12
+            * self.mood.spring_mul()
+            * (1.0 + self.dynamics.floatiness))
             .clamp(0.5, 24.0);
         let alpha = 1.0 - (-dt * k).exp();
         self.q_face = slerp_quat(self.q_face, q_tgt, alpha);
 
-        let wmag = (self.omega[0] * self.omega[0] + self.omega[1] * self.omega[1] + self.omega[2] * self.omega[2]).sqrt();
+        let wmag = (self.omega[0] * self.omega[0]
+            + self.omega[1] * self.omega[1]
+            + self.omega[2] * self.omega[2])
+            .sqrt();
         let damp = self.dynamics.damping.clamp(0.0, 0.999);
         self.omega[0] *= damp;
         self.omega[1] *= damp;
@@ -885,8 +873,9 @@ impl MateState {
             }
             if let Some(fs) = ap.get("faceScale").and_then(|x| x.as_f64()) {
                 if ap.get("faceAngularRadiusDeg").is_none() {
-                    self.face_angular_radius_deg =
-                        (2.0 * (0.25 * fs as f32).atan()).to_degrees().clamp(30.0, 85.0);
+                    self.face_angular_radius_deg = (2.0 * (0.25 * fs as f32).atan())
+                        .to_degrees()
+                        .clamp(30.0, 85.0);
                 }
             }
             if let Some(ps) = ap.get("partsScale").and_then(|x| x.as_f64()) {
@@ -1026,13 +1015,7 @@ fn sd_capsule_seg(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32, r: f32) 
     (dx * dx + dy * dy).sqrt() - r.max(1e-4)
 }
 
-fn sd_rounded_x_capsule_norm(
-    x: f32,
-    y: f32,
-    half_w: f32,
-    half_h: f32,
-    curve: f32,
-) -> f32 {
+fn sd_rounded_x_capsule_norm(x: f32, y: f32, half_w: f32, half_h: f32, curve: f32) -> f32 {
     let yy = y + curve * (x / half_w.max(1e-4)).clamp(-1.0, 1.0) * half_h * 0.5;
     let px = x.abs() - half_w;
     let py = yy.abs() - half_h;
@@ -1079,12 +1062,12 @@ pub fn render_mate_face(state: &MateState, uv: &[(f32, f32)], rgb: &mut [u8]) {
     let pupil_ox = g_local[0] * feature * 0.32 * (1.0 - pull * 0.6);
     let pupil_oy = g_local[1] * feature * 0.28 * (1.0 - pull * 0.6);
 
-    let pr = ((state.color[0] as f32 * state.brightness).round() as u8).min(255);
-    let pg = ((state.color[1] as f32 * state.brightness).round() as u8).min(255);
-    let pb = ((state.color[2] as f32 * state.brightness).round() as u8).min(255);
-    let cheek_r = ((pr as f32 * 0.72 + 24.0).round() as u8).min(255);
-    let cheek_g = ((pg as f32 * 0.58 + 12.0).round() as u8).min(255);
-    let cheek_b = ((pb as f32 * 0.55 + 8.0).round() as u8).min(255);
+    let pr = (state.color[0] as f32 * state.brightness).round() as u8;
+    let pg = (state.color[1] as f32 * state.brightness).round() as u8;
+    let pb = (state.color[2] as f32 * state.brightness).round() as u8;
+    let cheek_r = (pr as f32 * 0.72 + 24.0).round() as u8;
+    let cheek_g = (pg as f32 * 0.58 + 12.0).round() as u8;
+    let cheek_b = (pb as f32 * 0.55 + 8.0).round() as u8;
     let cheek_strength = state.cur_cheek_flush;
 
     let feather = geom.feather_norm;
@@ -1162,13 +1145,8 @@ pub fn render_mate_face(state: &MateState, uv: &[(f32, f32)], rgb: &mut [u8]) {
 
         let mx = nx;
         let my = ny - geom.mouth_y;
-        let mut d_m = sd_rounded_x_capsule_norm(
-            mx,
-            my,
-            mouth_w,
-            mouth_h,
-            state.cur_mouth_curve * 0.10,
-        );
+        let mut d_m =
+            sd_rounded_x_capsule_norm(mx, my, mouth_w, mouth_h, state.cur_mouth_curve * 0.10);
         d_m -= state.cur_mouth_open * 0.012;
         let w_mouth = sdf_to_weight(d_m, 0.014, feather * 1.05);
         acc_i = acc_i.max(w_mouth * 0.95);

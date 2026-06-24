@@ -19,8 +19,8 @@ use uuid::Uuid;
 use crate::device_slot::DeviceSlot;
 use crate::devices::DeviceRecord;
 use crate::discover;
-use crate::media;
 use crate::mate;
+use crate::media;
 use crate::state::{
     InteractiveEffectKind, InteractivePulse, MediaUploadEntry, MediaUploadPhase, OutputMode,
     RuntimeState, SharedState,
@@ -209,18 +209,9 @@ type ApiError = (StatusCode, Json<ErrorResponse>);
 fn resolve_slot(app: &SharedState, q: &DeviceIdQuery) -> Result<Arc<DeviceSlot>, ApiError> {
     let id = app
         .resolve_device_id(q.device_id.as_deref())
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse { error: e }),
-            )
-        })?;
-    app.device(&id).map_err(|e| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: e }),
-        )
-    })
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))?;
+    app.device(&id)
+        .map_err(|e| (StatusCode::NOT_FOUND, Json(ErrorResponse { error: e })))
 }
 
 fn safe_disk_ext(file_name: Option<&str>) -> Result<&'static str, &'static str> {
@@ -319,9 +310,7 @@ async fn post_media_upload(app: SharedState, mut multipart: Multipart) -> impl I
         Err(msg) => {
             return (
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                Json(ErrorResponse {
-                    error: msg.into(),
-                }),
+                Json(ErrorResponse { error: msg.into() }),
             )
                 .into_response();
         }
@@ -710,11 +699,7 @@ async fn ws_handler(
     let device_id = match app.resolve_device_id(q.device_id.as_deref()) {
         Ok(id) => id,
         Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse { error: e }),
-            )
-                .into_response();
+            return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })).into_response();
         }
     };
     ws.on_upgrade(move |socket| ws_loop(socket, app, device_id))
@@ -834,10 +819,7 @@ async fn handle_ws_text(
                 Ok(uv) => {
                     let mut payload = serde_json::to_value(&uv).expect("serialize layout uv");
                     if let serde_json::Value::Object(ref mut m) = payload {
-                        m.insert(
-                            "type".into(),
-                            serde_json::Value::String("layoutUv".into()),
-                        );
+                        m.insert("type".into(), serde_json::Value::String("layoutUv".into()));
                     }
                     socket
                         .send(Message::Text(payload.to_string().into()))
@@ -931,10 +913,7 @@ async fn handle_ws_text(
                 return Ok(());
             }
             if let Some("setSolid") = v.get("action").and_then(|a| a.as_str()) {
-                let enabled = v
-                    .get("enabled")
-                    .and_then(|x| x.as_bool())
-                    .unwrap_or(false);
+                let enabled = v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false);
                 if !enabled {
                     slot.set_interactive_solid_rgb(None);
                     let reply = json!({
@@ -1001,10 +980,7 @@ async fn handle_ws_text(
 
             let u = v.get("u").and_then(|x| x.as_f64()).unwrap_or(0.5) as f32;
             let v_coord = v.get("v").and_then(|x| x.as_f64()).unwrap_or(0.5) as f32;
-            let amplitude = v
-                .get("amplitude")
-                .and_then(|x| x.as_f64())
-                .unwrap_or(1.0) as f32;
+            let amplitude = v.get("amplitude").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
             let u = u.clamp(0.0, 1.0);
             let v_coord = v_coord.clamp(0.0, 1.0);
             let amplitude = amplitude.clamp(0.0, 4.0);
@@ -1013,10 +989,7 @@ async fn handle_ws_text(
                 .and_then(|x| x.as_u64())
                 .unwrap_or(450)
                 .clamp(100, 5000) as u32;
-            let sigma_rad = v
-                .get("sigmaRad")
-                .and_then(|x| x.as_f64())
-                .unwrap_or(0.14) as f32;
+            let sigma_rad = v.get("sigmaRad").and_then(|x| x.as_f64()).unwrap_or(0.14) as f32;
             let sigma_rad = sigma_rad.clamp(0.02f32, 0.6f32);
             let effect = v
                 .get("effect")
@@ -1031,7 +1004,15 @@ async fn handle_ws_text(
 
             let reply = match slot.ensure_interactive_uv(&app.compiled_dir, &layout_id, led_count) {
                 Ok(()) => {
-                    let pulse = build_interactive_pulse(&v, u, v_coord, amplitude, duration_ms, sigma_rad, effect);
+                    let pulse = build_interactive_pulse(
+                        &v,
+                        u,
+                        v_coord,
+                        amplitude,
+                        duration_ms,
+                        sigma_rad,
+                        effect,
+                    );
                     slot.push_interactive_pulse(pulse);
                     json!({
                         "type": "event_status",
@@ -1376,10 +1357,7 @@ async fn patch_sequence_display(
         )
             .into_response();
     }
-    let manifest_path = app
-        .sequences_dir
-        .join(&sequence_id)
-        .join("manifest.json");
+    let manifest_path = app.sequences_dir.join(&sequence_id).join("manifest.json");
     if !manifest_path.is_file() {
         return (
             StatusCode::NOT_FOUND,
@@ -1448,7 +1426,9 @@ async fn delete_sequence(app: SharedState, Path(sequence_id): Path<String>) -> i
 
     let sequences_dir = app.sequences_dir.clone();
     let id = sequence_id.clone();
-    let res = tokio::task::spawn_blocking(move || media::delete_sequence_directory(&sequences_dir, &id)).await;
+    let res =
+        tokio::task::spawn_blocking(move || media::delete_sequence_directory(&sequences_dir, &id))
+            .await;
 
     match res {
         Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
@@ -1528,10 +1508,7 @@ async fn post_device_layout(
     }
 }
 
-async fn get_layout_uv(
-    app: SharedState,
-    Query(q): Query<DeviceIdQuery>,
-) -> impl IntoResponse {
+async fn get_layout_uv(app: SharedState, Query(q): Query<DeviceIdQuery>) -> impl IntoResponse {
     let slot = match resolve_slot(&app, &q) {
         Ok(s) => s,
         Err(e) => return e.into_response(),
@@ -1737,13 +1714,7 @@ async fn post_mate_state(
             .into_response();
     }
     if let Err(e) = slot.mate_apply_json(&req) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: e,
-            }),
-        )
-            .into_response();
+        return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })).into_response();
     }
     let s = slot.state.read().await;
     (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
@@ -1769,9 +1740,10 @@ async fn get_devices(app: SharedState) -> impl IntoResponse {
 }
 
 async fn get_devices_discovered(app: SharedState) -> impl IntoResponse {
-    let discovered = tokio::task::spawn_blocking(|| discover::glowbe_udp_all(Duration::from_secs(8)))
-        .await
-        .unwrap_or_default();
+    let discovered =
+        tokio::task::spawn_blocking(|| discover::glowbe_udp_all(Duration::from_secs(8)))
+            .await
+            .unwrap_or_default();
     let merged = match app.registry_snapshot() {
         Ok(reg) => reg.merge_discovered(&discovered),
         Err(e) => {
@@ -1785,10 +1757,7 @@ async fn get_devices_discovered(app: SharedState) -> impl IntoResponse {
     (StatusCode::OK, Json(merged)).into_response()
 }
 
-async fn post_device(
-    app: SharedState,
-    Json(req): Json<DeviceCreateRequest>,
-) -> impl IntoResponse {
+async fn post_device(app: SharedState, Json(req): Json<DeviceCreateRequest>) -> impl IntoResponse {
     let rec = DeviceRecord {
         id: crate::devices::new_device_id(),
         display_name: req.display_name,
@@ -1803,11 +1772,7 @@ async fn post_device(
         reg.upsert(rec.clone(), &app.compiled_dir)?;
         Ok(())
     }) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse { error: e }),
-        )
-            .into_response();
+        return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })).into_response();
     }
     let created_id = rec.id.clone();
     if let Err(e) = app.upsert_device_slot(rec, &app.default_mode) {
@@ -1858,11 +1823,7 @@ async fn patch_device(
     let slot = match app.device(&device_id) {
         Ok(s) => s,
         Err(e) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse { error: e }),
-            )
-                .into_response();
+            return (StatusCode::NOT_FOUND, Json(ErrorResponse { error: e })).into_response();
         }
     };
     let old_layout = slot.state.read().await.layout_id.clone();
@@ -1880,11 +1841,7 @@ async fn patch_device(
         reg.upsert(rec.clone(), &app.compiled_dir)?;
         Ok(())
     }) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse { error: e }),
-        )
-            .into_response();
+        return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })).into_response();
     }
     slot.update_record(rec.clone());
     slot.bump_output_send_epoch();
@@ -1941,9 +1898,10 @@ async fn delete_device(app: SharedState, Path(device_id): Path<String>) -> impl 
 
 async fn health(app: SharedState) -> impl IntoResponse {
     const STALE_MS: u64 = 1000;
-    let stale = app.devices_ordered().iter().all(|slot| {
-        slot.metrics.frame_loop_stale_ms() > STALE_MS
-    });
+    let stale = app
+        .devices_ordered()
+        .iter()
+        .all(|slot| slot.metrics.frame_loop_stale_ms() > STALE_MS);
     if stale && !app.devices_ordered().is_empty() {
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -2019,7 +1977,10 @@ fn build_interactive_pulse(
     sigma_rad: f32,
     effect: InteractiveEffectKind,
 ) -> InteractivePulse {
-    let color_random = v.get("colorRandom").and_then(|x| x.as_bool()).unwrap_or(false);
+    let color_random = v
+        .get("colorRandom")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     let time_seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
@@ -2027,16 +1988,13 @@ fn build_interactive_pulse(
     let tap_seed = (u.to_bits() as u64) ^ ((v_coord.to_bits() as u64) << 32);
     let (cr, cg, cb) = if color_random {
         vivid_rgb_from_seed(time_seed ^ tap_seed)
-    } else if let Some(c) = v.get("colorRgb").and_then(parse_color_rgb) {
-        c
     } else {
-        (200, 240, 255)
+        v.get("colorRgb")
+            .and_then(parse_color_rgb)
+            .unwrap_or((200, 240, 255))
     };
 
-    let ring_speed = v
-        .get("ringSpeed")
-        .and_then(|x| x.as_f64())
-        .unwrap_or(1.0) as f32;
+    let ring_speed = v.get("ringSpeed").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
     let ring_speed = ring_speed.clamp(0.12f32, 12.0f32);
 
     let ring_thickness_rad = v

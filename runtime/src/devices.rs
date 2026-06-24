@@ -141,8 +141,8 @@ impl DeviceRegistry {
 
     pub fn load_or_seed(path: PathBuf, config: &Config, compiled_dir: &Path) -> Result<Self> {
         if path.exists() {
-            let raw = fs::read_to_string(&path)
-                .with_context(|| format!("read {}", path.display()))?;
+            let raw =
+                fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
             let file: DevicesFile =
                 serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
             if file.format != "glowbe-devices" || file.version != 1 {
@@ -159,18 +159,12 @@ impl DeviceRegistry {
                 }
             }
             if migrate_legacy_device_ids(&mut devices) {
-                let reg = Self {
-                    path,
-                    devices,
-                };
+                let reg = Self { path, devices };
                 reg.validate_all(compiled_dir)?;
                 reg.save()?;
                 return Ok(reg);
             }
-            let reg = Self {
-                path,
-                devices,
-            };
+            let reg = Self { path, devices };
             reg.validate_all(compiled_dir)?;
             if tone_clamped {
                 reg.save()?;
@@ -269,7 +263,10 @@ impl DeviceRegistry {
         Ok(())
     }
 
-    pub fn merge_discovered(&self, discovered: &[crate::discover::GlowbeService]) -> Vec<DiscoveredEsp> {
+    pub fn merge_discovered(
+        &self,
+        discovered: &[crate::discover::GlowbeService],
+    ) -> Vec<DiscoveredEsp> {
         let ip_to_id: HashMap<String, String> = self
             .devices
             .iter()
@@ -340,10 +337,7 @@ fn seed_from_config(config: &Config) -> Vec<DeviceRecord> {
 
 fn validate_record(rec: &DeviceRecord, compiled_dir: &Path) -> Result<()> {
     validate_device_id(&rec.id)?;
-    if rec.layout_id.is_empty()
-        || rec.layout_id.contains('/')
-        || rec.layout_id.contains('\\')
-    {
+    if rec.layout_id.is_empty() || rec.layout_id.contains('/') || rec.layout_id.contains('\\') {
         anyhow::bail!("layout_id invalid");
     }
     if rec.output_fps == 0 {

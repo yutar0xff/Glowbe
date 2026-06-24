@@ -3,8 +3,8 @@ mod config;
 mod device_slot;
 mod devices;
 mod discover;
-mod mate;
 mod master_tone;
+mod mate;
 mod media;
 mod metrics;
 mod output;
@@ -22,7 +22,7 @@ use tokio::net::TcpListener;
 use tracing::info;
 
 use crate::devices::{devices_json_path, DeviceRegistry};
-use crate::state::{InteractiveEffectKind, InteractivePulse, new_shared};
+use crate::state::{new_shared, InteractiveEffectKind, InteractivePulse};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -37,7 +37,10 @@ async fn main() -> Result<()> {
     if args.first().is_some_and(|arg| arg == "convert-image") {
         return convert_image_command(&args[1..]);
     }
-    if args.first().is_some_and(|arg| arg == "gen-demo-expanding-rings") {
+    if args
+        .first()
+        .is_some_and(|arg| arg == "gen-demo-expanding-rings")
+    {
         return gen_demo_expanding_rings_command(&args[1..]);
     }
 
@@ -178,7 +181,7 @@ fn gen_demo_expanding_rings_command(args: &[String]) -> Result<()> {
         }
     }
 
-    let mut rng = Xor(0xDEB1_71DE_D00);
+    let mut rng = Xor(0x0DEB_171D_ED00);
     let seq_base = Instant::now();
     let mut pulses: Vec<InteractivePulse> = Vec::new();
     for _ in 0..18 {
@@ -208,13 +211,8 @@ fn gen_demo_expanding_rings_command(args: &[String]) -> Result<()> {
     let fps = 30u32;
     let sec = 12.5f32;
     let frame_count = (sec * fps as f32).ceil() as u32;
-    let frames = output::encode_demo_expanding_ring_sequence_bytes(
-        &uv,
-        &pulses,
-        seq_base,
-        fps,
-        frame_count,
-    );
+    let frames =
+        output::encode_demo_expanding_ring_sequence_bytes(&uv, &pulses, seq_base, fps, frame_count);
 
     let out = sequences_dir.join(&sequence_id);
     if out.exists() {
