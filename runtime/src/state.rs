@@ -1,15 +1,12 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::sync::RwLock as StdRwLock;
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
 use tokio::sync::RwLock;
 
-use crate::mate::{self, MateState};
-use crate::media::{self, LoadedSequence};
-use crate::metrics::OutputMetrics;
+use crate::device_slot::DeviceSlot;
+use crate::devices::{DeviceRecord, DeviceRegistry};
 
 /// インタラクティブ（消灯＋ WS 合成）で選べるエフェクト種別。
 #[repr(u8)]
@@ -110,7 +107,7 @@ impl OutputMode {
         }
     }
 
-    fn code(self) -> u8 {
+    pub(crate) fn code(self) -> u8 {
         match self {
             Self::Idle => Self::IDLE,
             Self::Loop => Self::LOOP,
@@ -119,7 +116,7 @@ impl OutputMode {
         }
     }
 
-    fn from_code(code: u8) -> Self {
+    pub(crate) fn from_code(code: u8) -> Self {
         match code {
             Self::IDLE => Self::Idle,
             Self::LOOP => Self::Loop,
@@ -169,6 +166,14 @@ impl RuntimeState {
     }
 }
 
+/// Loop シーケンスのタイムライン（一時停止で `frozen_effective` を固定、再開で `skew` を補正）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LoopPlaybackTiming {
+    pub paused: bool,
+    pub skew: Duration,
+    pub frozen_effective: Duration,
+}
+
 /// `POST /api/v1/media/upload` で保存したファイルと変換ジョブの状態。
 #[derive(Debug, Clone)]
 pub struct MediaUploadEntry {
@@ -193,376 +198,178 @@ pub enum MediaUploadPhase {
     },
 }
 
-/// Shared application state: hot metrics + async-safe `RwLock` for ESP-derived fields.
 pub struct SharedApp {
-    pub metrics: Arc<OutputMetrics>,
-    pub state: RwLock<RuntimeState>,
-    mode_code: AtomicU8,
-    sequence: StdRwLock<Option<Arc<LoadedSequence>>>,
-    /// Compared with ESP STATUS `layout_hash`; updated when the active compiled layout changes.
-    pub expected_layout_hash: StdRwLock<Option<u32>>,
+    registry: StdRwLock<DeviceRegistry>,
+    slots: StdRwLock<HashMap<String, Arc<DeviceSlot>>>,
+    device_order: StdRwLock<Vec<String>>,
+    pub default_device_id: String,
+    pub default_mode: String,
     pub compiled_dir: std::path::PathBuf,
     pub sequences_dir: std::path::PathBuf,
     pub uploads_dir: std::path::PathBuf,
     pub media_uploads: RwLock<HashMap<String, MediaUploadEntry>>,
-    /// `assets/compiled/<layout>.ledmap.json` 由来。インタラクティブ合成用（LED インデックス順）。
-    pub(crate) interactive_uv: StdRwLock<Option<Vec<(f32, f32)>>>,
-    /// Matches `interactive_uv` when populated; cleared on layout switch.
-    pub(crate) interactive_uv_layout_id: StdRwLock<Option<String>>,
-    pub(crate) interactive_pulses: StdRwLock<Vec<InteractivePulse>>,
-    /// `interactive` モードのベース色。`None` のときは黒。
-    pub(crate) interactive_solid: StdRwLock<Option<[u8; 3]>>,
-    pub(crate) mate_state: StdRwLock<MateState>,
-    /// WS `setEffect` またはパルス省略時に使う既定エフェクト。
-    interactive_default_effect: AtomicU8,
-    /// 全モード共通: 最終 RGB に掛ける明るさ（0–2、1 が既定）。
-    master_brightness_bits: AtomicU32,
-    /// 全モード共通: ガンマ（0.5–3.5、1 が線形に近い）。
-    master_gamma_bits: AtomicU32,
-    /// UDP 直前と同一の最終 RGB（`led_count * 3`）。`try_write` で出力ループから更新。
-    pub(crate) preview_frame: StdRwLock<Vec<u8>>,
-    /// `preview_frame` が更新されるたびに増分（WebSocket プレビュー用）。
-    pub(crate) preview_seq: AtomicU32,
-    /// UDP 静止スキップのキャッシュ無効化（モード変更など）。
-    output_send_epoch: AtomicU32,
-    /// 出力ループが毎フレーム書き込む `loop_start` からの経過（一時停止 API が参照）。
-    pub(crate) loop_raw_elapsed_tick: StdRwLock<Duration>,
-    pub(crate) loop_playback_timing: StdRwLock<LoopPlaybackTiming>,
-}
-
-/// Loop シーケンスのタイムライン（一時停止で `frozen_effective` を固定、再開で `skew` を補正）。
-#[derive(Debug, Clone, Copy, Default)]
-pub struct LoopPlaybackTiming {
-    pub paused: bool,
-    pub skew: Duration,
-    pub frozen_effective: Duration,
 }
 
 pub type SharedState = Arc<SharedApp>;
 
 pub fn new_shared(
-    layout_id: String,
-    led_count: u16,
-    mode: String,
-    expected_layout_hash: Option<u32>,
+    registry: DeviceRegistry,
+    default_mode: &str,
     compiled_dir: std::path::PathBuf,
     sequences_dir: std::path::PathBuf,
     uploads_dir: std::path::PathBuf,
-) -> SharedState {
-    let initial_mode = OutputMode::parse(&mode).unwrap_or(OutputMode::Loop);
-    let preview_len = led_count as usize * 3;
-    Arc::new(SharedApp {
-        metrics: Arc::new(OutputMetrics::new()),
-        state: RwLock::new(RuntimeState::new(
-            layout_id,
-            led_count,
-            initial_mode.as_str().to_string(),
-        )),
-        mode_code: AtomicU8::new(initial_mode.code()),
-        sequence: StdRwLock::new(None),
-        expected_layout_hash: StdRwLock::new(expected_layout_hash),
+) -> anyhow::Result<SharedState> {
+    let default_device_id = registry
+        .devices()
+        .first()
+        .map(|d| d.id.clone())
+        .unwrap_or_else(|| "default".into());
+    let mut slot_map = HashMap::new();
+    let mut order = Vec::new();
+    for rec in registry.devices() {
+        let slot = DeviceSlot::from_record(rec.clone(), default_mode, &compiled_dir)?;
+        order.push(rec.id.clone());
+        slot_map.insert(rec.id.clone(), slot);
+    }
+    Ok(Arc::new(SharedApp {
+        registry: StdRwLock::new(registry),
+        slots: StdRwLock::new(slot_map),
+        device_order: StdRwLock::new(order),
+        default_device_id,
+        default_mode: default_mode.to_string(),
         compiled_dir,
         sequences_dir,
         uploads_dir,
         media_uploads: RwLock::new(HashMap::new()),
-        interactive_uv: StdRwLock::new(None),
-        interactive_uv_layout_id: StdRwLock::new(None),
-        interactive_pulses: StdRwLock::new(Vec::new()),
-        interactive_solid: StdRwLock::new(None),
-        mate_state: StdRwLock::new(MateState::default()),
-        interactive_default_effect: AtomicU8::new(InteractiveEffectKind::ExpandingRingDiagonal.code()),
-        master_brightness_bits: AtomicU32::new(f32::to_bits(1.0)),
-        master_gamma_bits: AtomicU32::new(f32::to_bits(1.0)),
-        preview_frame: StdRwLock::new(vec![0u8; preview_len]),
-        preview_seq: AtomicU32::new(0),
-        output_send_epoch: AtomicU32::new(0),
-        loop_raw_elapsed_tick: StdRwLock::new(Duration::ZERO),
-        loop_playback_timing: StdRwLock::new(LoopPlaybackTiming::default()),
-    })
+    }))
 }
 
 impl SharedApp {
-    pub fn output_send_epoch(&self) -> u32 {
-        self.output_send_epoch.load(Ordering::Acquire)
-    }
-
-    pub fn bump_output_send_epoch(&self) {
-        self.output_send_epoch.fetch_add(1, Ordering::Release);
-    }
-
-    /// Switch the active compiled layout (UV, LED count, hash). Clears loop selection if the
-    /// loaded sequence does not match the new layout. Does not persist `config.toml`.
-    pub async fn switch_runtime_layout(&self, new_layout_id: String) -> anyhow::Result<()> {
-        if new_layout_id.is_empty()
-            || new_layout_id.contains('/')
-            || new_layout_id.contains('\\')
-        {
-            anyhow::bail!("layout id must be non-empty and must not contain path separators");
-        }
-        let meta_path = self
-            .compiled_dir
-            .join(format!("{}.meta.json", new_layout_id));
-        let meta_raw = std::fs::read_to_string(&meta_path)
-            .with_context(|| format!("read layout meta {}", meta_path.display()))?;
-        let meta: serde_json::Value =
-            serde_json::from_str(&meta_raw).context("parse layout meta json")?;
-        let led_count = meta["ledCount"].as_u64().context("ledCount in meta")? as u16;
-        let expected_layout_hash = meta
-            .get("layoutHash")
-            .and_then(|v| v.as_u64())
-            .map(|x| x as u32);
-
-        if let Some(seq) = self.selected_sequence() {
-            if seq.layout_id != new_layout_id || seq.led_count != led_count as usize {
-                self.clear_sequence().await;
+    pub fn resolve_device_id(&self, id: Option<&str>) -> Result<String, String> {
+        if let Some(id) = id.filter(|s| !s.is_empty()) {
+            let slots = self
+                .slots
+                .read()
+                .map_err(|_| "slots lock poisoned".to_string())?;
+            if slots.contains_key(id) {
+                return Ok(id.to_string());
             }
+            return Err(format!("unknown deviceId: {id}"));
         }
-
-        if let Ok(mut w) = self.preview_frame.write() {
-            *w = vec![0u8; led_count as usize * 3];
-        }
-        self.preview_seq.store(0, Ordering::Relaxed);
-
-        if let Ok(mut g) = self.interactive_uv.write() {
-            *g = None;
-        }
-        if let Ok(mut g) = self.interactive_uv_layout_id.write() {
-            *g = None;
-        }
-        if let Ok(mut g) = self.interactive_solid.write() {
-            *g = None;
-        }
-
-        if let Ok(mut g) = self.expected_layout_hash.write() {
-            *g = expected_layout_hash;
-        }
-
-        let mut st = self.state.write().await;
-        st.layout_id = new_layout_id;
-        st.led_count = led_count;
-        st.layout_mismatch = false;
-        self.bump_output_send_epoch();
-        Ok(())
+        Ok(self.default_device_id.clone())
     }
 
-    pub fn output_mode(&self) -> OutputMode {
-        OutputMode::from_code(self.mode_code.load(Ordering::Relaxed))
-    }
-
-    pub async fn set_output_mode(&self, mode: OutputMode) {
-        self.reset_loop_playback_timing();
-        self.mode_code.store(mode.code(), Ordering::Relaxed);
-        self.bump_output_send_epoch();
-        let mut state = self.state.write().await;
-        state.mode = mode.as_str().to_string();
-    }
-
-    pub fn selected_sequence(&self) -> Option<Arc<LoadedSequence>> {
-        self.sequence.read().ok().and_then(|guard| guard.clone())
-    }
-
-    pub async fn set_sequence(&self, sequence: LoadedSequence) {
-        let id = sequence.id.clone();
-        if let Ok(mut slot) = self.sequence.write() {
-            *slot = Some(Arc::new(sequence));
-        }
-        self.bump_output_send_epoch();
-        let mut state = self.state.write().await;
-        state.loop_sequence_id = Some(id);
-    }
-
-    pub async fn clear_sequence(&self) {
-        if let Ok(mut slot) = self.sequence.write() {
-            *slot = None;
-        }
-        self.bump_output_send_epoch();
-        let mut state = self.state.write().await;
-        state.loop_sequence_id = None;
-        self.reset_loop_playback_timing();
-    }
-
-    pub fn reset_loop_playback_timing(&self) {
-        if let Ok(mut g) = self.loop_playback_timing.write() {
-            *g = LoopPlaybackTiming::default();
-        }
-    }
-
-    pub fn record_loop_raw_tick(&self, raw: Duration) {
-        if let Ok(mut w) = self.loop_raw_elapsed_tick.write() {
-            *w = raw;
-        }
-    }
-
-    pub fn sequence_elapsed_for_loop(&self, raw: Duration) -> Duration {
-        let Ok(g) = self.loop_playback_timing.read() else {
-            return raw;
-        };
-        if g.paused {
-            g.frozen_effective
-        } else {
-            raw.saturating_sub(g.skew)
-        }
-    }
-
-    pub fn pause_loop_playback(&self) {
-        let raw = self
-            .loop_raw_elapsed_tick
+    pub fn device(&self, device_id: &str) -> Result<Arc<DeviceSlot>, String> {
+        self.slots
             .read()
-            .map(|r| *r)
-            .unwrap_or_else(|e| *e.into_inner());
-        if let Ok(mut g) = self.loop_playback_timing.write() {
-            let eff = raw.saturating_sub(g.skew);
-            g.frozen_effective = eff;
-            g.paused = true;
-        }
+            .map_err(|_| "slots lock poisoned".to_string())?
+            .get(device_id)
+            .cloned()
+            .ok_or_else(|| format!("unknown device: {device_id}"))
     }
 
-    pub fn resume_loop_playback(&self) {
-        let raw = self
-            .loop_raw_elapsed_tick
-            .read()
-            .map(|r| *r)
-            .unwrap_or_else(|e| *e.into_inner());
-        if let Ok(mut g) = self.loop_playback_timing.write() {
-            if !g.paused {
-                return;
-            }
-            g.skew = raw.saturating_sub(g.frozen_effective);
-            g.paused = false;
-        }
-    }
-
-    pub fn loop_playback_paused(&self) -> bool {
-        self.loop_playback_timing
+    pub fn devices_ordered(&self) -> Vec<Arc<DeviceSlot>> {
+        let order = self
+            .device_order
             .read()
             .ok()
-            .map(|g| g.paused)
-            .unwrap_or(false)
+            .map(|o| o.clone())
+            .unwrap_or_default();
+        let slots = self.slots.read().ok();
+        order
+            .into_iter()
+            .filter_map(|id| slots.as_ref().and_then(|m| m.get(&id).cloned()))
+            .collect()
     }
 
-    pub async fn set_output_target_addr(&self, addr: String) {
-        let mut state = self.state.write().await;
-        state.output_target_addr = Some(addr);
+    pub fn registry_snapshot(&self) -> Result<DeviceRegistry, String> {
+        self.registry
+            .read()
+            .map_err(|_| "registry lock poisoned".to_string())
+            .map(|g| g.clone())
     }
 
-    pub fn interactive_default_effect(&self) -> InteractiveEffectKind {
-        InteractiveEffectKind::from_code(self.interactive_default_effect.load(Ordering::Relaxed))
-    }
-
-    pub fn set_interactive_default_effect(&self, e: InteractiveEffectKind) {
-        self.interactive_default_effect
-            .store(e.code(), Ordering::Relaxed);
-    }
-
-    pub fn set_interactive_solid_rgb(&self, rgb: Option<[u8; 3]>) {
-        if let Ok(mut g) = self.interactive_solid.write() {
-            *g = rgb;
-        }
-        self.bump_output_send_epoch();
-    }
-
-    /// `interactive` のベース（`None` は全 LED 0）。
-    pub fn fill_interactive_base(&self, rgb: &mut [u8]) {
-        let solid = self.interactive_solid.read().ok().and_then(|g| *g);
-        if let Some([r, g_ch, b]) = solid {
-            for px in rgb.chunks_exact_mut(3) {
-                px[0] = r;
-                px[1] = g_ch;
-                px[2] = b;
-            }
-        } else {
-            rgb.fill(0);
-        }
-    }
-
-    /// インタラクティブ用 UV テーブルを読み込む（同一 `layout_id` / LED 数なら再読み込みしない）。
-    pub fn ensure_interactive_uv(&self, layout_id: &str, led_count: usize) -> anyhow::Result<()> {
-        if let (Ok(uv_g), Ok(id_g)) = (
-            self.interactive_uv.read(),
-            self.interactive_uv_layout_id.read(),
-        ) {
-            if let (Some(v), Some(id)) = (uv_g.as_ref(), id_g.as_deref()) {
-                if id == layout_id && v.len() == led_count {
-                    return Ok(());
-                }
-            }
-        }
-        let layout = media::load_layout_uv(&self.compiled_dir, layout_id)?;
-        if layout.led_count != led_count {
-            anyhow::bail!(
-                "ledmap ledCount {} != runtime {}",
-                layout.led_count,
-                led_count
-            );
-        }
-        let mut table = vec![(0.5f32, 0.5f32); led_count];
-        for p in layout.leds {
-            if p.i < table.len() {
-                table[p.i] = (p.u, p.v);
-            }
-        }
-        let mut slot = self
-            .interactive_uv
-            .write()
-            .map_err(|e| anyhow::anyhow!("interactive_uv lock poisoned: {e}"))?;
-        *slot = Some(table);
-        let mut id_slot = self
-            .interactive_uv_layout_id
-            .write()
-            .map_err(|e| anyhow::anyhow!("interactive_uv_layout_id lock poisoned: {e}"))?;
-        *id_slot = Some(layout_id.to_string());
-        Ok(())
-    }
-
-    pub fn master_brightness(&self) -> f32 {
-        f32::from_bits(self.master_brightness_bits.load(Ordering::Relaxed))
-    }
-
-    pub fn master_gamma(&self) -> f32 {
-        f32::from_bits(self.master_gamma_bits.load(Ordering::Relaxed))
-    }
-
-    pub fn set_master_tone(&self, brightness: f32, gamma: f32) {
-        let b = brightness.clamp(0.0, 2.0);
-        let g = gamma.clamp(0.45, 3.5);
-        self.master_brightness_bits
-            .store(f32::to_bits(b), Ordering::Relaxed);
-        self.master_gamma_bits
-            .store(f32::to_bits(g), Ordering::Relaxed);
-        self.bump_output_send_epoch();
-    }
-
-    pub fn push_interactive_pulse(&self, pulse: InteractivePulse) {
-        let Ok(mut g) = self.interactive_pulses.write() else {
-            return;
-        };
-        g.push(pulse);
-        while g.len() > MAX_INTERACTIVE_PULSES {
-            g.remove(0);
-        }
-    }
-
-    pub fn clear_expired_interactive_pulses(&self) {
-        let Ok(mut g) = self.interactive_pulses.write() else {
-            return;
-        };
-        let now = Instant::now();
-        g.retain(|p| now < p.started + p.duration);
-    }
-
-    pub fn mate_apply_json(&self, v: &serde_json::Value) -> Result<(), String> {
+    pub fn with_registry_mut<F, T>(&self, f: F) -> Result<T, String>
+    where
+        F: FnOnce(&mut DeviceRegistry) -> Result<T, anyhow::Error>,
+    {
         let mut g = self
-            .mate_state
+            .registry
             .write()
-            .map_err(|_| "mate_state lock poisoned".to_string())?;
-        g.apply_json_patch(v)
+            .map_err(|_| "registry lock poisoned".to_string())?;
+        f(&mut g).map_err(|e| e.to_string())
     }
 
-    pub fn mate_summary(&self) -> mate::MateSummary {
-        self.mate_state
-            .read()
-            .ok()
-            .map(|g| g.summary())
-            .unwrap_or_else(|| MateState::default().summary())
+    pub fn upsert_device_slot(
+        &self,
+        rec: DeviceRecord,
+        default_mode: &str,
+    ) -> Result<(), String> {
+        let slot = DeviceSlot::from_record(rec.clone(), default_mode, &self.compiled_dir)
+            .map_err(|e| e.to_string())?;
+        let mut slots = self
+            .slots
+            .write()
+            .map_err(|_| "slots lock poisoned".to_string())?;
+        let mut order = self
+            .device_order
+            .write()
+            .map_err(|_| "slots lock poisoned".to_string())?;
+        if !order.iter().any(|id| id == &rec.id) {
+            order.push(rec.id.clone());
+        }
+        slots.insert(rec.id.clone(), slot);
+        Ok(())
     }
+
+    pub fn remove_device_slot(&self, id: &str) -> Result<(), String> {
+        let mut slots = self
+            .slots
+            .write()
+            .map_err(|_| "slots lock poisoned".to_string())?;
+        let mut order = self
+            .device_order
+            .write()
+            .map_err(|_| "slots lock poisoned".to_string())?;
+        if !slots.contains_key(id) {
+            return Err(format!("unknown device: {id}"));
+        }
+        slots.remove(id);
+        order.retain(|x| x != id);
+        if self.default_device_id == id {
+            if let Some(next) = order.first() {
+                // default_device_id is not interior-mutable; caller must handle via new_shared on restart
+                tracing::warn!(
+                    "removed default device {id}; restart recommended (next: {next})"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub fn find_device_by_status_ip(&self, ip: &str) -> Option<Arc<DeviceSlot>> {
+        for slot in self.devices_ordered() {
+            let rec = slot.record_snapshot();
+            if rec.esp_ip_host() == Some(ip) {
+                return Some(slot);
+            }
+        }
+        for slot in self.devices_ordered() {
+            let matched = {
+                let Ok(st) = slot.state.try_read() else {
+                    continue;
+                };
+                st.output_target_addr.as_deref().map(extract_ip).as_deref() == Some(ip)
+                    || st.esp_status_addr.as_deref().map(extract_ip).as_deref() == Some(ip)
+            };
+            if matched {
+                return Some(slot);
+            }
+        }
+        None
+    }
+}
+
+fn extract_ip(addr: &str) -> String {
+    addr.split(':').next().unwrap_or(addr).to_string()
 }

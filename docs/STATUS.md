@@ -2,7 +2,7 @@
 
 > **役割:** 本書は「いま何ができていて、次に何をやるか」の**正本**。
 > 設計の「あるべき姿」は [`ARCHITECTURE.md`](ARCHITECTURE.md)、各仕様は [`../protocol/`](../protocol/)。
-> 最終更新: 2026-06-15（相棒 `mate` モード・`POST /api/v1/mate/state`・WS `mate`・Studio Mate タブ）
+> 最終更新: 2026-06-17（Mate 製品 1260 LED 顔リデザイン・`faceAngularRadiusDeg` 等）
 
 ---
 
@@ -11,7 +11,7 @@
 | 指標 | 現在地 |
 |------|--------|
 | フェーズ | **Phase 2（静止画→シーケンス最小パイプライン実装中）** |
-| ランタイム | loop パターン / 選択シーケンス再生 + 状態 API。`cargo test` **13** 件パス |
+| ランタイム | loop パターン / 選択シーケンス再生 + 状態 API。`cargo test` **16** 件パス |
 | ファーム | UDP 受信・フレーム再構成・S3(NeoPixelBus LCD)/無印(NeoPixelBus I2S0) ドライバ実装済。欠落時は前フレーム保持 + プレイアウト遅延 |
 | UDP E2E | ESP32 **無印**で 60fps×5 分ベンチ通過、ちらつき解消を確認（記録: [`BENCHMARK.md`](BENCHMARK.md)）。**ESP32-S3 本番ボードでは未再計測** |
 | Web | **Glowbe Studio**（Loop / Interactive / Idle / **Mate**・状態/モード・シーケンス表示名・ZIP/画像アップロード・**UV 散布プレビュー**） |
@@ -70,7 +70,7 @@
 |--------|-----|------|
 | ループ再生 | `loop` | 🟡 シーケンス未選択時は内蔵テストパターン（`pattern.rs`）。色相は **`ledmap` の (u,v)**（欠落時はワイヤ順フォールバック） |
 | インタラクティブ（消灯＋WS） | `interactive` | ✅ 消灯出力＋WS `interactive` でパルス合成。エフェクト: `sphereGaussian` / `expandingRingDiagonal`（既定 `expandingRingDiagonal`）。`loop` では WS 合成は拒否 |
-| 相棒（球面顔） | `mate` | ✅ 黒ベース＋`mate.rs` の SDF 顔。`POST /api/v1/mate/state` と WS `mate`。設計 [`MATE-MODE.md`](MATE-MODE.md) |
+| 相棒（球面顔） | `mate` | ✅ 製品 1260 LED 向け顔キャンバス（α=58°）＋白目/瞳/眉/頬/口 SDF（`mate.rs`）。`POST /api/v1/mate/state` と WS `mate`。設計 [`MATE-MODE.md`](MATE-MODE.md) |
 | デジタル時計 | `clock_digital` | ⬜ Phase 4a（ロードマップ分割後） |
 | アナログ時計 | `clock_analog` | ⬜ Phase 4a |
 | サーバマイク | `mic` | ⬜ Phase 4b |

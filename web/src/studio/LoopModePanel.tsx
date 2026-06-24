@@ -284,13 +284,18 @@ export function LoopModePanel({
     mediaUploadBusy,
     mediaConvertBusy,
     sequenceBusy,
+    activeDeviceId,
   } = useGlowbeRuntime()
   const playingSequenceId = state.mode === 'loop' ? state.loopSequenceId : null
   const { uv, uvError, uvLoading } = useLayoutUv(state.layoutId, state.ledCount)
   const showSourcePreview =
     state.mode === 'loop' && playingSequenceId != null && state.loopSourceFrame != null
   const ledPreviewStream = Boolean(showSourcePreview && uv && !uvError)
-  const { liveRgbBuf, liveRgbRevision } = useGlowbeStandaloneLedPreview(ledPreviewStream, state.ledCount)
+  const { liveRgbBuf, liveRgbRevision } = useGlowbeStandaloneLedPreview(
+    ledPreviewStream,
+    state.ledCount,
+    activeDeviceId,
+  )
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploadErr, setUploadErr] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)

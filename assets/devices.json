@@ -1,0 +1,18 @@
+{
+  "format": "glowbe-devices",
+  "version": 1,
+  "devices": [
+    {
+      "id": "019ef385-e1e2-7721-b76b-6e76dee2d308",
+      "displayName": "Proto-1",
+      "espIp": "192.168.0.58",
+      "layoutId": "prototype-icosahedron-15"
+    },
+    {
+      "id": "019ef385-e1e2-7721-b76b-6e8511ef406f",
+      "displayName": "Product-1",
+      "espIp": "192.168.0.59",
+      "layoutId": "product-geodesic-2v-60"
+    }
+  ]
+}

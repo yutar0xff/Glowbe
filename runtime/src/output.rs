@@ -7,6 +7,8 @@ use tokio::net::UdpSocket;
 use tracing::{debug, info, warn};
 
 use crate::config::Config;
+use crate::device_slot::DeviceSlot;
+use crate::devices::DeviceRecord;
 use crate::discover;
 use crate::mate;
 use crate::media;
@@ -17,23 +19,57 @@ use crate::state::{
 };
 use crate::wire;
 
-async fn resolve_esp_socket(config: &Config) -> Result<SocketAddr> {
-    if let Some(host) = config.device.esp_ip_host() {
+async fn resolve_esp_socket(config: &Config, record: &DeviceRecord) -> Result<SocketAddr> {
+    if let Some(host) = record.esp_ip_host() {
         let addr: SocketAddr = format!("{}:{}", host, config.output.udp_port)
             .parse()
             .with_context(|| {
                 format!(
-                    "invalid device.esp_ip / port: {host}:{}",
+                    "invalid esp_ip / port: {host}:{}",
                     config.output.udp_port
                 )
             })?;
         return Ok(addr);
     }
+    if let Some(hostname) = record.mdns_host() {
+        let found = tokio::task::spawn_blocking({
+            let hostname = hostname.to_string();
+            move || {
+                discover::glowbe_udp_all(Duration::from_secs(8))
+                    .into_iter()
+                    .find(|s| s.hostname == hostname)
+                    .map(|s| s.addr)
+            }
+        })
+        .await
+        .context("mDNS task join")?;
+        if let Some(addr) = found {
+            return Ok(addr);
+        }
+        anyhow::bail!("mDNS: no service for hostname {hostname}");
+    }
     let found = tokio::task::spawn_blocking(discover::glowbe_udp_first_ipv4)
         .await
         .context("mDNS task join")?
-        .context("mDNS: no _glowbe._udp service resolved (is ESP on same LAN?)")?;
+        .context("mDNS: no _glowbe._udp service resolved (set espIp or mdnsHostname)")?;
     Ok(found)
+}
+
+async fn wire_frame_id_baseline(slot: &DeviceSlot) -> u32 {
+    for _ in 0..30 {
+        {
+            let s = slot.state.read().await;
+            if let Some(n) = s.esp_frames_complete {
+                return DeviceSlot::wire_frame_id_from_status(Some(n));
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    0
+}
+
+fn frame_id_before(a: u32, b: u32) -> bool {
+    a != b && (a.wrapping_sub(b) as i32) < 0
 }
 
 async fn send_link_mode(sock: &UdpSocket, active: bool) {
@@ -47,13 +83,39 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
     let status_port = config.output.status_port;
     tokio::spawn(status_listener(status_port, app.clone()));
 
+    let slots = app.devices_ordered();
+    if slots.is_empty() {
+        anyhow::bail!("no devices registered");
+    }
+    let mut handles = Vec::new();
+    for slot in slots {
+        let cfg = config.clone();
+        let app2 = app.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = device_output_loop(cfg, app2, slot).await {
+                tracing::error!("device output loop ended: {e:#}");
+            }
+        }));
+    }
+    for h in handles {
+        let _ = h.await;
+    }
+    Ok(())
+}
+
+async fn device_output_loop(
+    config: Config,
+    app: SharedState,
+    slot: std::sync::Arc<DeviceSlot>,
+) -> Result<()> {
+    let device_id = slot.id();
     let frame_interval = Duration::from_secs_f64(1.0 / config.output.target_fps as f64);
-    let mut frame_id = 0u32;
+    let mut frame_id;
     let loop_start = Instant::now();
     let mut reconnect_backoff = Duration::from_millis(500);
 
     let (mut led_count, mut rgb) = {
-        let s = app.state.read().await;
+        let s = slot.state.read().await;
         let lc = s.led_count;
         (lc, vec![0u8; lc as usize * 3])
     };
@@ -61,10 +123,11 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
     let mut pattern_layout_cache: Option<String> = None;
 
     loop {
-        let esp_addr = match resolve_esp_socket(&config).await {
+        let record = slot.record_snapshot();
+        let esp_addr = match resolve_esp_socket(&config, &record).await {
             Ok(a) => a,
             Err(e) => {
-                warn!("resolve ESP: {e:#}; retry in 2s");
+                warn!("device {device_id}: resolve ESP: {e:#}; retry in 2s");
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 continue;
             }
@@ -73,26 +136,30 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
         let sock = match UdpSocket::bind("0.0.0.0:0").await {
             Ok(s) => s,
             Err(e) => {
-                warn!("udp bind 0.0.0.0:0 failed: {e}; retry");
+                warn!("device {device_id}: udp bind failed: {e}; retry");
                 tokio::time::sleep(reconnect_backoff).await;
                 continue;
             }
         };
         if let Err(e) = sock.connect(esp_addr).await {
-            warn!("udp connect {esp_addr} failed: {e}; retry");
+            warn!("device {device_id}: udp connect {esp_addr} failed: {e}; retry");
             tokio::time::sleep(reconnect_backoff).await;
             continue;
         }
 
+        frame_id = wire_frame_id_baseline(&slot).await;
         info!(
-            "output -> {} @ {} fps ({} LEDs)",
+            "device {device_id} output -> {} @ {} fps ({} LEDs, frame_id={frame_id})",
             esp_addr, config.output.target_fps, led_count
         );
-        app.set_output_target_addr(esp_addr.to_string()).await;
+        slot.set_output_target_addr(esp_addr.to_string()).await;
         reconnect_backoff = Duration::from_millis(500);
 
+        let session_esp_ip = record.esp_ip_host().map(str::to_string);
+        let session_mdns = record.mdns_host().map(str::to_string);
+
         let mut last_sent_rgb: Option<Vec<u8>> = None;
-        let mut last_send_epoch = app.output_send_epoch();
+        let mut last_send_epoch = slot.output_send_epoch();
         let mut force_sends_after_epoch: u8 = 0;
         let mut idle_link_economy_sent = false;
 
@@ -104,11 +171,20 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
 
         'session: loop {
             ticker.tick().await;
-            app.metrics.mark_tick();
-            app.clear_expired_interactive_pulses();
+
+            let rec = slot.record_snapshot();
+            let cur_ip = rec.esp_ip_host().map(str::to_string);
+            let cur_mdns = rec.mdns_host().map(str::to_string);
+            if cur_ip != session_esp_ip || cur_mdns != session_mdns {
+                warn!("device {device_id}: connection target changed; reconnecting");
+                break 'session;
+            }
+
+            slot.metrics.mark_tick();
+            slot.clear_expired_interactive_pulses();
 
             let (layout_id, lc) = {
-                let s = app.state.read().await;
+                let s = slot.state.read().await;
                 (s.layout_id.clone(), s.led_count)
             };
             if pattern_layout_cache.as_deref() != Some(layout_id.as_str()) || lc != led_count {
@@ -126,7 +202,7 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
                             }
                         }
                         info!(
-                            "loop test pattern: UV-driven hues from ledmap ({} / {} LEDs)",
+                            "device {device_id}: loop test pattern UV from ledmap ({} / {} LEDs)",
                             layout_id,
                             table.len()
                         );
@@ -134,16 +210,15 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
                     }
                     Ok(layout) => {
                         warn!(
-                            "ledmap led_count {} != runtime {}; loop test pattern uses chain fallback",
+                            "device {device_id}: ledmap led_count {} != runtime {}; chain fallback",
                             layout.led_count, led_count
                         );
                         None
                     }
                     Err(e) => {
                         warn!(
-                            "ledmap load failed for {} ({}); loop test pattern uses chain fallback: {e:#}",
-                            layout_id,
-                            app.compiled_dir.display()
+                            "device {device_id}: ledmap load failed for {}: {e:#}",
+                            layout_id
                         );
                         None
                     }
@@ -151,67 +226,73 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
             }
 
             let raw_elapsed = loop_start.elapsed();
-            app.record_loop_raw_tick(raw_elapsed);
-            let seq_elapsed = app.sequence_elapsed_for_loop(raw_elapsed);
+            slot.record_loop_raw_tick(raw_elapsed);
+            let seq_elapsed = slot.sequence_elapsed_for_loop(raw_elapsed);
             let t_ms = raw_elapsed.as_millis() as u32;
-            let output_mode = app.output_mode();
+            let output_mode = slot.output_mode();
             if output_mode != OutputMode::Idle {
                 idle_link_economy_sent = false;
             }
             match output_mode {
                 OutputMode::Idle => {
-                    app.metrics.set_loop_source_frame(None);
+                    slot.metrics.set_loop_source_frame(None);
                     rgb.fill(0);
                 }
                 OutputMode::Interactive => {
-                    app.metrics.set_loop_source_frame(None);
-                    app.fill_interactive_base(&mut rgb);
+                    slot.metrics.set_loop_source_frame(None);
+                    slot.fill_interactive_base(&mut rgb);
                 }
                 OutputMode::Loop => {
-                    if let Some(sequence) = app.selected_sequence() {
+                    if let Some(sequence) = slot.selected_sequence() {
                         match sequence.copy_frame_at(seq_elapsed, &mut rgb) {
                             Ok(()) => {
                                 let idx = sequence.frame_index_at(seq_elapsed) as u32;
-                                app.metrics.set_loop_source_frame(Some(idx));
+                                slot.metrics.set_loop_source_frame(Some(idx));
                             }
                             Err(e) => {
-                                app.metrics.set_loop_source_frame(None);
-                                warn!("sequence frame copy failed; falling back to pattern: {e:#}");
+                                slot.metrics.set_loop_source_frame(None);
+                                warn!("device {device_id}: sequence frame copy failed: {e:#}");
                                 pattern::fill_loop_rgb(t_ms, &mut rgb, pattern_uv.as_deref());
                             }
                         }
                     } else {
-                        app.metrics.set_loop_source_frame(None);
+                        slot.metrics.set_loop_source_frame(None);
                         pattern::fill_loop_rgb(t_ms, &mut rgb, pattern_uv.as_deref());
                     }
                 }
                 OutputMode::Mate => {
-                    app.metrics.set_loop_source_frame(None);
+                    slot.metrics.set_loop_source_frame(None);
                     let dt = frame_interval.as_secs_f32();
-                    mate::tick_and_render_mate(&app, loop_start, Instant::now(), dt, &mut rgb);
+                    mate::tick_and_render_mate(
+                        &slot,
+                        &app.compiled_dir,
+                        loop_start,
+                        Instant::now(),
+                        dt,
+                        &mut rgb,
+                    );
                 }
             }
 
             if output_mode == OutputMode::Interactive {
-                try_apply_interactive_overlay(&app, &mut rgb);
+                try_apply_interactive_overlay(&slot, &mut rgb);
             }
 
-            apply_master_tone(&app, &mut rgb);
+            apply_master_tone(&slot, &mut rgb);
 
-            let send_epoch = app.output_send_epoch();
+            let send_epoch = slot.output_send_epoch();
             if send_epoch != last_send_epoch {
                 last_send_epoch = send_epoch;
                 last_sent_rgb = None;
-                // プレイアウト遅延バッファ分 + 遅延 UDP 到着分を上書きする。
                 force_sends_after_epoch = 4;
                 idle_link_economy_sent = false;
                 send_link_mode(&sock, true).await;
             }
 
-            if let Ok(mut w) = app.preview_frame.try_write() {
+            if let Ok(mut w) = slot.preview_frame.try_write() {
                 if w.len() == rgb.len() {
                     w.copy_from_slice(&rgb);
-                    app.preview_seq.fetch_add(1, Ordering::Release);
+                    slot.preview_seq.fetch_add(1, Ordering::Release);
                 }
             }
 
@@ -220,7 +301,7 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
                 let mut full_send_ok = true;
                 for pkt in wire::encode_frame(led_count, frame_id, &rgb) {
                     if let Err(e) = sock.send(&pkt).await {
-                        warn!("udp send failed (dropping rest of frame): {e}");
+                        warn!("device {device_id}: udp send failed: {e}");
                         full_send_ok = false;
                         break;
                     }
@@ -229,14 +310,8 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
                 if full_send_ok {
                     consecutive_frame_failures = 0;
                     reconnect_backoff = Duration::from_millis(500);
-                    app.metrics.increment_frames_sent();
+                    slot.metrics.increment_frames_sent();
                     sent_window += 1;
-                    if window_start.elapsed() >= Duration::from_secs(1) {
-                        let fps = sent_window as f64 / window_start.elapsed().as_secs_f64();
-                        app.metrics.set_fps_out(fps);
-                        sent_window = 0;
-                        window_start = Instant::now();
-                    }
                     match &mut last_sent_rgb {
                         Some(buf) if buf.len() == rgb.len() => buf.copy_from_slice(&rgb),
                         _ => last_sent_rgb = Some(rgb.clone()),
@@ -248,13 +323,30 @@ pub async fn run(config: Config, app: SharedState) -> Result<()> {
                 } else {
                     consecutive_frame_failures += 1;
                     if consecutive_frame_failures >= 60 {
-                        warn!("udp: {consecutive_frame_failures} consecutive failed frames; reconnect");
+                        warn!("device {device_id}: udp failures; reconnect");
                         break 'session;
                     }
                 }
             } else if output_mode == OutputMode::Idle && !idle_link_economy_sent {
                 send_link_mode(&sock, false).await;
                 idle_link_economy_sent = true;
+            }
+
+            if window_start.elapsed() >= Duration::from_secs(1) {
+                let fps = if sent_window == 0 {
+                    0.0
+                } else {
+                    sent_window as f64 / window_start.elapsed().as_secs_f64()
+                };
+                slot.metrics.set_fps_out(fps);
+                sent_window = 0;
+                window_start = Instant::now();
+                if let Some(esp_fc) = slot.state.read().await.esp_frames_complete {
+                    let baseline = esp_fc.wrapping_add(1);
+                    if frame_id_before(frame_id, baseline) {
+                        frame_id = baseline;
+                    }
+                }
             }
         }
 
@@ -286,38 +378,47 @@ async fn status_listener(port: u16, app: SharedState) {
                         rssi = st.rssi,
                         layout_hash = ?st.layout_hash,
                     );
-                    let expected = app
-                        .expected_layout_hash
-                        .read()
-                        .ok()
-                        .and_then(|g| *g);
-                    let mismatch = match (expected, st.layout_hash) {
-                        (Some(exp), Some(esp_h)) if exp != esp_h => {
-                            warn!(
-                                esp_layout_hash = format!("0x{esp_h:08x}"),
-                                expected_layout_hash = format!("0x{exp:08x}"),
-                                "STATUS layout hash mismatch"
-                            );
-                            true
-                        }
-                        (Some(_), Some(_)) => false,
-                        (None, Some(esp_h)) => {
-                            debug!(
-                                esp_layout_hash = format!("0x{esp_h:08x}"),
-                                "runtime meta has no layoutHash; skipping mismatch check"
-                            );
-                            false
-                        }
-                        _ => false,
-                    };
-
-                    let mut s = app.state.write().await;
-                    s.fps_rx = Some(st.fps_rx());
-                    s.esp_frames_complete = Some(st.frames_complete);
-                    s.esp_rssi = Some(st.rssi);
-                    s.esp_drops = Some(st.drops);
-                    s.esp_status_addr = Some(from.to_string());
-                    s.layout_mismatch = mismatch;
+                    let from_ip = from.ip().to_string();
+                    if let Some(slot) = app.find_device_by_status_ip(&from_ip) {
+                        let expected = slot
+                            .expected_layout_hash
+                            .read()
+                            .ok()
+                            .and_then(|g| *g);
+                        let mismatch = match (expected, st.layout_hash) {
+                            (Some(exp), Some(esp_h)) if exp != esp_h => {
+                                warn!(
+                                    device = %slot.id(),
+                                    esp_layout_hash = format!("0x{esp_h:08x}"),
+                                    expected_layout_hash = format!("0x{exp:08x}"),
+                                    "STATUS layout hash mismatch (flash firmware for this layout)"
+                                );
+                                true
+                            }
+                            (Some(exp), None) => {
+                                warn!(
+                                    device = %slot.id(),
+                                    expected_layout_hash = format!("0x{exp:08x}"),
+                                    "STATUS has no layout hash; cannot verify firmware layout"
+                                );
+                                false
+                            }
+                            (Some(_), Some(_)) => false,
+                            (None, Some(esp_h)) => {
+                                debug!(
+                                    device = %slot.id(),
+                                    esp_layout_hash = format!("0x{esp_h:08x}"),
+                                    "runtime meta has no layoutHash; skipping mismatch check"
+                                );
+                                false
+                            }
+                            _ => false,
+                        };
+                        slot.apply_status(from.to_string(), &st, mismatch)
+                            .await;
+                    } else {
+                        debug!(from = %from, "STATUS from unregistered ESP");
+                    }
                 }
             }
             Err(e) => {
@@ -328,9 +429,9 @@ async fn status_listener(port: u16, app: SharedState) {
     }
 }
 
-fn try_apply_interactive_overlay(app: &SharedState, rgb: &mut [u8]) {
-    let uv_lock = app.interactive_uv.read().ok();
-    let pulse_lock = app.interactive_pulses.read().ok();
+fn try_apply_interactive_overlay(slot: &DeviceSlot, rgb: &mut [u8]) {
+    let uv_lock = slot.interactive_uv.read().ok();
+    let pulse_lock = slot.interactive_pulses.read().ok();
     let Some(uv) = uv_lock.as_ref().and_then(|g| g.as_ref()) else {
         return;
     };
@@ -412,9 +513,9 @@ fn linear_to_srgb_u8(l: f32) -> u8 {
     (s * 255.0).round().clamp(0.0, 255.0) as u8
 }
 
-fn apply_master_tone(app: &SharedState, rgb: &mut [u8]) {
-    let brightness = app.master_brightness();
-    let gamma = app.master_gamma().max(0.001);
+fn apply_master_tone(slot: &DeviceSlot, rgb: &mut [u8]) {
+    let brightness = slot.master_brightness();
+    let gamma = slot.master_gamma().max(0.001);
     for chunk in rgb.chunks_exact_mut(3) {
         for c in chunk.iter_mut() {
             let x = (*c as f32 / 255.0) * brightness;

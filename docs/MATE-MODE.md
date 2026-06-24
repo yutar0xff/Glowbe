@@ -1,6 +1,6 @@
 # Glowbe — 相棒（mate）モード設計
 
-> **ステータス:** 設計ドラフト（2026-06-15）。本書は「あるべき姿」を記述する。
+> **ステータス:** 設計ドラフト（2026-06-15 起票、**2026-06-17** 製品 1260 LED 顔レンダラ反映）。本書は「あるべき姿」と実装の対応を記述する。
 > **範囲:** 球面ネイティブな「液体的に動く顔」を持つエージェントモードの初期版（外部統合なし）。顔パーツ・表現プリセット・呼吸・徘徊などをサーバ側で生成し、Web のボタン／スライダーで制御する。
 > **実装状況の正本:** [`STATUS.md`](STATUS.md)
 > **上位設計:** [`ARCHITECTURE.md`](ARCHITECTURE.md)（§9 サーバーモード）
@@ -67,7 +67,7 @@ StackChan の顔は M5Stack 用ライブラリ [`m5stack-avatar`](https://github
 
 | 前提 | StackChan | Glowbe | 帰結 |
 |------|-----------|--------|------|
-| 面 | 320×240 平面 LCD | 低密度 LED 球体（〜225 LED、正距円筒 UV→球面） | 描画を球面 SDF + 加算発光へ作り直す |
+| 面 | 320×240 平面 LCD | LED 球体（製品 **`product-geodesic-2v-60`**：**1260 LED**、正距円筒 UV→球面） | 描画を球面 SDF + 加算発光へ作り直す |
 | 顔の場所 | 画面に固定 | **球面のどこにでも置け、移動する** | 顔を「球面上の向き」として持つ |
 | 視線 | 瞳だけ動く | 瞳＋**顔全体の migration** | 視線と位置の連続体を導入 |
 | 動きの質 | スプライト上書き（剛体的） | **液体的に揺れて追従** | 慣性・スプリング・二次運動を導入 |
@@ -166,7 +166,7 @@ squash  = 1 / sqrt(stretch)  // 直交方向
 | 3 | **全球変調** | `breath_amp`（全球の明滅）, `halo`（顔周囲の淡い暈し）, `aura_ripple`（顔から湧く波） | 興奮=全球が脈打つ / 眠気=沈む |
 | 4 | **運動の質感** | `stiffness/damping`(§3.3), `floatiness`, `tremor`(微振動) | nervous=細かく震える / sleepy=とろい |
 | 5 | **形態・トポロジー** | `eye_count`, `dissolve`（粒子化）, `melt`（垂れ下がり）, `elongation` | surprised=見開き＋伸長 / sad=melt |
-| 6 | **分布** | `cluster`(§3.4), `spread`（パーツ間隔）, `face_scale`（全体配置）, `parts_scale`（目・口の形状サイズ） | 集中=密集 / リラックス=広がる |
+| 6 | **分布** | `cluster`(§3.4), `eyeSpacing`, `faceAngularRadiusDeg`, `featureScale` | 集中=密集 / リラックス=広がる |
 
 > **方針:** 初期版は 1・2・3・4・6 を実装し、5（形態変化）は `eye_count` と弱い `melt` 程度に留め、`dissolve` 等は将来拡張に置く。だが**パラメータの器は最初から用意**し、プリセットで段階的に解放する。
 
@@ -299,79 +299,76 @@ fn approach(current: f32, target: f32, dt: f32, tau: f32) -> f32 {
 
 ## 9. 球面上の顔レンダリング
 
+**ターゲットレイアウト:** 製品 `product-geodesic-2v-60`（21×60 = **1260 LED**）。パーツ配置領域の半開角 **58°**（球面の約 1/4）を既定とする。**顔全体の塗りつぶしは行わず、目・眉・口・頬などパーツのみ点灯**する。
+
 ### 9.1 座標と評価
 
 - 既存 [`runtime/src/sphere.rs`](../runtime/src/sphere.rs) の `unit_dir_from_equirect_uv_y_up(u,v)` で各 LED を方向ベクトル化。LED 順 UV テーブルは `interactive` と同じ **`SharedApp::interactive_uv`（`ensure_interactive_uv`）** を流用。
-- 各方向を §3.1 のとおり `q_face` で顔ローカルへ変換、前面（`n_local.z>0`）のみ立体射影で `(s,t)` を得て評価。背面はベース（黒＋任意の弱いアンビエント）。
+- 各方向を §3.1 のとおり `q_face` で顔ローカルへ変換。前面（`n_local.z > 0`）のみ評価。
+- 顔法線からの大円角距離 `θ` でパーツ評価領域をクリップ（`θ < faceAngularRadiusDeg`）。立体射影半径は `layout = tan(α/2)`（`α` = 半開角）。
+- 正規化接平面座標 `(nx, ny) = (s,t) / layout` 上でパーツ SDF を評価。
 
-### 9.2 パーツ SDF
+### 9.2 パーツ SDF（実装済み）
 
-`(s,t)`（さらに §3 のトレイル/スカッシュ/クラスタ変位を適用後）でパーツを SDF 評価し、`smoothstep` で発光強度へ（低密度でも境界が滑らか）。
-
-| パーツ | 形状 | 主パラメータ |
+| レイヤ | 形状 | 主パラメータ |
 |--------|------|--------------|
-| 目（左/右） | 楕円。`eye_curve` で上弧/下弧クリップ。瞳に視線残差オフセット | `eye_open`, `eye_curve`, `cluster` |
-| 眉（任意） | カプセル（線分） | `brow_angle/raise` |
-| 口 | 角を `mouth_curve` で曲げた横カプセル。`mouth_open` で縦に開く | `mouth_width/open/curve` |
-| 全球変調 | 顔と無関係に球全体へ作用 | `breath_amp`, `halo`, `aura_ripple` |
+| 白目（左/右） | 楕円。`eye_curve` で弧を変形 | `eye_open`, `featureScale`, `eyeSpacing` |
+| 瞳 + ハイライト | 円 + 小ハイライト点 | 視線 `g_local` オフセット、`gaze_pull` |
+| 眉 | カプセル（線分） | `eye_curve` 連動の傾き |
+| 頬 | 目下のソフト楕円 | 表情 `cheek_flush`（`happy` / `playful`） |
+| 口 | 横カプセル + `mouth_curve` | `mouth_width/open/curve` |
+
+未実装（将来）: `halo`, `aura_ripple` などの全球変調。
 
 ### 9.3 合成（加算発光）
 
-- パーツ発光 `× color` を**線形光バッファに加算** → sRGB エンコード → クリップ。既存 `interactive` の混色（`blend_interactive_accum` 相当）と同方式で、重なりが自然に飽和。
-- `aura_ripple` は顔中心 `f̂` からの**大円角距離**で波を作る（`angle_rad_between_unit` 再利用）。`interactive` の輪波面評価を流用できる。
+- パーツ発光のみを**線形光バッファに加算** → sRGB エンコード → クリップ。背景は黒。
+- 製品向けフェザー: `max(2.5°, 0.45·√(4π/1260))` を立体射影へ換算。
 
-### 9.4 性能
+### 9.4 性能・検証
 
-- per-LED は「方向回転＋数パーツの SDF＋加算」。クォータニオン回転は LED 数ぶんだが軽量。tick 予算 < 2ms（[`ARCHITECTURE.md`](ARCHITECTURE.md) §16）に収まる見込み。
-- `sin/exp/slerp` 等はフレーム単位の少数回（パラメータ更新時）に限定し、per-LED ループ内は加減算・smoothstep 中心に保つ。
+- per-LED は方向回転＋数パーツ SDF＋加算。1260 LED で 60 fps 余裕。
+- `cargo test` `mate::tests::*` が product ledmap でパーツのみ点灯（**45–200 LED**）・片目白目 **≥20 LED** を検証。
 
 ---
 
 ## 10. パラメータモデル
 
-最終的にレンダラへ渡すのは確定済みの **`FaceParams`**。その上流に **`FaceFrame`（運動）** と **`MateState`（補間現在値・ムード・設定）** を置く。
+ランタイム実装（[`runtime/src/mate.rs`](../runtime/src/mate.rs)）では **`MateState`** が運動・補間・外観を一体で保持し、`render_mate_face` が毎フレーム RGB を生成する。
+
+### 10.1 外観（`appearance` / `MateSummary`）
+
+| フィールド | 型 | 既定（製品） | 意味 |
+|------------|-----|-------------|------|
+| `faceAngularRadiusDeg` | f32 | **58** | パーツ配置・クリップの球面半開角（度） |
+| `featureScale` | f32 | **0.32** | 目・眉・口の大きさ（顔半径比） |
+| `eyeSpacing` | f32 | **0.52** | 両目間隔（顔幅比） |
+| `brightness` | f32 | **0.92** | レンダラ輝度ゲイン |
+| `color` | `[u8;3]` | 表情依存 | 固定 tint（`useExpressionTint` で解除） |
+
+**非推奨（互換のみ）:** `faceScale`, `partsScale` — 送信時は上記へ変換される。
+
+### 10.2 運動・表情（抜粋）
 
 ```rust
-/// 顔の運動状態（球面上の向きと角速度）。
-pub struct FaceFrame {
-    pub q_face: Quat,          // 顔ローカル→世界
-    pub omega: [f32; 3],       // 角速度（液体感の源）
-}
-
-/// レンダラへ渡す確定パラメータ（全チャンネル）。
-pub struct FaceParams {
-    // 視線・配置
-    pub gaze_dir: [f32; 3], pub gaze_pull: f32, pub cluster: f32,
-    pub face_scale: f32, pub parts_scale: f32, pub elongation: f32,
-    // 目・眉・口
-    pub eye_open_l: f32, pub eye_open_r: f32, pub eye_curve: f32,
-    pub brow_angle: f32, pub brow_raise: f32, pub eye_count: u8,
-    pub mouth_open: f32, pub mouth_width: f32, pub mouth_curve: f32,
-    // 色・発光・全球
-    pub color: [u8; 3], pub temperature: f32, pub saturation: f32,
-    pub brightness: f32, pub glow_pulse: f32, pub breath_amp: f32,
-    pub halo: f32, pub aura_ripple: f32,
-    // 運動の質感・形態
-    pub tremor: f32, pub melt: f32, pub dissolve: f32,
-}
-
-/// 相棒モードの可変状態。WS/REST で更新、tick で積分。
 pub struct MateState {
-    pub frame: FaceFrame,
-    pub current: FaceParams,                 // 補間の現在値
-    pub expr_weights: Vec<(Expression, f32)>,// ブレンド対象と重み
+    pub expression: Expression,
     pub mood: Mood,
-    pub routine: IdleRoutine, pub idle_cfg: IdleCfg,
-    pub gaze_target: [f32; 3],               // サッケード/明示
-    pub auto: AutoFlags,                     // breath/blink/saccade/tremor/sway
-    pub dynamics: DynamicsCfg,               // stiffness/damping/floatiness/lag
-    pub rng: SmallRng,
-    pub next_blink_at: Instant, pub next_saccade_at: Instant,
-    // anchor・色など外観設定
+    pub routine: IdleRoutine,
+    pub gaze_u: f32, pub gaze_v: f32,
+    pub gaze_pull: f32, pub cluster: f32,
+    pub face_angular_radius_deg: f32,
+    pub feature_scale: f32,
+    pub eye_spacing: f32,
+    pub q_face: [f32; 4], pub omega: [f32; 3],
+    pub cur_eye_open: f32, pub cur_mouth_open: f32,
+    pub cur_cheek_flush: f32, /* … */
+    pub dynamics: DynamicsCfg,
+    pub auto: AutoFlags,
 }
 ```
 
-- 既存 `InteractivePulse` と違い**常時保持**。tick 内は積分のみ（重い処理なし）。
+設計上の `FaceParams` / `FaceFrame` 分割は将来の trait 化に向けた概念モデルとして §8 を参照。現行コードは `MateState` に集約されている。
 
 ---
 
@@ -428,7 +425,13 @@ apply_master_tone(&app, &mut rgb);                   // 最終段は全モード
   "gazePull": 0.8,                         // 0:瞳のみ / 1:顔ごと migrate
   "cluster": 0.6,                          // キョロキョロの偏り
   "dynamics": { "stiffness": 6.0, "damping": 0.7, "floatiness": 0.4, "trailLag": 0.3 },
-  "appearance": { "color": [200,240,255], "temperature": 0.2, "brightness": 0.9, "faceScale": 1.0, "partsScale": 1.0 },
+  "appearance": {
+    "color": [200, 240, 255],
+    "brightness": 0.92,
+    "faceAngularRadiusDeg": 58,
+    "featureScale": 0.32,
+    "eyeSpacing": 0.52
+  },
   "auto": { "breath": true, "blink": true, "saccade": true, "tremor": false }
 }
 ```
@@ -444,7 +447,7 @@ Client → Server: `{ type: "mate", action, ... }`
 | `setIdle` | `routine`, 経路パラメータ | 待機コレオ（orbit 等） |
 | `setGaze` | `u,v`（or 方向）, `gazePull`, `cluster` | 視線・顔移動・偏り |
 | `setDynamics` | `stiffness/damping/floatiness/trailLag` | 液体感のライブ調整 |
-| `setAppearance` | `color/temperature/brightness/faceScale/partsScale` | 外観 |
+| `setAppearance` | `color/brightness/faceAngularRadiusDeg/featureScale/eyeSpacing`（互換: `faceScale`/`partsScale`） | 外観 |
 | `setAuto` | `breath/blink/saccade/tremor` | 微動作トグル |
 | `setMouthOpen` | `value` | 口（将来 lip-sync） |
 | `blink` / `peek` | （ターゲット） | ワンショット動作 |
@@ -477,7 +480,7 @@ Server → Client は既存どおり `state`（1 秒周期）と `event_status`�
 | 表情 | `Expression`（8 種） | `Expression`（新 `mate.rs`） |
 | ムード | `Mood` | `Mood` |
 | 待機コレオ | `IdleRoutine` | `IdleRoutine` |
-| 顔運動/パラメータ | UI 状態 | `FaceFrame` / `FaceParams` / `MateState` |
+| 顔運動/パラメータ | `MateSummary`（`web/src/types.ts`） | `MateState` / `MateSummary`（`mate.rs`） |
 | ダイナミクス | `DynamicsCfg` | `DynamicsCfg` |
 | WS メッセージ | `{ type:'mate', action, ... }` | `handle_ws_text` の `"mate"` 分岐（`api.rs`） |
 
@@ -495,8 +498,9 @@ Web UI 文言は英語、Rust/ドキュメントは日本語という既存方�
 | **D. ムード＋待機コレオ** | ムード、`orbit/figure8/wander/...`、キョロキョロ、微動作 | 球面を一周する待機・覗き込みが自然に動く |
 | **E. Web パネル** | `MateModePanel`、WS 制御、ライブ調整、2D/3D プレビュー | ブラウザだけで表情・移動・液体感を操作・調整できる |
 | **F. 仕上げ** | 設定の外出し（データ駆動）、`state` 同期、単体テスト（幾何/補間） | `cargo test`・lint 通過、`STATUS.md` 反映 |
+| **G. 製品顔リデザイン** | 1260 LED 向け多層パーツ、角半径パラメータ、頬（パーツのみ点灯） | 実機/プレビューで目口が球 1/4 サイズ感で識別可能 |
 
-初期版（外部統合なし）の達成点は **E まで**。F は品質仕上げ。
+初期版（外部統合なし）の達成点は **E まで**。**G** は 2026-06-17 にコア実装済（`aura_ripple` 等は未着手）。
 
 ---
 
@@ -516,7 +520,7 @@ Web UI 文言は英語、Rust/ドキュメントは日本語という既存方�
 | # | 論点 | 備考 |
 |---|------|------|
 | 1 | `anchor`／顔の正面の既定向き | 設置向き・配線依存。レイアウトごとに既定を持つか |
-| 2 | 低密度 LED での視認性 | 225 LED で目・口・移動が読めるか実機確認。読めなければパーツ大型化・数を絞る |
+| 2 | 製品 1260 LED での視認性 | `faceAngularRadiusDeg=58`・多層 SDF で対応済。極寄り・斜めの実機確認を継続 |
 | 3 | クォータニオン依存の追加 | 軽量 quat を自前実装するか小クレート導入か（依存方針に従う） |
 | 4 | 液体感の既定値 | floaty すぎると酔う／硬すぎると機械的。ムード別プリセットで詰める |
 | 5 | `Mate` を `Mode` trait 化の起点にするか | trait 化（STATUS TODO #3）と同時だと綺麗。スコープ拡大に注意 |

@@ -4,6 +4,8 @@ import { MasterToneDrawer } from '@/components/MasterToneDrawer'
 import { StatusPill } from '@/components/StatusPill'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { StudioPage } from '@/studio/StudioPage'
+import { formatNumber } from '@/format'
+import { effectiveFpsOut, effectiveFpsRx } from '@/lib/metrics'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 export function AppLayout() {
@@ -19,6 +21,16 @@ export function AppLayout() {
     return 'ok'
   }, [load.kind, state])
 
+  const fpsLabel = useMemo(() => {
+    if (!state) return null
+    const out = effectiveFpsOut(state)
+    const rx = effectiveFpsRx(state)
+    if (rx !== null && rx > 0) {
+      return `FPS ${formatNumber(out)} / ${formatNumber(rx)}`
+    }
+    return `FPS ${formatNumber(out)}`
+  }, [state])
+
   return (
     <main className="relative min-h-screen bg-background bg-[radial-gradient(ellipse_80%_50%_at_20%_-10%,oklch(0.55_0.15_195/0.18),transparent),radial-gradient(ellipse_60%_40%_at_80%_0%,oklch(0.55_0.2_300/0.12),transparent)] pb-16 text-foreground">
       <div className="mx-auto w-full max-w-5xl px-4 pt-10 md:px-6 md:pt-14">
@@ -30,7 +42,13 @@ export function AppLayout() {
               Choose a mode, run your content, and watch health and metrics below.
             </p>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {fpsLabel ? (
+              <StatusPill
+                label={fpsLabel}
+                tone={state?.mode === 'idle' ? 'muted' : 'fps'}
+              />
+            ) : null}
             <StatusPill label={health?.ok ? 'health: ok' : 'health: stale/error'} tone={health?.ok ? 'ok' : 'bad'} />
             <StatusPill label={`runtime: ${runtimeTone}`} tone={runtimeTone} />
             {load.kind === 'ready' ? <MasterToneDrawer /> : null}

@@ -5,8 +5,16 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
-import type { LoadState, MediaUploadStatusPayload, OutputMode, RuntimeState } from '@/types'
-import { API_BASE, fetchState, POLL_MS } from '@/api'
+import type { DeviceCreateInput, DeviceRecord, LoadState, MediaUploadStatusPayload, OutputMode, RuntimeState } from '@/types'
+import {
+  API_BASE,
+  apiDeviceQuery,
+  fetchDevices,
+  fetchState,
+  POLL_MS,
+  readActiveDeviceFromUrl,
+  writeActiveDeviceToUrl,
+} from '@/api'
 import { GlowbeRuntimeContext } from '@/GlowbeRuntimeContext'
 
 async function readApiError(res: Response): Promise<string> {
@@ -22,6 +30,8 @@ async function readApiError(res: Response): Promise<string> {
 
 export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' })
+  const [activeDeviceId, setActiveDeviceId] = useState<string | null>(() => readActiveDeviceFromUrl())
+  const [devices, setDevices] = useState<DeviceRecord[]>([])
   const [modeBusy, setModeBusy] = useState<string | null>(null)
   const [sequenceBusy, setSequenceBusy] = useState<string | null>(null)
   const [layoutBusy, setLayoutBusy] = useState(false)
@@ -29,11 +39,33 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
   const [mediaUploadBusy, setMediaUploadBusy] = useState(false)
   const [mediaConvertBusy, setMediaConvertBusy] = useState(false)
 
+  const syncDevices = useCallback(async (signal: AbortSignal) => {
+    const list = await fetchDevices(signal)
+    setDevices(list.devices)
+    let id = activeDeviceId ?? readActiveDeviceFromUrl()
+    if (!id || !list.devices.some((d) => d.id === id)) {
+      id = list.defaultDeviceId
+      writeActiveDeviceToUrl(id)
+      setActiveDeviceId(id)
+    }
+    return id
+  }, [activeDeviceId])
+
+  const refreshDevices = useCallback(async () => {
+    const controller = new AbortController()
+    try {
+      await syncDevices(controller.signal)
+    } catch (err) {
+      console.warn('refreshDevices failed', err)
+    }
+  }, [syncDevices])
+
   const refreshLoad = useCallback(async () => {
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 3500)
     try {
-      const next = await fetchState(controller.signal)
+      const deviceId = await syncDevices(controller.signal)
+      const next = await fetchState(controller.signal, deviceId)
       setLoad(next)
     } catch (err) {
       setLoad({
@@ -44,6 +76,11 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     } finally {
       window.clearTimeout(timeout)
     }
+  }, [syncDevices])
+
+  const setActiveDevice = useCallback((deviceId: string) => {
+    writeActiveDeviceToUrl(deviceId)
+    setActiveDeviceId(deviceId)
   }, [])
 
   useEffect(() => {
@@ -54,7 +91,8 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), 3500)
       try {
-        const next = await fetchState(controller.signal)
+        const deviceId = await syncDevices(controller.signal)
+        const next = await fetchState(controller.signal, deviceId)
         if (active) setLoad(next)
       } catch (err) {
         if (active) {
@@ -76,14 +114,15 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       active = false
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [])
+  }, [activeDeviceId, syncDevices])
 
   const setDeviceLayout = useCallback(async (layoutId: string) => {
     setLayoutBusy(true)
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 3500)
     try {
-      const res = await fetch(`${API_BASE}/api/v1/device/layout`, {
+      const q = apiDeviceQuery(activeDeviceId)
+      const res = await fetch(`${API_BASE}/api/v1/device/layout${q}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ layoutId }),
@@ -119,14 +158,15 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(timeout)
       setLayoutBusy(false)
     }
-  }, [refreshLoad])
+  }, [refreshLoad, activeDeviceId])
 
   const setMode = useCallback(async (mode: OutputMode) => {
     setModeBusy(mode)
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 3500)
     try {
-      const res = await fetch(`${API_BASE}/api/v1/mode`, {
+      const q = apiDeviceQuery(activeDeviceId)
+      const res = await fetch(`${API_BASE}/api/v1/mode${q}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ mode }),
@@ -161,14 +201,15 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(timeout)
       setModeBusy(null)
     }
-  }, [])
+  }, [activeDeviceId])
 
   const clearLoopSelection = useCallback(async () => {
     setSequenceBusy('__clear__')
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 3500)
     try {
-      const res = await fetch(`${API_BASE}/api/v1/loop/clear-selection`, {
+      const q = apiDeviceQuery(activeDeviceId)
+      const res = await fetch(`${API_BASE}/api/v1/loop/clear-selection${q}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         signal: controller.signal,
@@ -198,13 +239,14 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(timeout)
       setSequenceBusy(null)
     }
-  }, [])
+  }, [activeDeviceId])
 
   const setLoopPlaybackPaused = useCallback(async (paused: boolean) => {
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 3500)
     try {
-      const res = await fetch(`${API_BASE}/api/v1/loop/pause`, {
+      const q = apiDeviceQuery(activeDeviceId)
+      const res = await fetch(`${API_BASE}/api/v1/loop/pause${q}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ paused }),
@@ -230,14 +272,15 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     } finally {
       window.clearTimeout(timeout)
     }
-  }, [])
+  }, [activeDeviceId])
 
   const selectSequence = useCallback(async (sequenceId: string) => {
     setSequenceBusy(sequenceId)
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 3500)
     try {
-      const res = await fetch(`${API_BASE}/api/v1/loop/select`, {
+      const q = apiDeviceQuery(activeDeviceId)
+      const res = await fetch(`${API_BASE}/api/v1/loop/select${q}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ sequenceId }),
@@ -268,14 +311,15 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(timeout)
       setSequenceBusy(null)
     }
-  }, [])
+  }, [activeDeviceId])
 
   const setMasterTone = useCallback(async (brightness: number, gamma: number) => {
     setMasterToneBusy(true)
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 3500)
     try {
-      const res = await fetch(`${API_BASE}/api/v1/master-tone`, {
+      const q = apiDeviceQuery(activeDeviceId)
+      const res = await fetch(`${API_BASE}/api/v1/master-tone${q}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ brightness, gamma }),
@@ -295,6 +339,47 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(timeout)
       setMasterToneBusy(false)
     }
+  }, [activeDeviceId])
+
+  const upsertDevice = useCallback(async (input: DeviceCreateInput) => {
+    const res = await fetch(`${API_BASE}/api/v1/devices`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        displayName: input.displayName,
+        espIp: input.espIp ?? null,
+        mdnsHostname: input.mdnsHostname ?? null,
+        layoutId: input.layoutId,
+      }),
+    })
+    if (!res.ok) throw new Error(await readApiError(res))
+    const list = (await res.json()) as { devices: DeviceRecord[]; createdDeviceId?: string }
+    setDevices(list.devices)
+    return list.createdDeviceId
+  }, [])
+
+  const updateDevice = useCallback(async (record: DeviceRecord) => {
+    const res = await fetch(`${API_BASE}/api/v1/devices/${encodeURIComponent(record.id)}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        displayName: record.displayName,
+        espIp: record.espIp ?? null,
+        mdnsHostname: record.mdnsHostname ?? null,
+        layoutId: record.layoutId,
+      }),
+    })
+    if (!res.ok) throw new Error(await readApiError(res))
+    const list = (await res.json()) as { devices: DeviceRecord[] }
+    setDevices(list.devices)
+    await refreshLoad()
+  }, [refreshLoad])
+
+  const deleteDevice = useCallback(async (deviceId: string) => {
+    const res = await fetch(`${API_BASE}/api/v1/devices/${encodeURIComponent(deviceId)}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok) throw new Error(await readApiError(res))
   }, [])
 
   const uploadMediaFile = useCallback(async (file: File) => {
@@ -418,6 +503,8 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       load,
+      activeDeviceId,
+      devices,
       modeBusy,
       sequenceBusy,
       layoutBusy,
@@ -435,9 +522,16 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       deleteSequence,
       setDeviceLayout,
       refreshLoad,
+      refreshDevices,
+      setActiveDevice,
+      upsertDevice,
+      updateDevice,
+      deleteDevice,
     }),
     [
       load,
+      activeDeviceId,
+      devices,
       modeBusy,
       sequenceBusy,
       layoutBusy,
@@ -455,6 +549,11 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       deleteSequence,
       setDeviceLayout,
       refreshLoad,
+      refreshDevices,
+      setActiveDevice,
+      upsertDevice,
+      updateDevice,
+      deleteDevice,
     ],
   )
 

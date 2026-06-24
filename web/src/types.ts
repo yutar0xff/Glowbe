@@ -16,8 +16,9 @@ export type MateSummary = {
   idleSpeed: number
   color: [number, number, number]
   brightness: number
-  faceScale: number
-  partsScale: number
+  faceAngularRadiusDeg: number
+  featureScale: number
+  eyeSpacing: number
   dynamics: MateDynamics
   autoBreath: boolean
   autoBlink: boolean
@@ -33,6 +34,7 @@ export type CompiledLayoutSummary = {
 }
 
 export type RuntimeState = {
+  deviceId: string
   layoutId: string
   mode: string
   fpsOut: number
@@ -107,3 +109,31 @@ export type LoadState =
 export type OutputMode = 'idle' | 'loop' | 'interactive' | 'mate'
 
 export type InteractiveEffectKind = 'sphereGaussian' | 'expandingRingDiagonal'
+
+export type DeviceRecord = {
+  id: string
+  displayName: string
+  espIp?: string | null
+  mdnsHostname?: string | null
+  layoutId: string
+}
+
+export type DiscoveredEsp = {
+  hostname: string
+  ipv4: string
+  port: number
+  registeredDeviceId?: string | null
+}
+
+export type DeviceListResponse = {
+  defaultDeviceId: string
+  devices: DeviceRecord[]
+  createdDeviceId?: string | null
+}
+
+export type DeviceCreateInput = {
+  displayName: string
+  espIp?: string | null
+  mdnsHostname?: string | null
+  layoutId: string
+}

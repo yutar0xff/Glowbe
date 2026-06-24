@@ -3,11 +3,11 @@ import type { OutputMode } from '@/types'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { DeviceManagerSection } from './DeviceManagerSection'
 import { IdleModePanel } from './IdleModePanel'
 import { InteractiveModePanel } from './InteractiveModePanel'
 import { LoopModePanel } from './LoopModePanel'
 import { MateModePanel } from './MateModePanel'
-import { LayoutPicker } from './LayoutPicker'
 import { StatusSection } from './StatusSection'
 
 const MODES: OutputMode[] = ['idle', 'loop', 'interactive', 'mate']
@@ -60,7 +60,7 @@ export function StudioPage() {
 
   return (
     <div className="flex flex-col gap-8 md:gap-10">
-      <LayoutPicker />
+      <DeviceManagerSection />
 
       <Tabs value={modeKey} onValueChange={pickMode} className="flex flex-col gap-0">
         <div className="space-y-4">

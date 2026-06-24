@@ -1,5 +1,7 @@
 mod api;
 mod config;
+mod device_slot;
+mod devices;
 mod discover;
 mod mate;
 mod media;
@@ -18,7 +20,8 @@ use anyhow::{Context, Result};
 use tokio::net::TcpListener;
 use tracing::info;
 
-use crate::state::{InteractiveEffectKind, InteractivePulse, new_shared, SharedState};
+use crate::devices::{devices_json_path, DeviceRegistry};
+use crate::state::{InteractiveEffectKind, InteractivePulse, new_shared};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -48,25 +51,18 @@ async fn main() -> Result<()> {
     let uploads_dir = uploads_dir(&config)?;
     std::fs::create_dir_all(&uploads_dir)
         .with_context(|| format!("create uploads dir {}", uploads_dir.display()))?;
-    let meta_path = compiled_dir.join(format!("{}.meta.json", config.device.layout_id));
-    let meta_raw = std::fs::read_to_string(&meta_path)
-        .with_context(|| format!("read {}", meta_path.display()))?;
-    let meta: serde_json::Value = serde_json::from_str(&meta_raw).context("parse meta json")?;
-    let led_count = meta["ledCount"].as_u64().context("ledCount")? as u16;
-    let expected_layout_hash = meta
-        .get("layoutHash")
-        .and_then(|v| v.as_u64())
-        .map(|x| x as u32);
+    let devices_path = devices_json_path(&config).context("devices path")?;
+    let registry =
+        DeviceRegistry::load_or_seed(devices_path, &config, &compiled_dir).context("devices")?;
 
-    let app: SharedState = new_shared(
-        config.device.layout_id.clone(),
-        led_count,
-        config.modes.default.clone(),
-        expected_layout_hash,
+    let app = new_shared(
+        registry,
+        &config.modes.default,
         compiled_dir.clone(),
         sequences_dir,
         uploads_dir,
-    );
+    )
+    .context("init shared state")?;
 
     let bind: SocketAddr = config.server.bind.parse().context("server.bind")?;
     let router = api::router(app.clone());

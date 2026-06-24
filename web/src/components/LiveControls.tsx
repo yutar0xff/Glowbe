@@ -8,6 +8,7 @@ import { Loader2, Wifi } from 'lucide-react'
 import type { InteractiveEffectKind } from '@/types'
 import { resolveGlowbeWsUrl } from '@/api'
 import { parsePreviewRgbFrame } from '@/lib/preview-frame'
+import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { useLayoutUv } from '@/hooks/use-layout-uv'
 import { LayoutUvSheet, type TapUvHighlight } from '@/components/LayoutUvMap'
 import { LayoutUvSphereCanvas } from '@/components/LayoutUvSphereCanvas'
@@ -50,6 +51,7 @@ export function LiveControls({
   ledCount: number
   outputMode: string
 }) {
+  const { activeDeviceId } = useGlowbeRuntime()
   const { uv, uvError, uvLoading } = useLayoutUv(layoutId, ledCount)
   const [wsPhase, setWsPhase] = useState<'idle' | 'connecting' | 'open' | 'closed'>('idle')
   const [lastWsNote, setLastWsNote] = useState<string | null>(null)
@@ -77,7 +79,7 @@ export function LiveControls({
         reconnectTimer.current = undefined
       }
       wsRef.current?.close()
-      const url = resolveGlowbeWsUrl()
+      const url = resolveGlowbeWsUrl(activeDeviceId)
       setWsPhase('connecting')
       const ws = new WebSocket(url)
       ws.binaryType = 'arraybuffer'
@@ -128,7 +130,7 @@ export function LiveControls({
       }
     }
     openWebSocket()
-  }, [ledCount])
+  }, [ledCount, activeDeviceId])
 
   useEffect(() => {
     mountedRef.current = true

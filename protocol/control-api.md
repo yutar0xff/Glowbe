@@ -73,7 +73,14 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
   "gazePull": 0.55,
   "cluster": 0.15,
   "dynamics": { "stiffness": 6.0, "damping": 0.72, "floatiness": 0.35, "trailLag": 0.28 },
-  "appearance": { "color": [200, 240, 255], "brightness": 1.0, "faceScale": 1.0, "partsScale": 1.0, "useExpressionTint": true },
+  "appearance": {
+    "color": [200, 240, 255],
+    "brightness": 0.92,
+    "faceAngularRadiusDeg": 58,
+    "featureScale": 0.32,
+    "eyeSpacing": 0.52,
+    "useExpressionTint": true
+  },
   "auto": { "breath": true, "blink": true, "saccade": true, "tremor": false },
   "mouthOpen": 0.2,
   "clearMouthOpen": true,
@@ -260,7 +267,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 { "type": "mate", "action": "setGaze", "u": 0.42, "v": 0.71, "gazePull": 0.6 }
 { "type": "mate", "action": "setDynamics", "stiffness": 8.0, "damping": 0.65 }
 { "type": "mate", "action": "setAppearance", "color": [255, 200, 220], "brightness": 0.95 }
-{ "type": "mate", "action": "setAppearance", "faceScale": 2.5, "partsScale": 1.2 }
+{ "type": "mate", "action": "setAppearance", "faceAngularRadiusDeg": 58, "featureScale": 0.32, "eyeSpacing": 0.52 }
 { "type": "mate", "action": "clearMouthOpen" }
 ```
 
