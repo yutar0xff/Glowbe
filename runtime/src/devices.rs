@@ -9,12 +9,11 @@ use serde::{Deserialize, Serialize};
 use uuid::{Uuid, Version};
 
 use crate::config::Config;
+use crate::master_tone::{clamp_brightness, clamp_gamma};
+
+pub use crate::master_tone::{DEFAULT_MASTER_BRIGHTNESS, DEFAULT_MASTER_GAMMA};
 
 pub const DEFAULT_OUTPUT_FPS: u32 = 120;
-pub const DEFAULT_MASTER_BRIGHTNESS: f64 = 1.0;
-pub const DEFAULT_MASTER_GAMMA: f64 = 1.0;
-pub const MIN_MASTER_GAMMA: f64 = 0.45;
-pub const MAX_MASTER_GAMMA: f64 = 3.5;
 
 /// 新規デバイス用の UUID v7（時系列ソート可能）。
 pub fn new_device_id() -> String {
@@ -98,10 +97,8 @@ fn default_master_gamma() -> f64 {
 }
 
 fn clamp_master_tone(rec: &mut DeviceRecord) {
-    rec.master_brightness = rec.master_brightness.clamp(0.0, 1.0);
-    rec.master_gamma = rec
-        .master_gamma
-        .clamp(MIN_MASTER_GAMMA, MAX_MASTER_GAMMA);
+    rec.master_brightness = clamp_brightness(rec.master_brightness);
+    rec.master_gamma = clamp_gamma(rec.master_gamma);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,8 +233,8 @@ impl DeviceRegistry {
             .iter()
             .position(|d| d.id == id)
             .ok_or_else(|| anyhow::anyhow!("device not found: {id}"))?;
-        self.devices[pos].master_brightness = brightness.clamp(0.0, 1.0);
-        self.devices[pos].master_gamma = gamma.clamp(MIN_MASTER_GAMMA, MAX_MASTER_GAMMA);
+        self.devices[pos].master_brightness = clamp_brightness(brightness);
+        self.devices[pos].master_gamma = clamp_gamma(gamma);
         self.save()
     }
 

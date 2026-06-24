@@ -4,6 +4,7 @@ mod device_slot;
 mod devices;
 mod discover;
 mod mate;
+mod master_tone;
 mod media;
 mod metrics;
 mod output;

@@ -62,11 +62,8 @@ impl DeviceSlot {
         } else {
             record.display_name.clone()
         };
-        let brightness = record.master_brightness.clamp(0.0, 1.0) as f32;
-        let gamma = record
-            .master_gamma
-            .clamp(crate::devices::MIN_MASTER_GAMMA, crate::devices::MAX_MASTER_GAMMA)
-            as f32;
+        let brightness = crate::master_tone::clamp_brightness_f32(record.master_brightness as f32);
+        let gamma = crate::master_tone::clamp_gamma_f32(record.master_gamma as f32);
         Ok(Arc::new(Self {
             record: StdRwLock::new(DeviceRecord {
                 display_name: display,
@@ -330,8 +327,8 @@ impl DeviceSlot {
     }
 
     pub fn set_master_tone(&self, brightness: f32, gamma: f32) {
-        let b = brightness.clamp(0.0, 1.0);
-        let g = gamma.clamp(0.45, 3.5);
+        let b = crate::master_tone::clamp_brightness_f32(brightness);
+        let g = crate::master_tone::clamp_gamma_f32(gamma);
         self.master_brightness_bits
             .store(f32::to_bits(b), Ordering::Relaxed);
         self.master_gamma_bits
