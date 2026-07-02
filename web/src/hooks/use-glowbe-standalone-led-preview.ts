@@ -3,7 +3,7 @@ import { resolveGlowbeWsUrl } from '@/api'
 import { parsePreviewRgbFrame } from '@/lib/preview-frame'
 
 /**
- * Dedicated WebSocket with `previewSubscribe` (separate from Interactive/Mate sockets).
+ * Dedicated WebSocket with `previewSubscribe` (separate from Interactive control socket).
  * When `enabled` is false, no connection is opened.
  */
 export function useGlowbeStandaloneLedPreview(

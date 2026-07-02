@@ -1,0 +1,63 @@
+{
+  "format": "glowbe-mate-face",
+  "version": 1,
+  "id": "angry",
+  "displayName": "Angry",
+  "breathingPeriodMs": 3600,
+  "background": [0, 0, 0],
+  "parts": [
+    {
+      "slot": "brow.l",
+      "layer": "brows",
+      "kind": "polyline",
+      "points": [[-0.58, 0.42], [-0.34, 0.36]],
+      "thickness": 0.07,
+      "color": [40, 120, 255]
+    },
+    {
+      "slot": "brow.r",
+      "layer": "brows",
+      "kind": "polyline",
+      "points": [[0.34, 0.36], [0.58, 0.42]],
+      "thickness": 0.07,
+      "color": [40, 120, 255]
+    },
+    {
+      "slot": "eye.l",
+      "layer": "eyes",
+      "kind": "ellipse",
+      "pos": [-0.42, 0.24],
+      "size": [0.18, 0.2],
+      "color": [40, 120, 255]
+    },
+    {
+      "slot": "eye.r",
+      "layer": "eyes",
+      "kind": "ellipse",
+      "pos": [0.42, 0.24],
+      "size": [0.18, 0.2],
+      "color": [40, 120, 255]
+    },
+    {
+      "slot": "mouth",
+      "layer": "mouth",
+      "kind": "polyline",
+      "points": [[-0.3, -0.4], [0, -0.46], [0.3, -0.4]],
+      "thickness": 0.085,
+      "color": [40, 120, 255]
+    },
+    {
+      "slot": "anger",
+      "layer": "accessories",
+      "kind": "stamp",
+      "asset": "anger",
+      "pos": [0.70, 0.65],
+      "size": [0.20, 0.20],
+      "rotationDeg": -18,
+      "color": [200, 24, 24],
+      "motions": [
+        { "type": "rotateWobble", "amplitudeDeg": 3, "periodMs": 2000 }
+      ]
+    }
+  ]
+}

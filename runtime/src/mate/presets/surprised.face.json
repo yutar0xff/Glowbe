@@ -1,0 +1,34 @@
+{
+  "format": "glowbe-mate-face",
+  "version": 1,
+  "id": "surprised",
+  "displayName": "Surprised",
+  "breathingPeriodMs": 3000,
+  "background": [0, 0, 0],
+  "parts": [
+    {
+      "slot": "eye.l",
+      "layer": "eyes",
+      "kind": "ellipse",
+      "pos": [-0.42, 0.26],
+      "size": [0.24, 0.28],
+      "color": [40, 120, 255]
+    },
+    {
+      "slot": "eye.r",
+      "layer": "eyes",
+      "kind": "ellipse",
+      "pos": [0.42, 0.26],
+      "size": [0.24, 0.28],
+      "color": [40, 120, 255]
+    },
+    {
+      "slot": "mouth",
+      "layer": "mouth",
+      "kind": "ellipse",
+      "pos": [0, -0.44],
+      "size": [0.12, 0.14],
+      "color": [40, 120, 255]
+    }
+  ]
+}
