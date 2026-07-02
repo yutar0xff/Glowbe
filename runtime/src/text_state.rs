@@ -5,7 +5,7 @@
 //! に自動追従する。真裏付近は明るさフェードで背景色に戻す。
 
 use std::sync::RwLock as StdRwLock;
-use std::time::Duration;
+use std::time::Instant;
 
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::Font;
@@ -23,8 +23,12 @@ pub const SPEED_DEG_PER_SEC_MIN: f32 = -360.0;
 pub const SPEED_DEG_PER_SEC_MAX: f32 = 360.0;
 pub const CENTER_LAT_DEG_MIN: f32 = -80.0;
 pub const CENTER_LAT_DEG_MAX: f32 = 80.0;
+/// 傾き量 θ（0=水平、-90=縦）。
 pub const TILT_DEG_MIN: f32 = -90.0;
-pub const TILT_DEG_MAX: f32 = 90.0;
+pub const TILT_DEG_MAX: f32 = 0.0;
+/// 傾ける方位角 φ（+X 基準・+Y 軸まわり。0=正面 +X 方向へ倒す）。
+pub const TILT_AZIMUTH_DEG_MIN: f32 = -180.0;
+pub const TILT_AZIMUTH_DEG_MAX: f32 = 180.0;
 /// フェード開始/終了角（真裏からの経度、度）。0=真裏。
 pub const FADE_ANGLE_DEG_MIN: f32 = 0.0;
 pub const FADE_ANGLE_DEG_MAX: f32 = 180.0;
@@ -41,7 +45,10 @@ pub struct TextParams {
     pub text_size_deg: f32,
     pub speed_deg_per_sec: f32,
     pub center_lat_deg: f32,
+    /// 傾き量 θ（度、0=水平＝極が +Y、-90=縦）。帯をこの角度だけ倒す。
     pub tilt_deg: f32,
+    /// 傾ける方位角 φ（度、+X 基準・+Y 軸まわり右ねじ。0=正面 +X 方向へ倒す）。
+    pub tilt_azimuth_deg: f32,
     /// 真裏からの経度で、この角度まで明るさ 0（背景色）。
     pub fade_start_deg: f32,
     /// 真裏からの経度で、この角度で明るさ最大（文字色）。start→end で線形にグラデーション。
@@ -57,11 +64,13 @@ pub struct TextParams {
 impl Default for TextParams {
     fn default() -> Self {
         Self {
-            content: "This is Glowbe.".to_string(),
-            text_size_deg: 140.0,
-            speed_deg_per_sec: 80.0,
+            content: "Hello, World. This is Glowbe, a spherical display created by Yutar0xff."
+                .to_string(),
+            text_size_deg: 130.0,
+            speed_deg_per_sec: 150.0,
             center_lat_deg: 15.0,
-            tilt_deg: 0.0,
+            tilt_deg: -20.0,
+            tilt_azimuth_deg: 30.0,
             fade_start_deg: 0.0,
             fade_end_deg: 120.0,
             thickness: 1.0,
@@ -85,6 +94,9 @@ impl TextParams {
             .center_lat_deg
             .clamp(CENTER_LAT_DEG_MIN, CENTER_LAT_DEG_MAX);
         self.tilt_deg = self.tilt_deg.clamp(TILT_DEG_MIN, TILT_DEG_MAX);
+        self.tilt_azimuth_deg = self
+            .tilt_azimuth_deg
+            .clamp(TILT_AZIMUTH_DEG_MIN, TILT_AZIMUTH_DEG_MAX);
         self.fade_start_deg = self
             .fade_start_deg
             .clamp(FADE_ANGLE_DEG_MIN, FADE_ANGLE_DEG_MAX);
@@ -108,12 +120,39 @@ struct Ribbon {
     cov: Vec<u8>,
 }
 
-struct TextSamples {
+/// サンプル表の再計算要否を判定するキャッシュキー。float は `to_bits` で厳密比較する。
+#[derive(Clone, PartialEq)]
+struct SamplesKey {
     layout_id: String,
     led_count: usize,
     front_yaw_bits: u32,
     tilt_bits: u32,
+    tilt_azimuth_bits: u32,
     center_lat_bits: u32,
+}
+
+impl SamplesKey {
+    fn new(
+        layout_id: &str,
+        led_count: usize,
+        front_yaw_deg: f32,
+        tilt_deg: f32,
+        tilt_azimuth_deg: f32,
+        center_lat_deg: f32,
+    ) -> Self {
+        Self {
+            layout_id: layout_id.to_string(),
+            led_count,
+            front_yaw_bits: f32::to_bits(front_yaw_deg),
+            tilt_bits: f32::to_bits(tilt_deg),
+            tilt_azimuth_bits: f32::to_bits(tilt_azimuth_deg),
+            center_lat_bits: f32::to_bits(center_lat_deg),
+        }
+    }
+}
+
+struct TextSamples {
+    key: SamplesKey,
     /// LED ごと: (`s` = 真裏起点の経度 0..1、`t_deg` = 帯中心からの緯度オフセット度)。
     per_led: Vec<(f32, f32)>,
 }
@@ -122,6 +161,8 @@ pub struct TextRuntimeState {
     params: StdRwLock<TextParams>,
     ribbon: StdRwLock<Option<Ribbon>>,
     samples: StdRwLock<Option<TextSamples>>,
+    /// スクロール原点。text モードへ切り替えたときに now へリセットして先頭から流す。
+    origin: StdRwLock<Instant>,
 }
 
 impl Default for TextRuntimeState {
@@ -136,6 +177,14 @@ impl TextRuntimeState {
             params: StdRwLock::new(TextParams::default()),
             ribbon: StdRwLock::new(None),
             samples: StdRwLock::new(None),
+            origin: StdRwLock::new(Instant::now()),
+        }
+    }
+
+    /// スクロール原点を現在時刻に戻す（先頭の文字から表示し直す）。
+    pub fn restart(&self, now: Instant) {
+        if let Ok(mut g) = self.origin.write() {
+            *g = now;
         }
     }
 
@@ -175,44 +224,37 @@ impl TextRuntimeState {
         layout_id: &str,
         front_yaw_deg: f32,
         tilt_deg: f32,
+        tilt_azimuth_deg: f32,
         center_lat_deg: f32,
     ) {
-        let front_yaw_bits = f32::to_bits(front_yaw_deg);
-        let tilt_bits = f32::to_bits(tilt_deg);
-        let center_lat_bits = f32::to_bits(center_lat_deg);
+        let want = SamplesKey::new(
+            layout_id,
+            layout_uv.len(),
+            front_yaw_deg,
+            tilt_deg,
+            tilt_azimuth_deg,
+            center_lat_deg,
+        );
         if let Ok(g) = self.samples.read() {
-            if let Some(c) = g.as_ref() {
-                if c.layout_id == layout_id
-                    && c.led_count == layout_uv.len()
-                    && c.front_yaw_bits == front_yaw_bits
-                    && c.tilt_bits == tilt_bits
-                    && c.center_lat_bits == center_lat_bits
-                {
-                    return;
-                }
+            if g.as_ref().is_some_and(|c| c.key == want) {
+                return;
             }
         }
-        let per_led = compute_samples(layout_uv, tilt_deg, center_lat_deg);
+        let per_led = compute_samples(layout_uv, tilt_deg, tilt_azimuth_deg, center_lat_deg);
         if let Ok(mut g) = self.samples.write() {
-            *g = Some(TextSamples {
-                layout_id: layout_id.to_string(),
-                led_count: layout_uv.len(),
-                front_yaw_bits,
-                tilt_bits,
-                center_lat_bits,
-                per_led,
-            });
+            *g = Some(TextSamples { key: want, per_led });
         }
     }
 
     /// text モードの 1 フレーム描画。`font` が `None`／空文字なら背景色のみ。
+    /// スクロール量は `now` と原点（`restart` でリセット）の差から算出する。
     pub fn render(
         &self,
         font: Option<&Font>,
         layout_uv: &[(f32, f32)],
         layout_id: &str,
         front_yaw_deg: f32,
-        elapsed: Duration,
+        now: Instant,
         out_rgb: &mut [u8],
     ) {
         let params = self.params();
@@ -231,6 +273,7 @@ impl TextRuntimeState {
             layout_id,
             front_yaw_deg,
             params.tilt_deg,
+            params.tilt_azimuth_deg,
             params.center_lat_deg,
         );
 
@@ -253,7 +296,14 @@ impl TextRuntimeState {
         // インターバルは秒指定なので、走査速度で角度に換算する。
         let gap_deg = params.loop_interval_sec.max(0.0) * params.speed_deg_per_sec.abs();
         let period_deg = (ribbon_width_deg + gap_deg).max(360.0);
-        let scroll_deg = elapsed.as_secs_f32() * params.speed_deg_per_sec;
+        let elapsed = {
+            let origin = self.origin.read().map(|g| *g).unwrap_or(now);
+            now.saturating_duration_since(origin).as_secs_f32()
+        };
+        // 原点リセット直後（elapsed=0）に先頭文字 (phase 0) が裏側の継ぎ目に来て fade in を
+        // 開始するよう、スクロールに初期オフセットを与える。
+        let scroll0_deg = initial_scroll_offset_deg(period_deg, params.speed_deg_per_sec);
+        let scroll_deg = scroll0_deg + elapsed * params.speed_deg_per_sec;
         let fade_lo = params.fade_start_deg.min(params.fade_end_deg);
         let fade_hi = params.fade_start_deg.max(params.fade_end_deg);
 
@@ -283,9 +333,7 @@ impl TextRuntimeState {
                 continue;
             }
             for c in 0..3 {
-                let bg = f32::from(params.bg_color[c]);
-                let tc = f32::from(params.text_color[c]);
-                out_rgb[o + c] = (bg + (tc - bg) * lit).round().clamp(0.0, 255.0) as u8;
+                out_rgb[o + c] = blend_channel(params.bg_color[c], params.text_color[c], lit);
             }
         }
     }
@@ -411,24 +459,37 @@ fn dilate(src: &[u8], w: usize, h: usize, r: usize) -> Vec<u8> {
 }
 
 /// 各 LED の yaw 適用済み `(u,v)` から、tilt を戻した水平帯フレームでの `(s, t_deg)` を求める。
+///
+/// 帯の極（法線）を球面座標 `n(θ,φ)=(sinθcosφ, cosθ, -sinθsinφ)` に倒す。θ（`tilt_deg`）は
+/// 傾け量（0=水平/極=+Y）、φ（`tilt_azimuth_deg`）は傾ける方位角（+X 基準・+Y 軸まわり右ねじ、
+/// φ=0 で +X＝正面方向へ倒す）。これを実現する水平な傾き軸は `a=(-sinφ, 0, -cosφ)`。
+/// 各方向ベクトルを軸 `a` まわりに `-θ` だけ Rodrigues 回転して帯フレームへ戻す。
 fn compute_samples(
     layout_uv: &[(f32, f32)],
     tilt_deg: f32,
+    tilt_azimuth_deg: f32,
     center_lat_deg: f32,
 ) -> Vec<(f32, f32)> {
-    // 正面軸 (+X) まわりに -tilt 回転して帯を水平に戻す。
-    let a = (-tilt_deg).to_radians();
-    let (sin_a, cos_a) = a.sin_cos();
+    let phi = tilt_azimuth_deg.to_radians();
+    let (sin_phi, cos_phi) = phi.sin_cos();
+    let (ax, az) = (-sin_phi, -cos_phi); // 傾き軸 a=(ax, 0, az)、水平面 (xz) 内
+    let alpha = (-tilt_deg).to_radians();
+    let (sin_a, cos_a) = alpha.sin_cos();
+    let one_minus = 1.0 - cos_a;
     layout_uv
         .iter()
         .map(|&(u, v)| {
             let d = sphere::unit_dir_from_equirect_uv_y_up(u, v);
             let (x, y, z) = (d[0], d[1], d[2]);
-            let y2 = y * cos_a - z * sin_a;
-            let z2 = y * sin_a + z * cos_a;
-            let (u2, v2) = sphere::equirect_uv_from_unit_dir_y_up(x, y2, z2);
-            let phi = 90.0 - 180.0 * v2;
-            (u2, phi - center_lat_deg)
+            // v' = v·cosα + (a×v)·sinα + a·(a·v)·(1-cosα)、a=(ax,0,az)。
+            let dot = ax * x + az * z;
+            let (cx, cy, cz) = (-az * y, az * x - ax * z, ax * y);
+            let rx = x * cos_a + cx * sin_a + ax * dot * one_minus;
+            let ry = y * cos_a + cy * sin_a;
+            let rz = z * cos_a + cz * sin_a + az * dot * one_minus;
+            let (u2, v2) = sphere::equirect_uv_from_unit_dir_y_up(rx, ry, rz);
+            let deg = 90.0 - 180.0 * v2;
+            (u2, deg - center_lat_deg)
         })
         .collect()
 }
@@ -451,6 +512,23 @@ fn sample_ribbon_bilinear(ribbon: &Ribbon, x: f32, y: f32) -> f32 {
     let top = at(x0, y0) * (1.0 - fx) + at(x1, y0) * fx;
     let bot = at(x0, y1) * (1.0 - fx) + at(x1, y1) * fx;
     top * (1.0 - fy) + bot * fy
+}
+
+/// 背景色 `bg` と文字色 `fg` を明るさ `t`（0..1）で線形補間した 1 チャンネル値。
+fn blend_channel(bg: u8, fg: u8, t: f32) -> u8 {
+    let bg = f32::from(bg);
+    let fg = f32::from(fg);
+    (bg + (fg - bg) * t).round().clamp(0.0, 255.0) as u8
+}
+
+/// 先頭文字を裏側の継ぎ目（fade 開始点）に置くためのスクロール初期オフセット（度）。
+/// 順方向 (speed>=0) は先頭が a_deg=360 側から、逆方向は a_deg=0 側から流入する。
+fn initial_scroll_offset_deg(period_deg: f32, speed_deg_per_sec: f32) -> f32 {
+    if speed_deg_per_sec >= 0.0 {
+        period_deg - 360.0
+    } else {
+        0.0
+    }
 }
 
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
@@ -521,9 +599,72 @@ mod tests {
     #[test]
     fn front_maps_to_mid_band() {
         // 正面 (u=0.5, 赤道) は tilt=0 で s=0.5、t_deg=0 付近。
-        let samples = compute_samples(&[(0.5, 0.5)], 0.0, 0.0);
+        let samples = compute_samples(&[(0.5, 0.5)], 0.0, 0.0, 0.0);
         let (s, t) = samples[0];
         assert!((s - 0.5).abs() < 1e-3, "front s should be ~0.5, got {s}");
         assert!(t.abs() < 1e-2, "front t_deg should be ~0, got {t}");
+    }
+
+    #[test]
+    fn front_and_back_stay_on_flow_seam_for_axis_directions() {
+        // 傾き軸が xz 平面内（φ=0/90/180）なら、正面/真裏は s=0.5 / s=0.0 の経度に留まる。
+        for &azimuth in &[0.0f32, 90.0, 180.0, -90.0] {
+            let s = compute_samples(&[(0.5, 0.5)], 60.0, azimuth, 0.0)[0].0;
+            assert!(
+                (s - 0.5).abs() < 1e-3,
+                "front s should stay 0.5 at φ={azimuth}, got {s}"
+            );
+            let b = compute_samples(&[(0.0, 0.5)], 60.0, azimuth, 0.0)[0].0;
+            assert!(
+                b.min(1.0 - b) < 1e-3,
+                "back s should stay at seam at φ={azimuth}, got {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn frame_zero_places_head_at_back_seam() {
+        // elapsed=0 で先頭 (phase 0) が裏側の継ぎ目に来る＝fade 開始点から表示が始まる。
+        // 先頭の経度は a_deg = (-scroll0) mod period。
+        for &(period, speed, want) in &[
+            (720.0f32, 150.0f32, 360.0f32), // 順方向: a_deg=360 側から流入
+            (360.0, 150.0, 0.0),            // 短文（period=360）でも継ぎ目
+            (720.0, -150.0, 0.0),           // 逆方向: a_deg=0 側から流入
+        ] {
+            let scroll0 = initial_scroll_offset_deg(period, speed);
+            let head_a_deg = (-scroll0).rem_euclid(period);
+            assert!(
+                (head_a_deg - want).abs() < 1e-3,
+                "period={period} speed={speed}: head a_deg {head_a_deg} != {want}"
+            );
+        }
+    }
+
+    #[test]
+    fn azimuth_zero_tilts_toward_front() {
+        // φ=0 は正面(+X)方向へ倒す：正面点は帯フレームで s=0.5 を保ちつつ緯度が +θ ずれる。
+        let theta = 30.0f32;
+        let (s, t) = compute_samples(&[(0.5, 0.5)], theta, 0.0, 0.0)[0];
+        assert!(
+            (s - 0.5).abs() < 1e-3,
+            "front should stay at s=0.5, got {s}"
+        );
+        assert!((t - theta).abs() < 0.1, "front t_deg should be ~θ, got {t}");
+        // φ=90 は正面軸(+X)を傾き軸にするため、正面点は緯度が動かない。
+        let (s90, t90) = compute_samples(&[(0.5, 0.5)], theta, 90.0, 0.0)[0];
+        assert!((s90 - 0.5).abs() < 1e-3, "front should stay at s=0.5");
+        assert!(
+            t90.abs() < 0.1,
+            "front t_deg should stay ~0 at φ=90, got {t90}"
+        );
+    }
+
+    #[test]
+    fn azimuth_changes_tilt_direction() {
+        // φ を変えると同じ θ でも帯フレームの写像が変わる（軸方向が効いている）。
+        let front_axis = compute_samples(&[(0.6, 0.5)], 45.0, 0.0, 0.0)[0];
+        let side_axis = compute_samples(&[(0.6, 0.5)], 45.0, 90.0, 0.0)[0];
+        let d = (front_axis.0 - side_axis.0).abs() + (front_axis.1 - side_axis.1).abs();
+        assert!(d > 1e-2, "azimuth should change mapping, diff={d}");
     }
 }

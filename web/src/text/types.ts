@@ -6,8 +6,10 @@ export type TextModeParams = {
   speedDegPerSec: number
   /** Band center latitude in degrees (0 = equator). */
   centerLatDeg: number
-  /** Band tilt around the front axis in degrees (0 = horizontal). */
+  /** Tilt amount θ in degrees (0 = horizontal, pole at +Y; 90 = vertical). */
   tiltDeg: number
+  /** Tilt direction azimuth φ in degrees (from +X, about +Y; 0 = tilt toward the front +X). */
+  tiltAzimuthDeg: number
   /** Longitude from the back (deg) below which brightness is 0 (background). */
   fadeStartDeg: number
   /** Longitude from the back (deg) at which brightness reaches full (text color). */

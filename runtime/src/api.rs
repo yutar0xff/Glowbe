@@ -133,6 +133,7 @@ struct TextConfigResponse {
     speed_deg_per_sec: f32,
     center_lat_deg: f32,
     tilt_deg: f32,
+    tilt_azimuth_deg: f32,
     fade_start_deg: f32,
     fade_end_deg: f32,
     thickness: f32,
@@ -154,6 +155,8 @@ struct TextConfigRequest {
     center_lat_deg: Option<f32>,
     #[serde(default)]
     tilt_deg: Option<f32>,
+    #[serde(default)]
+    tilt_azimuth_deg: Option<f32>,
     #[serde(default)]
     fade_start_deg: Option<f32>,
     #[serde(default)]
@@ -185,6 +188,7 @@ fn text_config_response(params: &crate::text_state::TextParams) -> TextConfigRes
         speed_deg_per_sec: params.speed_deg_per_sec,
         center_lat_deg: params.center_lat_deg,
         tilt_deg: params.tilt_deg,
+        tilt_azimuth_deg: params.tilt_azimuth_deg,
         fade_start_deg: params.fade_start_deg,
         fade_end_deg: params.fade_end_deg,
         thickness: params.thickness,
@@ -1676,6 +1680,9 @@ async fn post_text_config(
     }
     if let Some(v) = req.tilt_deg {
         params.tilt_deg = v;
+    }
+    if let Some(v) = req.tilt_azimuth_deg {
+        params.tilt_azimuth_deg = v;
     }
     if let Some(v) = req.fade_start_deg {
         params.fade_start_deg = v;

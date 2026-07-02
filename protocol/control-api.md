@@ -100,11 +100,12 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 
 ```json
 {
-  "content": "This is Glowbe.",
-  "textSizeDeg": 140.0,
-  "speedDegPerSec": 80.0,
+  "content": "Hello, World. This is Glowbe, a spherical display created by Yutar0xff.",
+  "textSizeDeg": 130.0,
+  "speedDegPerSec": 150.0,
   "centerLatDeg": 15.0,
-  "tiltDeg": 0.0,
+  "tiltDeg": -20.0,
+  "tiltAzimuthDeg": 30.0,
   "fadeStartDeg": 0.0,
   "fadeEndDeg": 120.0,
   "thickness": 1.0,
@@ -120,11 +121,12 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 
 | フィールド | 単位 / 型 | 範囲 | 既定 | 説明 |
 | --- | --- | --- | --- | --- |
-| `content` | string | 最大 256 文字 | `"This is Glowbe."` | 表示文字列（日本語可）。空なら背景色のみ。 |
-| `textSizeDeg` | 度 | 10–180 | 140 | 文字の角度高さ。 |
-| `speedDegPerSec` | 度/秒 | -360–360 | 80 | flow 速度。符号で流れる向き。 |
+| `content` | string | 最大 256 文字 | `"Hello, World. This is Glowbe, a spherical display created by Yutar0xff."` | 表示文字列（日本語可）。空なら背景色のみ。 |
+| `textSizeDeg` | 度 | 10–180 | 130 | 文字の角度高さ。 |
+| `speedDegPerSec` | 度/秒 | -360–360 | 150 | flow 速度。符号で流れる向き。 |
 | `centerLatDeg` | 度 | -80–80 | 15 | flow 中心緯度（0 = 赤道）。 |
-| `tiltDeg` | 度 | -90–90 | 0 | 帯の傾き（正面軸まわりの回転、0 = 水平）。 |
+| `tiltDeg` | 度 | -90–0 | -20 | 帯の傾き量 θ（0 = 水平＝極が +Y、-90 = 縦）。 |
+| `tiltAzimuthDeg` | 度 | -180–180 | 30 | 傾ける方位角 φ（+X 基準・+Y 軸まわり右ねじ。0 = 正面 +X 方向へ倒す）。帯の極を `n(θ,φ)=(sinθcosφ, cosθ, -sinθsinφ)` に倒す。 |
 | `fadeStartDeg` | 度 | 0–180 | 0 | 真裏（0°）からこの角度までは明るさ 0（背景色）。 |
 | `fadeEndDeg` | 度 | 0–180 | 120 | この角度で明るさ最大（文字色）。start→end で明るさをグラデーション。 |
 | `thickness` | — | 0–6 | 1 | 文字の太さ（リボン被覆のダイレーション量、小数可）。 |
@@ -132,7 +134,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 | `bgColor` | `#rrggbb` | — | `#000000` | 背景色。 |
 | `textColor` | `#rrggbb` | — | `#3b82f6` | 文字色。 |
 
-→ 実装済み: 各 LED の正面 yaw 適用済み UV から色を生成する。正面（`u=0.5`）を中心に文章が流れ、デバイスの真裏（`u=0.0/1.0` の継ぎ目）から出現・消失する。真裏付近は `fadeStartDeg`〜`fadeEndDeg` の範囲で明るさが 0→最大に線形グラデーションし背景色へフェードする。`frontYawDeg` を変更すると正面・真裏の位置も追従する。文字列が周長（360°）を超える場合は全長をスクロール周期とし、全文字が流れ切ってから先頭が再登場する（自身との重なりは生じない）。`loopIntervalSec` を指定すると全長のあとに空白帯（`loopIntervalSec × |speedDegPerSec|` 度）を挟んでから次ループを開始する。グリフは同梱 TTF（`assets/text/NotoSansJP.ttf`、`[assets].text_font_path` で変更可）を実行時にラスタライズし、`thickness` でリボン被覆をダイレーションして太らせる。フォント読み込みに失敗した場合は背景色のみを描画する。
+→ 実装済み: 各 LED の正面 yaw 適用済み UV から色を生成する。正面（`u=0.5`）を中心に文章が流れ、デバイスの真裏（`u=0.0/1.0` の継ぎ目）から出現・消失する。真裏付近は `fadeStartDeg`〜`fadeEndDeg` の範囲で明るさが 0→最大に線形グラデーションし背景色へフェードする。`frontYawDeg` を変更すると正面・真裏の位置も追従する。文字列が周長（360°）を超える場合は全長をスクロール周期とし、全文字が流れ切ってから先頭が再登場する（自身との重なりは生じない）。`loopIntervalSec` を指定すると全長のあとに空白帯（`loopIntervalSec × |speedDegPerSec|` 度）を挟んでから次ループを開始する。他モードから text へ切り替えた直後は、スクロール原点をリセットして必ず文章の先頭から表示し直す（モード維持のままパラメータを更新した場合はリセットしない）。グリフは同梱 TTF（`assets/text/NotoSansJP.ttf`、`[assets].text_font_path` で変更可）を実行時にラスタライズし、`thickness` でリボン被覆をダイレーションして太らせる。フォント読み込みに失敗した場合は背景色のみを描画する。
 
 ### `GET /api/v1/layout/uv`
 
