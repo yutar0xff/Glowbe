@@ -20,6 +20,16 @@ pub fn unit_dir_from_equirect_uv_y_up(u: f32, v: f32) -> [f32; 3] {
     [x, y, z]
 }
 
+/// 正距円筒の経度 `u` を、デバイス正面の yaw（度）ぶん回した値（[0,1) にラップ）。
+///
+/// `u` は経度なので、鉛直 Y 軸まわりの yaw 回転は水平シフトと等価。全モードが
+/// UV から色を生成するため、サンプリング前に `u` をずらすだけで「正面」を
+/// ロスなく再定義できる（送信直前の RGB 再マップと違い近傍補間が不要）。
+#[must_use]
+pub fn apply_front_yaw_u(u: f32, front_yaw_deg: f32) -> f32 {
+    (u + front_yaw_deg / 360.0).rem_euclid(1.0)
+}
+
 /// 単位ベクトル同士のなす角（ラジアン）∈ [0, π]。
 #[must_use]
 pub fn angle_rad_between_unit(a: [f32; 3], b: [f32; 3]) -> f32 {

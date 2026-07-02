@@ -4,7 +4,9 @@ import { API_BASE, apiDeviceQuery } from '@/api'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 
 export function useLayoutUv(layoutId: string, ledCount: number) {
-  const { activeDeviceId } = useGlowbeRuntime()
+  const { activeDeviceId, load } = useGlowbeRuntime()
+  // Refetch when the active device's front yaw changes so preview centers on the new front.
+  const frontYawDeg = load.kind === 'ready' ? load.state.frontYawDeg : undefined
   const [uv, setUv] = useState<LayoutUvResponse | null>(null)
   const [uvError, setUvError] = useState<string | null>(null)
   const [uvLoading, setUvLoading] = useState(true)
@@ -46,7 +48,7 @@ export function useLayoutUv(layoutId: string, ledCount: number) {
     return () => {
       cancelled = true
     }
-  }, [layoutId, ledCount, activeDeviceId])
+  }, [layoutId, ledCount, activeDeviceId, frontYawDeg])
 
   return { uv, uvError, uvLoading }
 }

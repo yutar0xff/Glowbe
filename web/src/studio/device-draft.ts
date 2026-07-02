@@ -4,6 +4,9 @@ import { validateOutputFps } from './device-output-settings'
 export const DEFAULT_OUTPUT_FPS = 120
 export const DEFAULT_MASTER_BRIGHTNESS = 1
 export const DEFAULT_MASTER_GAMMA = 1
+export const DEFAULT_FRONT_YAW_DEG = 0
+export const FRONT_YAW_DEG_MIN = -180
+export const FRONT_YAW_DEG_MAX = 180
 
 export type DeviceDraft = {
   displayName: string
@@ -13,6 +16,12 @@ export type DeviceDraft = {
   outputFps: string
   masterBrightness: number
   masterGamma: number
+  frontYawDeg: number
+}
+
+export function clampFrontYawDeg(deg: number): number {
+  if (!Number.isFinite(deg)) return DEFAULT_FRONT_YAW_DEG
+  return Math.min(FRONT_YAW_DEG_MAX, Math.max(FRONT_YAW_DEG_MIN, deg))
 }
 
 export function normalizeMdnsHostname(raw: string): string {
@@ -42,6 +51,7 @@ export function emptyCreateDraft(layoutId: string, outputFps: number): DeviceDra
     outputFps: String(outputFps),
     masterBrightness: DEFAULT_MASTER_BRIGHTNESS,
     masterGamma: DEFAULT_MASTER_GAMMA,
+    frontYawDeg: DEFAULT_FRONT_YAW_DEG,
   }
 }
 
@@ -57,6 +67,7 @@ export function editDraftFromRecord(
     outputFps: String(rec.outputFps),
     masterBrightness: rec.masterBrightness ?? tone?.brightness ?? DEFAULT_MASTER_BRIGHTNESS,
     masterGamma: rec.masterGamma ?? tone?.gamma ?? DEFAULT_MASTER_GAMMA,
+    frontYawDeg: rec.frontYawDeg ?? DEFAULT_FRONT_YAW_DEG,
   }
 }
 
@@ -87,6 +98,7 @@ export function toRecord(id: string, draft: DeviceDraft): DeviceRecord | { error
     outputFps: fps.value,
     masterBrightness: draft.masterBrightness,
     masterGamma: draft.masterGamma,
+    frontYawDeg: clampFrontYawDeg(draft.frontYawDeg),
   }
 }
 

@@ -139,9 +139,11 @@ export function DeviceEditForm({
         fps={parseDraftFps(draft.outputFps)}
         brightness={draft.masterBrightness}
         gamma={draft.masterGamma}
+        frontYawDeg={draft.frontYawDeg}
         disabled={toneDisabled}
         onFpsCommit={(value) => onChange({ outputFps: String(value) })}
         onToneCommit={onToneCommit}
+        onFrontYawCommit={(deg) => onChange({ frontYawDeg: deg })}
       />
       <div className="flex flex-wrap gap-2">
         <Button type="button" size="sm" onClick={onSave} disabled={saveBusy}>

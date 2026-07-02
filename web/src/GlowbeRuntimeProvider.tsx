@@ -432,6 +432,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         outputFps: input.outputFps,
         masterBrightness: input.masterBrightness ?? 1,
         masterGamma: input.masterGamma ?? 1,
+        frontYawDeg: input.frontYawDeg ?? 0,
       }),
     })
     if (!res.ok) throw new Error(await readApiError(res))
@@ -452,6 +453,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         outputFps: record.outputFps,
         masterBrightness: record.masterBrightness ?? 1,
         masterGamma: record.masterGamma ?? 1,
+        frontYawDeg: record.frontYawDeg ?? 0,
       }),
     })
     if (!res.ok) throw new Error(await readApiError(res))

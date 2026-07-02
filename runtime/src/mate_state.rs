@@ -66,6 +66,7 @@ impl MateRuntimeState {
         &self,
         compiled_dir: &std::path::Path,
         layout_id: &str,
+        front_yaw_deg: f32,
     ) -> anyhow::Result<()> {
         if !mate::layout_supported(layout_id) {
             anyhow::bail!("mate mode is not supported for layout {layout_id}");
@@ -76,14 +77,18 @@ impl MateRuntimeState {
             .map_err(|e| anyhow::anyhow!("mate_frame_params lock: {e}"))?;
         let frame = FaceFrame::from_params(frame_params);
         let frame_key = frame.cache_key();
+        let front_yaw_bits = f32::to_bits(front_yaw_deg);
         if let Ok(cache) = self.samples_cache.read() {
             if let Some(c) = cache.as_ref() {
-                if c.layout_id == layout_id && c.frame_key == frame_key {
+                if c.layout_id == layout_id
+                    && c.frame_key == frame_key
+                    && c.front_yaw_bits == front_yaw_bits
+                {
                     return Ok(());
                 }
             }
         }
-        let samples = mate::load_face_samples(compiled_dir, layout_id, &frame)?;
+        let samples = mate::load_face_samples(compiled_dir, layout_id, &frame, front_yaw_deg)?;
         let mut cache = self
             .samples_cache
             .write()
@@ -91,6 +96,7 @@ impl MateRuntimeState {
         *cache = Some(MateSamplesCache {
             layout_id: layout_id.to_string(),
             frame_key,
+            front_yaw_bits,
             frame,
             samples,
         });

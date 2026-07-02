@@ -30,12 +30,14 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
   "layoutMismatch": false,
   "framesSent": 216000,
   "masterBrightness": 1,
-  "masterGamma": 1
+  "masterGamma": 1,
+  "frontYawDeg": 0
 }
 ```
 
 - `masterBrightness`: 全モード共通の最終輝度係数（0–1、1 = 100% が既定）。UDP 直前に各チャンネルへ乗算。Studio UI では 0–100% 表示。ファーム側では layout の LED 総数と 4 A 電源の 80%（3.2 A）・LED 白 15 mA を前提にした上限（`kGlowbeLedBrightness`）を別途適用。
 - `masterGamma`: 全モード共通のガンマ補正（約 0.45–3.5、1 が既定）。`out = clamp( ((in/255)×brightness)^(1/gamma) × 255 )`。
+- `frontYawDeg`: デバイス正面の yaw（度、−180〜180、0 が既定）。全モードのサンプリング UV の経度 `u` を鉛直軸まわりに回す（`u' = (u + frontYawDeg/360) mod 1`）。`GET /api/v1/layout/uv` と WS `layoutUv` も同じシフトを適用して返すため、2D/3D プレビューとインタラクティブのタップ座標は正面中心に揃う。デバイスごとに `devices.json` へ保存。
 - `frameLoopStaleMs`: 直近のフレームループ tick からの経過時間（ms）。出力タスクが停止すると急増する。
 - `layoutMismatch`: ESP STATUS の `layout_hash` とランタイムの `meta.layoutHash` が食い違うとき `true`（いずれか欠損時は照合しない）。
 - `framesSent`: 完全送信に成功したフレーム数（累計）。

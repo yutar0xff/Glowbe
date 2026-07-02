@@ -15,6 +15,18 @@ pub use crate::master_tone::{DEFAULT_MASTER_BRIGHTNESS, DEFAULT_MASTER_GAMMA};
 
 pub const DEFAULT_OUTPUT_FPS: u32 = 120;
 
+/// デバイス正面の yaw（度）の許容範囲。0 が既定の正面。
+pub const FRONT_YAW_DEG_MIN: f64 = -180.0;
+pub const FRONT_YAW_DEG_MAX: f64 = 180.0;
+
+pub fn clamp_front_yaw_deg(deg: f64) -> f64 {
+    if deg.is_finite() {
+        deg.clamp(FRONT_YAW_DEG_MIN, FRONT_YAW_DEG_MAX)
+    } else {
+        0.0
+    }
+}
+
 /// 新規デバイス用の UUID v7（時系列ソート可能）。
 pub fn new_device_id() -> String {
     Uuid::now_v7().to_string()
@@ -86,6 +98,9 @@ pub struct DeviceRecord {
     pub master_brightness: f64,
     #[serde(default = "default_master_gamma")]
     pub master_gamma: f64,
+    /// デバイス正面の yaw（度）。全モードのサンプリング UV を鉛直軸まわりに回す。
+    #[serde(default)]
+    pub front_yaw_deg: f64,
 }
 
 fn default_master_brightness() -> f64 {
@@ -99,6 +114,7 @@ fn default_master_gamma() -> f64 {
 fn clamp_master_tone(rec: &mut DeviceRecord) {
     rec.master_brightness = clamp_brightness(rec.master_brightness);
     rec.master_gamma = clamp_gamma(rec.master_gamma);
+    rec.front_yaw_deg = clamp_front_yaw_deg(rec.front_yaw_deg);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -329,6 +345,7 @@ fn seed_from_config(config: &Config) -> Vec<DeviceRecord> {
             output_fps: DEFAULT_OUTPUT_FPS,
             master_brightness: DEFAULT_MASTER_BRIGHTNESS,
             master_gamma: DEFAULT_MASTER_GAMMA,
+            front_yaw_deg: 0.0,
         }]
     };
     migrate_legacy_device_ids(&mut devices);
@@ -421,6 +438,7 @@ mod tests {
             output_fps: DEFAULT_OUTPUT_FPS,
             master_brightness: DEFAULT_MASTER_BRIGHTNESS,
             master_gamma: DEFAULT_MASTER_GAMMA,
+            front_yaw_deg: 0.0,
         };
         assert!(validate_record(&rec, &dir).is_ok());
         let bad = DeviceRecord {
@@ -445,6 +463,7 @@ mod tests {
                 output_fps: DEFAULT_OUTPUT_FPS,
                 master_brightness: DEFAULT_MASTER_BRIGHTNESS,
                 master_gamma: DEFAULT_MASTER_GAMMA,
+                front_yaw_deg: 0.0,
             }],
         };
         let updated = DeviceRecord {
@@ -456,6 +475,7 @@ mod tests {
             output_fps: 60,
             master_brightness: DEFAULT_MASTER_BRIGHTNESS,
             master_gamma: DEFAULT_MASTER_GAMMA,
+            front_yaw_deg: 0.0,
         };
         assert!(reg.upsert(updated, &dir).is_ok());
         assert_eq!(reg.devices[0].display_name, "A2");

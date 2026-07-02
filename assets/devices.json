@@ -9,17 +9,18 @@
       "layoutId": "prototype-icosahedron-15",
       "outputFps": 60,
       "masterBrightness": 0.1,
-      "masterGamma": 1.0
+      "masterGamma": 1.0,
+      "frontYawDeg": 0.0
     },
     {
       "id": "019ef385-e1e2-7721-b76b-6e8511ef406f",
       "displayName": "Product-1",
-      "espIp": "192.168.0.84",
       "mdnsHostname": "glowbe-60faces",
       "layoutId": "product-geodesic-2v-60",
-      "outputFps": 165,
+      "outputFps": 120,
       "masterBrightness": 0.18,
-      "masterGamma": 1.0
+      "masterGamma": 1.0,
+      "frontYawDeg": -144.0
     }
   ]
 }
