@@ -28,6 +28,9 @@ inline bool listen(uint16_t port) {
   int yes = 1;
   setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 
+  int rcvbuf = 24 * 1024;
+  setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+
   sockaddr_in addr = {};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(port);

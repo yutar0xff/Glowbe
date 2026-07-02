@@ -14,10 +14,11 @@
     {
       "id": "019ef385-e1e2-7721-b76b-6e8511ef406f",
       "displayName": "Product-1",
+      "espIp": "192.168.0.84",
       "mdnsHostname": "glowbe-60faces",
       "layoutId": "product-geodesic-2v-60",
-      "outputFps": 120,
-      "masterBrightness": 0.1,
+      "outputFps": 165,
+      "masterBrightness": 0.18,
       "masterGamma": 1.0
     }
   ]

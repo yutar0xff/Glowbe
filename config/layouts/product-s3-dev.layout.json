@@ -1,8 +1,8 @@
 {
   "format": "glowbe-layout",
   "version": 1,
-  "id": "product-geodesic-2v-60",
-  "displayName": "Glowbe Product (Geodesic 2V, 60 panels)",
+  "id": "product-geodesic-2v-60-s3-dev",
+  "displayName": "Glowbe Product — S3 dev bench GPIOs",
   "variant": "product",
   "geometry": {
     "preset": "geodesic-ico-2v",
@@ -74,7 +74,7 @@
           "face-24": 1,
           "face-27": 0,
           "face-25": 2,
-          "face-28": 1,
+          "face-28": 2,
           "face-6": 0,
           "face-7": 2,
           "face-4": 1
@@ -114,7 +114,7 @@
           "face-56": 1,
           "face-59": 0,
           "face-57": 2,
-          "face-20": 1,
+          "face-20": 2,
           "face-2": 0,
           "face-3": 2,
           "face-0": 1
@@ -140,7 +140,7 @@
         "reversedFaces": []
       },
       {
-        "gpio": 25,
+        "gpio": 4,
         "faceChain": [
           "face-48",
           "face-51",
@@ -154,7 +154,7 @@
           "face-48": 1,
           "face-51": 0,
           "face-49": 2,
-          "face-52": 1,
+          "face-52": 2,
           "face-18": 0,
           "face-19": 2,
           "face-16": 1
@@ -162,7 +162,7 @@
         "reversedFaces": []
       },
       {
-        "gpio": 23,
+        "gpio": 5,
         "faceChain": [
           "face-42",
           "face-46",
@@ -180,7 +180,7 @@
         "reversedFaces": []
       },
       {
-        "gpio": 22,
+        "gpio": 6,
         "faceChain": [
           "face-40",
           "face-43",
@@ -194,7 +194,7 @@
           "face-40": 1,
           "face-43": 0,
           "face-41": 2,
-          "face-44": 1,
+          "face-44": 2,
           "face-14": 0,
           "face-15": 2,
           "face-12": 1
@@ -202,7 +202,7 @@
         "reversedFaces": []
       },
       {
-        "gpio": 21,
+        "gpio": 7,
         "faceChain": [
           "face-34",
           "face-38",
@@ -220,7 +220,7 @@
         "reversedFaces": []
       },
       {
-        "gpio": 19,
+        "gpio": 8,
         "faceChain": [
           "face-32",
           "face-35",
@@ -234,7 +234,7 @@
           "face-32": 1,
           "face-35": 0,
           "face-33": 2,
-          "face-36": 1,
+          "face-36": 2,
           "face-10": 0,
           "face-11": 2,
           "face-8": 1
@@ -244,8 +244,6 @@
     ]
   },
   "meta": {
-    "migratedAt": "2026-07-01T13:08:09.917Z",
-    "migratedFrom": "glowbe-studio-layout/2",
-    "sourceMetaId": "glowbe-prod-geo60"
+    "benchGpios": "13,14,16,17,18,4,5,6,7,8"
   }
 }

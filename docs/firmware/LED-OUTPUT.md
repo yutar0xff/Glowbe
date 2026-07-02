@@ -29,8 +29,10 @@ ESP32-S3 で多ピンを低 CPU 負荷で駆動するには、内蔵 **LCD ペ�
 
 ### データ線とバッファ
 
-- レイアウトの各データ線ごとに `NeoPixelBus<NeoGrbFeature, Method>(count, pin)` を生成し、`Begin()` / `SetPixelColor()` / `Show()` を共通 API で扱う（公式例: `NeoPixel_ESP32_LcdParallel`）。
+- レイアウトの各データ線ごとに `NeoPixelBus<NeoGrbFeature, Method>(count, pin)` を生成する。並列 LCD / I2S では **全線のビット長を揃える**必要があるため、`count` は `GLOWBE_MAX_LINE_LEDS`（線ごとの最大 LED 数）とし、実 LED 数が少ない線は末尾を黒でパディングする（`include/led_driver_parallel.h`）。
 - UDP フレームの **論理 RGB** は `GLOWBE_LINE_LED_COUNTS` の順に各ストリップへ割り当てる（一次元インデックスと一致）。
+- `Show()` 後は DMA 完了と WS2812 ラッチ待ちを行う（`glowbe_led_wait_ready()`）。
+- **UDP / LED 分離:** `glowbe_stream_workers.cpp` が UDP 受信（Core 0）と LED 表示（Core 1）を担当。完全フレームは `glowbe_frame_queue.h`（静的バッファ）経由。`main.cpp` の `loop()` は診断・STATUS のみ。起動は `bringUp()` で UDP とワーカーを一度だけ初期化する。
 
 ### ESP32 無印でチラつきが出る場合
 

@@ -1,15 +1,13 @@
 /**
  * ESP32-S3 — NeoPixelBus LCD ペリフェラル並列（WS2812x）。
- *
- * データ線ごとに `NeoPixelBus<NeoGrbFeature, NeoEsp32LcdX8Ws2812xMethod>`（または X16）を
- * 1 本ずつ生成し、内部マルチプレクサで同期出力する（公式例: NeoPixel_ESP32_LcdParallel）。
  */
 #include <Arduino.h>
 #include <NeoPixelBus.h>
+#include <esp_heap_caps.h>
 
-#include "glowbe_dim.h"
 #include "glowbe_layout.h"
 #include "led_driver.h"
+#include "led_driver_parallel.h"
 
 namespace {
 
@@ -27,56 +25,37 @@ static_assert(GLOWBE_DATA_LINES <= 16, "NeoPixelBus parallel: max 16 lines (use 
 Strip* g_lines[16];
 uint8_t g_line_count = 0;
 
-RgbColor dimRgb(uint8_t r, uint8_t g, uint8_t b) {
-  return RgbColor(glowbe_dim_channel(r), glowbe_dim_channel(g), glowbe_dim_channel(b));
-}
-
 }  // namespace
 
 void glowbe_led_init() {
   g_line_count = GLOWBE_DATA_LINES;
+  Serial.printf("led_init: lines=%u drive_leds=%u heap=%u dma=%u\n",
+                static_cast<unsigned>(g_line_count), static_cast<unsigned>(GLOWBE_MAX_LINE_LEDS),
+                static_cast<unsigned>(ESP.getFreeHeap()),
+                static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_DMA)));
+
   for (uint8_t line = 0; line < g_line_count; line++) {
-    const uint16_t n = GLOWBE_LINE_LED_COUNTS[line];
-    const uint8_t pin = GLOWBE_GPIO_PINS[line];
-    g_lines[line] = new Strip(n, pin);
+    g_lines[line] = new Strip(GLOWBE_MAX_LINE_LEDS, GLOWBE_GPIO_PINS[line]);
+    if (g_lines[line] == nullptr) {
+      Serial.printf("led_init: OOM line %u gpio %u\n", line, GLOWBE_GPIO_PINS[line]);
+      abort();
+    }
+  }
+  for (uint8_t line = 0; line < g_line_count; line++) {
     g_lines[line]->Begin();
   }
 }
 
 void glowbe_led_wait_ready() {
-  for (;;) {
-    bool all = true;
-    for (uint8_t line = 0; line < g_line_count; line++) {
-      if (!g_lines[line]->CanShow()) {
-        all = false;
-        break;
-      }
-    }
-    if (all) {
-      return;
-    }
-    yield();
-  }
+  glowbe::led_parallel::waitReady(g_lines, g_line_count);
 }
 
 void glowbe_led_set_rgb(const uint8_t* rgb) {
-  glowbe_led_wait_ready();
-  size_t offset = 0;
-  for (uint8_t line = 0; line < g_line_count; line++) {
-    Strip* s = g_lines[line];
-    const uint16_t n = GLOWBE_LINE_LED_COUNTS[line];
-    for (uint16_t i = 0; i < n; i++) {
-      const RgbColor c = dimRgb(rgb[offset], rgb[offset + 1], rgb[offset + 2]);
-      s->SetPixelColor(i, c);
-      offset += 3;
-    }
-  }
+  glowbe::led_parallel::setRgb(g_lines, g_line_count, rgb);
 }
 
 void glowbe_led_show() {
-  for (uint8_t line = 0; line < g_line_count; line++) {
-    g_lines[line]->Show();
-  }
+  glowbe::led_parallel::show(g_lines, g_line_count);
 }
 
 void glowbe_led_apply_rgb(const uint8_t* rgb) {
@@ -85,12 +64,7 @@ void glowbe_led_apply_rgb(const uint8_t* rgb) {
 }
 
 void glowbe_led_clear() {
-  glowbe_led_wait_ready();
-  for (uint8_t line = 0; line < g_line_count; line++) {
-    Strip* s = g_lines[line];
-    s->ClearTo(RgbColor(0, 0, 0));
-  }
-  glowbe_led_show();
+  glowbe::led_parallel::clear(g_lines, g_line_count);
 }
 
 const char* glowbe_led_driver_name() {

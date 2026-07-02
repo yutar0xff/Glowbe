@@ -5,7 +5,7 @@
 #include "glowbe_brightness.h"
 
 void glowbe_led_init();
-/// 前回の DMA 送出が完了するまで待つ（Wi-Fi 負荷下でのチラつき緩和）。
+/// DMA 送出完了と WS2812 ラッチ待ち。
 void glowbe_led_wait_ready();
 void glowbe_led_set_rgb(const uint8_t* rgb);    // 論理 RGB →ストリップ RAM（Show しない）
 void glowbe_led_show();                         // 全データ線をラッチ

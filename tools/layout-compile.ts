@@ -143,6 +143,7 @@ function writeHeader(
   layoutHash: number,
 ): void {
   const ledCount = ledsPerLine.reduce((a, b) => a + b, 0);
+  const maxLineLeds = Math.max(...ledsPerLine);
   const h = layoutHash >>> 0;
   const hex8 = h.toString(16).padStart(8, "0");
   const lines = [
@@ -152,12 +153,12 @@ function writeHeader(
     `#define GLOWBE_LAYOUT_HASH ((uint32_t)0x${hex8}u)`,
     `#define GLOWBE_LED_COUNT ${ledCount}`,
     `#define GLOWBE_DATA_LINES ${gpios.length}`,
+    `#define GLOWBE_MAX_LINE_LEDS ${maxLineLeds}`,
     `static const uint8_t GLOWBE_GPIO_PINS[${gpios.length}] = { ${gpios.join(", ")} };`,
     `static const uint16_t GLOWBE_LINE_LED_COUNTS[${gpios.length}] = { ${ledsPerLine.join(", ")} };`,
     "",
-    "// NeoPixelBus: データ線ごとに NeoPixelBus(count, pin)。",
-    "// S3 は NeoEsp32LcdX8/X16Ws2812xMethod、無印は NeoEsp32I2s0X8/X16Ws2812xMethod（I2S0）。",
-    "// 論理インデックスは `GLOWBE_LINE_LED_COUNTS` の先頭から順に各 GPIO へ割当（一次元 UDP と一致）。",
+    "// NeoPixelBus 並列: 全線を GLOWBE_MAX_LINE_LEDS で駆動（短いチェーンは黒パディング）。",
+    "// 論理インデックスは GLOWBE_LINE_LED_COUNTS 順（一次元 UDP と一致）。",
     `// 並列幅: ${gpios.length > 8 ? "X16（>8 本）" : "X8（≤8 本）"}`,
   ];
   writeFileSync(path, lines.join("\n"), "utf8");
