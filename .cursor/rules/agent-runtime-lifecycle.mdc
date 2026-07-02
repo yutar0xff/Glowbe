@@ -1,0 +1,15 @@
+---
+description: エージェントが起動した Glowbe runtime は作業終了時に停止する。
+globs: projects/Glowbe/**
+alwaysApply: false
+---
+
+# Glowbe runtime の起動・停止
+
+エージェントが検証やデバッグのために `glowbe-runtime` を起動した場合:
+
+1. 作業が終わったら、起動したプロセスを **必ず停止** する（`pkill -f 'target/debug/glowbe-runtime'` など）。
+2. 停止後、ユーザーが自分で runtime を動かせるよう制御を戻す。
+3. ユーザーが既に runtime を動かしている場合は、再起動や kill を行わない。
+
+バックグラウンド起動（`nohup` / `&`）を使ったら、タスク完了時にその PID を記録し、最後に kill する。

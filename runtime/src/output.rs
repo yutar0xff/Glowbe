@@ -12,8 +12,6 @@ use crate::config::Config;
 use crate::device_slot::DeviceSlot;
 use crate::devices::{self, DeviceRecord};
 use crate::discover;
-use crate::mate;
-use crate::media;
 use crate::pattern;
 use crate::sphere::{angle_rad_between_unit, unit_dir_from_equirect_uv_y_up};
 use crate::state::{InteractiveEffectKind, InteractivePulse, OutputMode, SharedState};
@@ -138,8 +136,7 @@ async fn device_output_loop(
         let lc = s.led_count;
         (lc, vec![0u8; lc as usize * 3])
     };
-    let mut pattern_uv: Option<Vec<(f32, f32)>> = None;
-    let mut pattern_layout_cache: Option<String> = None;
+    let mut layout_uv_layout_cache: Option<String> = None;
 
     loop {
         let record = slot.record_snapshot();
@@ -232,47 +229,26 @@ async fn device_output_loop(
                 let s = slot.state.read().await;
                 (s.layout_id.clone(), s.led_count)
             };
-            if pattern_layout_cache.as_deref() != Some(layout_id.as_str()) || lc != led_count {
+            if layout_uv_layout_cache.as_deref() != Some(layout_id.as_str()) || lc != led_count {
                 led_count = lc;
                 rgb.resize(led_count as usize * 3, 0);
                 last_sent_rgb = None;
                 force_sends_after_epoch = 4;
-                pattern_layout_cache = Some(layout_id.clone());
-                pattern_uv = match media::load_layout_uv(&app.compiled_dir, &layout_id) {
-                    Ok(layout) if layout.led_count == led_count as usize => {
-                        let mut table = vec![(0.5f32, 0.5f32); led_count as usize];
-                        for p in layout.leds {
-                            if p.i < table.len() {
-                                table[p.i] = (p.u, p.v);
-                            }
-                        }
-                        info!(
-                            "device {device_id}: loop test pattern UV from ledmap ({} / {} LEDs)",
-                            layout_id,
-                            table.len()
-                        );
-                        Some(table)
-                    }
-                    Ok(layout) => {
-                        warn!(
-                            "device {device_id}: ledmap led_count {} != runtime {}; chain fallback",
-                            layout.led_count, led_count
-                        );
-                        None
-                    }
-                    Err(e) => {
-                        warn!(
-                            "device {device_id}: ledmap load failed for {}: {e:#}",
-                            layout_id
-                        );
-                        None
-                    }
-                };
+                layout_uv_layout_cache = Some(layout_id.clone());
+                if let Err(e) =
+                    slot.ensure_layout_uv(&app.compiled_dir, &layout_id, led_count as usize)
+                {
+                    warn!(
+                        "device {device_id}: ledmap load failed for {}: {e:#}",
+                        layout_id
+                    );
+                }
             }
+            let layout_uv = slot.layout_uv_table();
 
             let raw_elapsed = loop_start.elapsed();
             slot.record_loop_raw_tick(raw_elapsed);
-            let seq_elapsed = slot.sequence_elapsed_for_loop(raw_elapsed);
+            let clip_elapsed = slot.clip_elapsed_for_loop(raw_elapsed);
             let t_ms = raw_elapsed.as_millis() as u32;
             let output_mode = slot.output_mode();
             if output_mode != OutputMode::Idle {
@@ -288,39 +264,48 @@ async fn device_output_loop(
                     slot.fill_interactive_base(&mut rgb);
                 }
                 OutputMode::Loop => {
-                    if let Some(sequence) = slot.selected_sequence() {
-                        match sequence.copy_frame_at(seq_elapsed, &mut rgb) {
-                            Ok(()) => {
-                                let idx = sequence.frame_index_at(seq_elapsed) as u32;
-                                slot.metrics.set_loop_source_frame(Some(idx));
+                    if let Some(clip) = slot.selected_clip() {
+                        if let Some(ref uv) = layout_uv {
+                            match clip.sample_into(clip_elapsed, uv, &mut rgb) {
+                                Ok(()) => {
+                                    let idx = clip.frame_index_at(clip_elapsed);
+                                    slot.metrics.set_loop_source_frame(Some(idx));
+                                }
+                                Err(e) => {
+                                    slot.metrics.set_loop_source_frame(None);
+                                    warn!("device {device_id}: clip sample failed: {e:#}");
+                                    pattern::fill_loop_rgb(t_ms, &mut rgb, layout_uv.as_deref());
+                                }
                             }
-                            Err(e) => {
-                                slot.metrics.set_loop_source_frame(None);
-                                warn!("device {device_id}: sequence frame copy failed: {e:#}");
-                                pattern::fill_loop_rgb(t_ms, &mut rgb, pattern_uv.as_deref());
-                            }
+                        } else {
+                            slot.metrics.set_loop_source_frame(None);
+                            pattern::fill_loop_rgb(t_ms, &mut rgb, None);
                         }
                     } else {
                         slot.metrics.set_loop_source_frame(None);
-                        pattern::fill_loop_rgb(t_ms, &mut rgb, pattern_uv.as_deref());
+                        pattern::fill_loop_rgb(t_ms, &mut rgb, layout_uv.as_deref());
                     }
                 }
                 OutputMode::Mate => {
                     slot.metrics.set_loop_source_frame(None);
-                    let dt = frame_interval.as_secs_f32();
-                    mate::tick_and_render_mate(
-                        &slot,
-                        &app.compiled_dir,
-                        loop_start,
-                        Instant::now(),
-                        dt,
-                        &mut rgb,
-                    );
+                    if let Err(e) = slot.ensure_mate_samples(&app.compiled_dir, &layout_id) {
+                        warn!("device {device_id}: mate samples: {e:#}");
+                        rgb.fill(0);
+                    } else {
+                        slot.render_mate(&mut rgb);
+                    }
                 }
             }
 
             if output_mode == OutputMode::Interactive {
                 try_apply_interactive_overlay(&slot, &mut rgb);
+            }
+
+            if let Ok(mut w) = slot.preview_frame.try_write() {
+                if w.len() == rgb.len() {
+                    w.copy_from_slice(&rgb);
+                    slot.preview_seq.fetch_add(1, Ordering::Release);
+                }
             }
 
             apply_master_tone(&slot, &mut rgb);
@@ -332,13 +317,6 @@ async fn device_output_loop(
                 force_sends_after_epoch = 4;
                 idle_link_economy_sent = false;
                 send_link_mode(&sock, true).await;
-            }
-
-            if let Ok(mut w) = slot.preview_frame.try_write() {
-                if w.len() == rgb.len() {
-                    w.copy_from_slice(&rgb);
-                    slot.preview_seq.fetch_add(1, Ordering::Release);
-                }
             }
 
             let unchanged = last_sent_rgb.as_deref() == Some(rgb.as_slice());
@@ -470,7 +448,7 @@ async fn status_listener(port: u16, app: SharedState) {
 }
 
 fn try_apply_interactive_overlay(slot: &DeviceSlot, rgb: &mut [u8]) {
-    let uv_lock = slot.interactive_uv.read().ok();
+    let uv_lock = slot.layout_uv.read().ok();
     let pulse_lock = slot.interactive_pulses.read().ok();
     let Some(uv) = uv_lock.as_ref().and_then(|g| g.as_ref()) else {
         return;
@@ -533,7 +511,7 @@ fn blend_interactive_accum(rgb: &mut [u8], acc: &[f32]) {
 
 /// sRGB エンコード 0–255 → 線形 0–1（加算混色用）
 #[inline]
-fn srgb_byte_to_linear(c: u8) -> f32 {
+pub(crate) fn srgb_byte_to_linear(c: u8) -> f32 {
     let s = c as f32 / 255.0;
     if s <= 0.04045 {
         s / 12.92
@@ -543,7 +521,7 @@ fn srgb_byte_to_linear(c: u8) -> f32 {
 }
 
 #[inline]
-fn linear_to_srgb_u8(l: f32) -> u8 {
+pub(crate) fn linear_to_srgb_u8(l: f32) -> u8 {
     let l = l.clamp(0.0, 1.0);
     let s = if l <= 0.0031308 {
         12.92 * l
@@ -575,7 +553,7 @@ fn add_tinted_to_accum(acc: &mut [f32], led_i: usize, wave: f32, pr: u8, pg: u8,
     acc[o + 2] += wave * srgb_byte_to_linear(pb);
 }
 
-fn apply_interactive_sphere_gaussian(
+pub fn apply_interactive_sphere_gaussian(
     acc: &mut [f32],
     uv: &[(f32, f32)],
     pulse: &InteractivePulse,
@@ -715,40 +693,6 @@ pub fn finalize_linear_add_accum_black_base(acc: &[f32]) -> Vec<u8> {
         rgb[i + 2] = linear_to_srgb_u8(b_lin);
     }
     rgb
-}
-
-/// 複数 expanding-ring パルスを `now` で合成した 1 フレーム（sRGB）。
-pub fn compose_demo_expanding_ring_frame_rgba(
-    uv: &[(f32, f32)],
-    pulses: &[InteractivePulse],
-    now: Instant,
-) -> Vec<u8> {
-    let mut acc = vec![0f32; uv.len() * 3];
-    for p in pulses {
-        if now < p.started || now >= p.started + p.duration {
-            continue;
-        }
-        apply_interactive_expanding_ring_diagonal(&mut acc, uv, p, now);
-    }
-    finalize_linear_add_accum_black_base(&acc)
-}
-
-/// デモ用: `seq_base` から等速タイムラインで `frame_count` フレーム分の `frames.bin` 生データを生成。
-pub fn encode_demo_expanding_ring_sequence_bytes(
-    uv: &[(f32, f32)],
-    pulses: &[InteractivePulse],
-    seq_base: Instant,
-    fps: u32,
-    frame_count: u32,
-) -> Vec<u8> {
-    let fps = fps.max(1);
-    let mut bin = Vec::with_capacity(uv.len() * 3 * frame_count as usize);
-    for fi in 0..frame_count {
-        let t = fi as f32 / fps as f32;
-        let now = seq_base + Duration::from_secs_f32(t);
-        bin.extend_from_slice(&compose_demo_expanding_ring_frame_rgba(uv, pulses, now));
-    }
-    bin
 }
 
 #[cfg(test)]

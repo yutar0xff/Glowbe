@@ -48,9 +48,9 @@ pub struct Assets {
     /// Directory containing `<layout_id>.meta.json` etc. Relative paths are from cwd.
     #[serde(default)]
     pub compiled_dir: Option<String>,
-    /// Directory containing generated sequence directories. Relative paths are from cwd.
+    /// Directory containing generated clip directories. Relative paths are from cwd.
     #[serde(default)]
-    pub sequences_dir: Option<String>,
+    pub clips_dir: Option<String>,
     /// Staging for `POST /api/v1/media/upload` before convert. Relative paths are from cwd.
     #[serde(default)]
     pub uploads_dir: Option<String>,
@@ -66,7 +66,7 @@ pub struct Modes {
 }
 
 fn default_mode() -> String {
-    "loop".into()
+    "idle".into()
 }
 
 impl Default for Modes {

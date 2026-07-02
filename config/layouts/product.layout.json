@@ -34,7 +34,7 @@
   "face": {
     "ledCount": 21,
     "pattern": "zigzag",
-    "paddingMm": 2.1,
+    "paddingMm": 2.5,
     "chainMirrorLR": true
   },
   "wiring": {
@@ -43,6 +43,24 @@
     "dataLines": [
       {
         "gpio": 13,
+        "faceChain": [
+          "face-26",
+          "face-30",
+          "face-31",
+          "face-29",
+          "face-5"
+        ],
+        "faceRotations": {
+          "face-26": 0,
+          "face-30": 0,
+          "face-31": 1,
+          "face-29": 2,
+          "face-5": 2
+        },
+        "reversedFaces": []
+      },
+      {
+        "gpio": 14,
         "faceChain": [
           "face-24",
           "face-27",
@@ -53,152 +71,36 @@
           "face-4"
         ],
         "faceRotations": {
-          "face-24": 2,
-          "face-27": 1,
+          "face-24": 1,
+          "face-27": 0,
           "face-25": 2,
           "face-28": 1,
-          "face-6": 1,
+          "face-6": 0,
+          "face-7": 2,
           "face-4": 1
-        },
-        "reversedFaces": []
-      },
-      {
-        "gpio": 14,
-        "faceChain": [
-          "face-26",
-          "face-30",
-          "face-31",
-          "face-29",
-          "face-5"
-        ],
-        "faceRotations": {
-          "face-26": 2,
-          "face-30": 1,
-          "face-31": 1,
-          "face-29": 1,
-          "face-5": 1
         },
         "reversedFaces": []
       },
       {
         "gpio": 16,
         "faceChain": [
-          "face-32",
-          "face-35",
-          "face-33",
-          "face-36",
-          "face-10",
-          "face-11",
-          "face-8"
+          "face-58",
+          "face-22",
+          "face-23",
+          "face-21",
+          "face-1"
         ],
         "faceRotations": {
-          "face-32": 2,
-          "face-35": 1,
-          "face-33": 2,
-          "face-36": 1,
-          "face-10": 1,
-          "face-8": 1
+          "face-58": 0,
+          "face-22": 0,
+          "face-23": 1,
+          "face-21": 2,
+          "face-1": 2
         },
         "reversedFaces": []
       },
       {
         "gpio": 17,
-        "faceChain": [
-          "face-34",
-          "face-38",
-          "face-39",
-          "face-37",
-          "face-9"
-        ],
-        "faceRotations": {
-          "face-34": 2,
-          "face-38": 1,
-          "face-39": 1,
-          "face-37": 1,
-          "face-9": 1
-        },
-        "reversedFaces": []
-      },
-      {
-        "gpio": 18,
-        "faceChain": [
-          "face-40",
-          "face-43",
-          "face-41",
-          "face-44",
-          "face-14",
-          "face-15",
-          "face-12"
-        ],
-        "faceRotations": {
-          "face-40": 2,
-          "face-43": 1,
-          "face-41": 2,
-          "face-44": 1,
-          "face-14": 1,
-          "face-12": 1
-        },
-        "reversedFaces": []
-      },
-      {
-        "gpio": 19,
-        "faceChain": [
-          "face-42",
-          "face-46",
-          "face-47",
-          "face-45",
-          "face-13"
-        ],
-        "faceRotations": {
-          "face-42": 2,
-          "face-46": 1,
-          "face-47": 1,
-          "face-45": 1,
-          "face-13": 1
-        },
-        "reversedFaces": []
-      },
-      {
-        "gpio": 21,
-        "faceChain": [
-          "face-48",
-          "face-51",
-          "face-49",
-          "face-52",
-          "face-18",
-          "face-19",
-          "face-16"
-        ],
-        "faceRotations": {
-          "face-48": 2,
-          "face-51": 1,
-          "face-49": 2,
-          "face-52": 1,
-          "face-18": 1,
-          "face-16": 1
-        },
-        "reversedFaces": []
-      },
-      {
-        "gpio": 22,
-        "faceChain": [
-          "face-50",
-          "face-54",
-          "face-55",
-          "face-53",
-          "face-17"
-        ],
-        "faceRotations": {
-          "face-50": 2,
-          "face-54": 1,
-          "face-55": 1,
-          "face-53": 1,
-          "face-17": 1
-        },
-        "reversedFaces": []
-      },
-      {
-        "gpio": 23,
         "faceChain": [
           "face-56",
           "face-59",
@@ -209,37 +111,140 @@
           "face-0"
         ],
         "faceRotations": {
-          "face-56": 2,
-          "face-59": 1,
+          "face-56": 1,
+          "face-59": 0,
           "face-57": 2,
           "face-20": 1,
-          "face-2": 1,
+          "face-2": 0,
+          "face-3": 2,
           "face-0": 1
+        },
+        "reversedFaces": []
+      },
+      {
+        "gpio": 18,
+        "faceChain": [
+          "face-50",
+          "face-54",
+          "face-55",
+          "face-53",
+          "face-17"
+        ],
+        "faceRotations": {
+          "face-50": 0,
+          "face-54": 0,
+          "face-55": 1,
+          "face-53": 2,
+          "face-17": 2
         },
         "reversedFaces": []
       },
       {
         "gpio": 25,
         "faceChain": [
-          "face-58",
-          "face-22",
-          "face-23",
-          "face-21",
-          "face-1"
+          "face-48",
+          "face-51",
+          "face-49",
+          "face-52",
+          "face-18",
+          "face-19",
+          "face-16"
         ],
         "faceRotations": {
-          "face-58": 2,
-          "face-22": 1,
-          "face-23": 1,
-          "face-21": 1,
-          "face-1": 1
+          "face-48": 1,
+          "face-51": 0,
+          "face-49": 2,
+          "face-52": 1,
+          "face-18": 0,
+          "face-19": 2,
+          "face-16": 1
+        },
+        "reversedFaces": []
+      },
+      {
+        "gpio": 23,
+        "faceChain": [
+          "face-42",
+          "face-46",
+          "face-47",
+          "face-45",
+          "face-13"
+        ],
+        "faceRotations": {
+          "face-42": 0,
+          "face-46": 0,
+          "face-47": 1,
+          "face-45": 2,
+          "face-13": 2
+        },
+        "reversedFaces": []
+      },
+      {
+        "gpio": 22,
+        "faceChain": [
+          "face-40",
+          "face-43",
+          "face-41",
+          "face-44",
+          "face-14",
+          "face-15",
+          "face-12"
+        ],
+        "faceRotations": {
+          "face-40": 1,
+          "face-43": 0,
+          "face-41": 2,
+          "face-44": 1,
+          "face-14": 0,
+          "face-15": 2,
+          "face-12": 1
+        },
+        "reversedFaces": []
+      },
+      {
+        "gpio": 21,
+        "faceChain": [
+          "face-34",
+          "face-38",
+          "face-39",
+          "face-37",
+          "face-9"
+        ],
+        "faceRotations": {
+          "face-34": 0,
+          "face-38": 0,
+          "face-39": 1,
+          "face-37": 2,
+          "face-9": 2
+        },
+        "reversedFaces": []
+      },
+      {
+        "gpio": 19,
+        "faceChain": [
+          "face-32",
+          "face-35",
+          "face-33",
+          "face-36",
+          "face-10",
+          "face-11",
+          "face-8"
+        ],
+        "faceRotations": {
+          "face-32": 1,
+          "face-35": 0,
+          "face-33": 2,
+          "face-36": 1,
+          "face-10": 0,
+          "face-11": 2,
+          "face-8": 1
         },
         "reversedFaces": []
       }
     ]
   },
   "meta": {
-    "migratedAt": "2026-06-12T23:43:19.554Z",
+    "migratedAt": "2026-07-01T13:08:09.917Z",
     "migratedFrom": "glowbe-studio-layout/2",
     "sourceMetaId": "glowbe-prod-geo60"
   }

@@ -45,7 +45,18 @@
 - 60 fps → **40.5 KB/s** ペイロード（ヘッダ込みでも 2.4 GHz では十分小さい）
 - ボトルネックは帯域より **ESP の LED 出力時間（S3: NeoPixelBus LCD / 無印: NeoPixelBus I2S0）+ Wi-Fi スタック遅延** になりやすい
 
-製品版（`product-geodesic-2v-60`）はコンパイル後に同様の表を追記する。
+### ESP32 無印（`product-esp32`）— 2026-07-01
+
+| 項目 | 記録 |
+|------|------|
+| レイアウト | `product-geodesic-2v-60`（1260 LED、10 線、105/147 混在） |
+| LED 出力 | NeoPixelBus I2S0 X16。全線 `GLOWBE_MAX_LINE_LEDS`（147）で黒パディング |
+| 条件 | ランタイム loop パターン、送信 120–165 fps |
+| 同期更新（旧） | `fps_x10≈950`（≈95 fps）@ 送信 120 fps。ボトルネックは `loop()` 内の同期 `set_rgb` + `show` |
+| **UDP / LED 分離（現行）** | Core 0 受信 + Core 1 表示、`glowbe_frame_queue.h`（深さ 3）。`fps_x10≈1650`（≈165 fps）、`applied≈frames`、`drops=0`、安定動作確認 |
+| 備考 | `GLOWBE_PLAYOUT_LAG_FRAMES=0`（product プロファイル）。送信 fps は実効 **~165 fps** 以下に合わせる |
+
+送信 fps は ESP の実効上限（無印 product でおおよそ **150–170 fps**）以下に合わせること。
 
 ## 合格記録（暫定）
 

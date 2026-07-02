@@ -1,74 +1,81 @@
-# Glowbe シーケンス（ループ再生用オンディスク形式）v1
+# Glowbe クリップ（ループ再生用オンディスク形式）v1
 
-メディアパイプライン（正距円筒 → LED）の成果物。既定は **ディレクトリ + manifest + 生 RGB**（`.glowseq` という単一ファイルコンテナは **当面採用しない**。将来拡張で再検討する）。
+メディアパイプライン（正距円筒 → 低解像度 equirect）の成果物。**レイアウト非依存**。再生時に現レイアウトの ledmap UV でサンプリングする。
 
 ## 既定ディレクトリ構成
 
 ```
-assets/sequences/<id>/
+assets/clips/<id>/
 ├── manifest.json
-└── frames.bin
+├── equirect.bin
+└── source-import.*   # 元メディア（プレビュー / 再デコード用）
 ```
 
-（`manifest.json` の `format` フィールドで `"glowseq"` を宣言してもよいが、物理ファイル名に `.glowseq` 拡張子を必須としない。）
+ビルトインデモ（`demo/expanding-rings` など）はディスク不要。ランタイム内の手続き関数として提供する。
 
 ## manifest.json
 
 ```json
 {
-  "format": "glowbe-sequence",
+  "format": "glowbe-clip",
   "version": 1,
   "id": "sunset-01",
-  "layoutId": "prototype-icosahedron-15",
-  "ledCount": 225,
-  "frameCount": 300,
+  "kind": "equirect-video",
   "fps": 30,
+  "frameCount": 300,
+  "width": 256,
+  "height": 128,
   "source": {
     "kind": "equirectangular-video",
-    "uploadId": "uuid",
-    "width": 2048,
-    "height": 1024
+    "path": "source-import.mp4",
+    "origWidth": 2048,
+    "origHeight": 1024
   },
   "createdAtUnixSec": 1781332800,
   "displayName": "Optional UI label"
 }
 ```
 
+- **`layoutId` / `ledCount` は持たない**（任意レイアウトで再生可能）。
 - 任意 **`displayName`**（文字列・短い UI 表示名）を付けられる。未設定のときはキー自体を省略してよい。
+- `kind`: `equirect-image` | `equirect-image-sequence` | `equirect-video` | （API 一覧では `demo` はビルトイン）
 
-## frames.bin
+## equirect.bin
 
-連続した生 RGB フレーム（チャンク・圧縮なし）。
+連続した生 RGB フレーム（チャンク・圧縮なし）。各フレームは **width × height × 3** バイト。
 
 ```
 繰り返し frameCount 回:
-  ledCount × 3 バイト (R,G,B per global LED index)
+  width * height * 3 バイト (R,G,B per equirect pixel)
 ```
 
 オフセット計算:
 
 ```
-frame_offset = frame_index * ledCount * 3
+frame_offset = frame_index * width * height * 3
 ```
 
-## 再生と出力 fps の対応（ランタイム）
+既定解像度は **256×128**。変換 API で任意 `resolution` を指定可能。
 
-- **既定:** **最近傍ホールド**（補間なし）。シーケンスの `fps` が 30 でランタイムが 60 のとき、各ソースフレームを 2 出力フレーム分表示するイメージ（実装は `floor(t * src_fps)` でインデックス決定）。
-- **将来:** 線形補間などはオプション化してもよい。
+## 再生（ランタイム）
+
+- `equirect.bin` は **mmap** でマップし、全フレームを常駐 RAM に載せない。
+- 各 tick で `frame_index = floor(t * fps) % frameCount` を選び、現レイアウトの UV テーブル `(u,v)` ごとに equirect フレームを **バイリニアサンプル**（`u` は wrap、`v` は clamp）。
+- デモクリップは UV に対する手続き関数を毎 tick 評価する。
 
 ## ループモードの I/O（非ブロッキング）
 
-フレームループの tick 内で **ディスク read をブロックしない**。事前に次フレームを **プリフェッチ / ダブルバッファ** し、tick ではメモリ上のバッファだけを UDP 送出に回す。変換ジョブ（オフライン）とは別の、**再生専用の読み取り戦略**として設計する。
+フレームループの tick 内で **ディスク read をブロックしない**（mmap 済みまたは手続き）。tick ではサンプリング結果だけを UDP 送出に回す。
 
-## 生成 CLI（Phase 2 最小）
+## 生成 CLI
 
 ```bash
 cargo run --manifest-path runtime/Cargo.toml -- \
-  convert-image /path/to/equirectangular.png sequence-id config.toml
+  convert-image /path/to/equirectangular.png clip-id config.toml
 ```
 
-現在の最小実装は **静止画 1 枚 → `frameCount = 1`** のシーケンスを生成する。
+静止画 1 枚 → `frameCount = 1` のクリップを `assets/clips/` に生成する（layout 非依存）。
 
 ## ループモードでの利用（ランタイム）
 
-ランタイムは `manifest.json` を読み、`frames.bin` をメモリに読み込み、`frame_index = floor(t * fps) % frameCount`（ホールド規則に従って出力レートへマップ）でサンプリングする。`POST /api/v1/loop/select` で生成済みシーケンスを選択する。
+`POST /api/v1/loop/select` でクリップ id（メディア uuid または `demo/...`）を選択する。レイアウト切替後も **再変換不要**。

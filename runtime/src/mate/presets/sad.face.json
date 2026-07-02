@@ -1,0 +1,60 @@
+{
+  "format": "glowbe-mate-face",
+  "version": 1,
+  "id": "sad",
+  "displayName": "Sad",
+  "breathingPeriodMs": 5200,
+  "background": [0, 0, 0],
+  "parts": [
+    {
+      "slot": "eye.l",
+      "layer": "eyes",
+      "kind": "ellipse",
+      "pos": [-0.42, 0.28],
+      "size": [0.17, 0.2],
+      "color": [40, 120, 255]
+    },
+    {
+      "slot": "eye.r",
+      "layer": "eyes",
+      "kind": "ellipse",
+      "pos": [0.42, 0.28],
+      "size": [0.17, 0.2],
+      "color": [40, 120, 255]
+    },
+    {
+      "slot": "mouth",
+      "layer": "mouth",
+      "kind": "polyline",
+      "points": [[-0.28, -0.48], [0, -0.4], [0.28, -0.48]],
+      "thickness": 0.08,
+      "color": [40, 120, 255]
+    },
+    {
+      "slot": "tear.l",
+      "layer": "accessories",
+      "kind": "stamp",
+      "asset": "water_drop",
+      "pos": [-0.42, 0.02],
+      "size": [0.10, 0.12],
+      "color": [40, 120, 255],
+      "motions": [
+        { "type": "followBreathing" },
+        { "type": "tearFall", "travel": 0.55, "periodMs": 1800, "phaseFrac": 0.5 }
+      ]
+    },
+    {
+      "slot": "tear.r",
+      "layer": "accessories",
+      "kind": "stamp",
+      "asset": "water_drop",
+      "pos": [0.42, 0.02],
+      "size": [0.10, 0.12],
+      "color": [40, 120, 255],
+      "motions": [
+        { "type": "followBreathing" },
+        { "type": "tearFall", "travel": 0.55, "periodMs": 1800, "phaseFrac": 0.0 }
+      ]
+    }
+  ]
+}

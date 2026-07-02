@@ -1,5 +1,7 @@
-import { Moon, MousePointer2, Repeat, Sparkles } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Moon, MousePointer2, Repeat, Smile } from 'lucide-react'
 import type { OutputMode } from '@/types'
+import { MATE_LAYOUT_ID } from '@/types'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -9,7 +11,7 @@ import { LoopModePanel } from './LoopModePanel'
 import { MateModePanel } from './MateModePanel'
 import { StatusSection } from './StatusSection'
 
-const MODES: OutputMode[] = ['idle', 'loop', 'interactive', 'mate']
+const ALL_MODES: OutputMode[] = ['idle', 'loop', 'interactive', 'mate']
 
 const modeMeta: Record<
   OutputMode,
@@ -17,7 +19,7 @@ const modeMeta: Record<
 > = {
   loop: {
     label: 'Loop',
-    description: 'Play a saved sequence or the built-in test pattern.',
+    description: 'Play a built-in demo, uploaded clip, or the test pattern.',
     icon: Repeat,
   },
   interactive: {
@@ -25,36 +27,53 @@ const modeMeta: Record<
     description: 'Dark base; tap the layout map to stack light pulses.',
     icon: MousePointer2,
   },
+  mate: {
+    label: 'Mate',
+    description: 'Face expressions on the geodesic sphere with smooth morph transitions.',
+    icon: Smile,
+  },
   idle: {
     label: 'Idle',
     description: 'Lights off; loop selection is cleared.',
     icon: Moon,
   },
-  mate: {
-    label: 'Mate',
-    description: 'Sphere-native face: gaze, idle choreography, and liquid motion on device LEDs.',
-    icon: Sparkles,
-  },
 }
 
 function panelMode(mode: string): OutputMode {
+  if (mode === 'mate') return 'mate'
   if (mode === 'loop') return 'loop'
   if (mode === 'interactive') return 'interactive'
-  if (mode === 'mate') return 'mate'
   return 'idle'
 }
 
 export function StudioPage() {
   const { load, modeBusy, layoutBusy, setMode } = useGlowbeRuntime()
-  if (load.kind !== 'ready') return null
-  const { state, sequences } = load
+  const [studioTab, setStudioTab] = useState<OutputMode | null>(null)
 
-  const modeKey = panelMode(state.mode)
+  const stateMode = load.kind === 'ready' ? load.state.mode : null
+  const layoutId = load.kind === 'ready' ? load.state.layoutId : null
+
+  useEffect(() => {
+    setStudioTab(null)
+  }, [stateMode, layoutId])
+
+  if (load.kind !== 'ready') return null
+  const { state, clips } = load
+
+  const mateSupported = state.layoutId === MATE_LAYOUT_ID
+  const serverModeKey = panelMode(state.mode)
+  const modeKey = studioTab ?? serverModeKey
 
   const pickMode = (next: string) => {
     if (modeBusy !== null) return
-    if (next === modeKey) return
-    void setMode(next as OutputMode)
+    const nextMode = next as OutputMode
+    if (nextMode === modeKey) return
+    if (nextMode === 'mate' && !mateSupported) {
+      setStudioTab('mate')
+      return
+    }
+    setStudioTab(null)
+    void setMode(nextMode)
   }
 
   return (
@@ -65,7 +84,7 @@ export function StudioPage() {
         <div className="space-y-4">
           <span className="text-sm font-medium text-muted-foreground">Mode</span>
           <TabsList variant="segmented" className="max-w-full">
-            {MODES.map((mode) => {
+            {ALL_MODES.map((mode) => {
               const { label, icon: Icon } = modeMeta[mode]
               return (
                 <TabsTrigger
@@ -93,7 +112,7 @@ export function StudioPage() {
 
         <TabsContent value="idle" className="mt-6 outline-none focus-visible:outline-none sm:mt-10" />
         <TabsContent value="loop" className="mt-6 space-y-6 outline-none focus-visible:outline-none sm:mt-10">
-          <LoopModePanel state={state} sequences={sequences} />
+          <LoopModePanel state={state} clips={clips} />
         </TabsContent>
         <TabsContent value="interactive" className="mt-6 space-y-6 outline-none focus-visible:outline-none sm:mt-10">
           <InteractiveModePanel state={state} />

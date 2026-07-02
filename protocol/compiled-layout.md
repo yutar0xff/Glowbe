@@ -50,4 +50,4 @@ RGB 順序は **論理 RGB**（グローバル LED インデックスごとに R
 
 ## C ヘッダ
 
-`include/generated/<layout-id>/glowbe_layout.h` にマクロ `GLOWBE_LAYOUT_ID`, `GLOWBE_LAYOUT_HASH`, `GLOWBE_LED_COUNT`, `GLOWBE_DATA_LINES`, `GLOWBE_GPIO_PINS[]`, `GLOWBE_LINE_LED_COUNTS[]` を出力。PlatformIO の `-I` でそのディレクトリを先に指定する。
+`include/generated/<layout-id>/glowbe_layout.h` にマクロ `GLOWBE_LAYOUT_ID`, `GLOWBE_LAYOUT_HASH`, `GLOWBE_LED_COUNT`, `GLOWBE_DATA_LINES`, `GLOWBE_MAX_LINE_LEDS`, `GLOWBE_GPIO_PINS[]`, `GLOWBE_LINE_LED_COUNTS[]` を出力。PlatformIO の `-I` でそのディレクトリを先に指定する。

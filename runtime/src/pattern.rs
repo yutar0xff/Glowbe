@@ -38,7 +38,7 @@ fn fill_loop_rgb_chain_fallback(led_count: usize, t_ms: u32, rgb: &mut [u8]) {
     }
 }
 
-fn hsv_to_rgb(h: u8, s: u8, v: u8) -> (u8, u8, u8) {
+pub fn hsv_to_rgb(h: u8, s: u8, v: u8) -> (u8, u8, u8) {
     if s == 0 {
         return (v, v, v);
     }

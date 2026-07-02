@@ -1,31 +1,3 @@
-export type MateDynamics = {
-  stiffness: number
-  damping: number
-  floatiness: number
-  trailLag: number
-}
-
-export type MateSummary = {
-  expression: string
-  mood: string
-  idleRoutine: string
-  gazeU: number
-  gazeV: number
-  gazePull: number
-  cluster: number
-  idleSpeed: number
-  color: [number, number, number]
-  brightness: number
-  faceAngularRadiusDeg: number
-  featureScale: number
-  eyeSpacing: number
-  dynamics: MateDynamics
-  autoBreath: boolean
-  autoBlink: boolean
-  autoSaccade: boolean
-  autoTremor: boolean
-}
-
 export type CompiledLayoutSummary = {
   layoutId: string
   displayName?: string
@@ -46,10 +18,10 @@ export type RuntimeState = {
   espStatusAddr: string | null
   outputTargetAddr: string | null
   ledCount: number
-  loopSequenceId: string | null
-  /** Source frame index while a sequence frame is copied to the output buffer; null otherwise. */
+  loopClipId: string | null
+  /** Source frame index while a clip frame is sampled to the output buffer; null otherwise. */
   loopSourceFrame: number | null
-  /** When true, loop timeline is frozen (sequence frame does not advance). */
+  /** When true, loop timeline is frozen (clip frame does not advance). */
   loopPlaybackPaused: boolean
   uptimeSec: number
   frameLoopStaleMs: number
@@ -57,21 +29,21 @@ export type RuntimeState = {
   framesSent: number
   masterBrightness: number
   masterGamma: number
-  mate?: MateSummary | null
 }
 
-export type SequenceSummary = {
+export type ClipSummary = {
   id: string
-  layoutId: string
-  ledCount: number
+  kind: string
   frameCount: number
   fps: number
-  sourceKind: string
+  width: number
+  height: number
+  sourceKind?: string
   sourceWidth: number
   sourceHeight: number
   createdAtUnixSec: number
-  /** Optional. When omitted, summaries may drop this field in list responses. */
   displayName?: string
+  isDemo?: boolean
 }
 
 export type Health = {
@@ -97,17 +69,24 @@ export type MediaUploadStatusPayload = {
   uploadId: string
   status: 'stored' | 'running' | 'done' | 'failed'
   jobId?: string
-  sequenceId?: string
+  clipId?: string
   error?: string
   progress?: number
 }
 
 export type LoadState =
   | { kind: 'loading' }
-  | { kind: 'ready'; state: RuntimeState; health: Health; sequences: SequenceSummary[]; fetchedAt: Date }
+  | { kind: 'ready'; state: RuntimeState; health: Health; clips: ClipSummary[]; fetchedAt: Date }
   | { kind: 'error'; message: string; health?: Health; fetchedAt?: Date }
 
 export type OutputMode = 'idle' | 'loop' | 'interactive' | 'mate'
+
+export { MATE_LAYOUT_ID } from '@/mate/constants'
+export type {
+  MateBreathingParams,
+  MatePresetSummary,
+  MatePresetsResponse,
+} from '@/mate/types'
 
 export type InteractiveEffectKind = 'sphereGaussian' | 'expandingRingDiagonal'
 

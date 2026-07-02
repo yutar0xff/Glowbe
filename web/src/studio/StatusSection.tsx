@@ -8,13 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 export function StatusSection() {
   const { load } = useGlowbeRuntime()
   if (load.kind !== 'ready') return null
-  const { state, sequences, fetchedAt } = load
-  const playingSequenceId = state.mode === 'loop' ? state.loopSequenceId : null
+  const { state, clips, fetchedAt } = load
+  const playingClipId = state.mode === 'loop' ? state.loopClipId : null
 
   return (
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        <MetricCard label="Mode" value={state.mode} hint={playingSequenceId ?? '—'} />
+        <MetricCard label="Mode" value={state.mode} hint={playingClipId ?? '—'} />
         <MetricCard label="Target FPS" value={String(state.targetFps)} hint={`out ${formatNumber(effectiveFpsOut(state))}`} />
         <MetricCard label="FPS Rx" value={formatNumber(effectiveFpsRx(state))} hint="device-reported" />
         <MetricCard
@@ -32,7 +32,7 @@ export function StatusSection() {
         />
         <MetricCard label="LED Count" value={String(state.ledCount)} hint={state.layoutId} />
         <MetricCard label="Uptime" value={formatUptime(state.uptimeSec)} />
-        <MetricCard label="Sequences (count)" value={String(sequences.length)} hint="select in Loop mode above" />
+        <MetricCard label="Clips (count)" value={String(clips.length)} hint="select in Loop mode above" />
       </div>
 
       <Card>

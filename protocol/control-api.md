@@ -22,7 +22,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
   "espStatusAddr": "192.168.1.10:49152",
   "outputTargetAddr": "192.168.1.10:49152",
   "ledCount": 225,
-  "loopSequenceId": null,
+  "loopClipId": null,
   "loopSourceFrame": null,
   "loopPlaybackPaused": false,
   "uptimeSec": 3600,
@@ -40,8 +40,8 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 - `layoutMismatch`: ESP STATUS の `layout_hash` とランタイムの `meta.layoutHash` が食い違うとき `true`（いずれか欠損時は照合しない）。
 - `framesSent`: 完全送信に成功したフレーム数（累計）。
 - `outputTargetAddr`: runtime が FRAME を送信している宛先。`espStatusAddr` と IP が違う場合、`config.toml` の `device.esp_ip` が古い可能性が高い。
-- `loopSourceFrame`: **`loop` かつシーケンスのフレームが実際に出力バッファへコピーできているとき**、そのソース上のフレーム index（0 始まり）。テストパターンへフォールバック中や `idle` / `interactive` では省略または `null`。
-- `loopPlaybackPaused`: **`loop` でシーケンス選択中**にタイムラインが一時停止のとき `true`（`POST /api/v1/loop/pause`）。それ以外は `false`。
+- `loopSourceFrame`: **`loop` かつクリップのフレームが実際に出力バッファへサンプルできているとき**、そのソース上のフレーム index（0 始まり）。テストパターンへフォールバック中や `idle` / `interactive` では省略または `null`。
+- `loopPlaybackPaused`: **`loop` でクリップ選択中**にタイムラインが一時停止のとき `true`（`POST /api/v1/loop/pause`）。それ以外は `false`。
 - `espStatusAddr`: ESP STATUS パケットの送信元。
 
 ### `POST /api/v1/brightness`（草案・未実装）
@@ -55,54 +55,26 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 ### `POST /api/v1/mode`
 
 ```json
-{ "mode": "idle" | "loop" | "interactive" | "mate" | "mic" | "clock_digital" | "clock_analog" }
+{ "mode": "idle" | "loop" | "interactive" | "mic" | "clock_digital" | "clock_analog" }
 ```
 
-→ 実装済み: **`idle`**（全消灯・**選択シーケンス解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択シーケンス）、**`interactive`**（既定は全消灯ベース。WebSocket の **`setSolid`** で全 LED を同一 RGB にしたうえで、インタラクティブ・パルスを UDP 出力に合成。シーケンス選択は保持）。**`mate`**（相棒モード: 球面クォータニオン＋SDF 顔。詳細は [`docs/MATE-MODE.md`](../docs/MATE-MODE.md)）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
-
-### `POST /api/v1/mate/state`
-
-相棒モード用の部分更新。出力モードが **`mate`** でないときは `400`。
-
-```json
-{
-  "expression": "curious",
-  "mood": "playful",
-  "idle": { "routine": "orbit", "speed": 0.35, "axis": [0, 1, 0] },
-  "gaze": { "u": 0.5, "v": 0.42 },
-  "gazePull": 0.55,
-  "cluster": 0.15,
-  "dynamics": { "stiffness": 6.0, "damping": 0.72, "floatiness": 0.35, "trailLag": 0.28 },
-  "appearance": {
-    "color": [200, 240, 255],
-    "brightness": 0.92,
-    "faceAngularRadiusDeg": 58,
-    "featureScale": 0.32,
-    "eyeSpacing": 0.52,
-    "useExpressionTint": true
-  },
-  "auto": { "breath": true, "blink": true, "saccade": true, "tremor": false },
-  "mouthOpen": 0.2,
-  "clearMouthOpen": true,
-  "useExpressionTint": true
-}
-```
-
-→ 実装済み: `appearance.useExpressionTint` またはトップレベル `useExpressionTint` が `true` のとき、表情プリセット色への追従に戻す（`appearance.color` による固定を解除）。`200` + 更新後 `state`（`mode` が `mate` のとき `mate` 要約を含む）。
+→ 実装済み: **`idle`**（全消灯・**選択クリップ解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択クリップ）、**`interactive`**（既定は全消灯ベース。WebSocket の **`setSolid`** で全 LED を同一 RGB にしたうえで、インタラクティブ・パルスを UDP 出力に合成。クリップ選択は保持）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
 
 ### `POST /api/v1/loop/select`
 
 ```json
-{ "sequenceId": "sunset-01" }
+{ "clipId": "demo/expanding-rings" }
 ```
 
-→ 実装済み: `assets/sequences/<sequenceId>/manifest.json` と `frames.bin` を読み込み、ランタイムの `layoutId` / `ledCount` と一致すれば loop モードで再生する。失敗時は `400`。
+またはメディアクリップ uuid（例 `up-550e8400-e29b-41d4-a716-446655440000`）。`sequenceId` は後方互換の別名として受け付ける。
+
+→ 実装済み: ビルトインデモ id または `assets/clips/<clipId>/` を読み込み、**レイアウト非依存**で loop モード再生（現レイアウトの UV で equirect をサンプル、またはデモ手続き）。失敗時は `400`。
 
 ### `POST /api/v1/loop/clear-selection`
 
 ボディ不要。
 
-→ 実装済み: 選択中のシーケンスを解除し（`loopSequenceId` を `null`）、出力モードを **`loop`** にする。シーケンス無しのテストパターンへ移行する。`200` + 更新後 `state`。
+→ 実装済み: 選択中のクリップを解除し（`loopClipId` を `null`）、出力モードを **`loop`** にする。クリップ無しのテストパターンへ移行する。`200` + 更新後 `state`。
 
 ### `POST /api/v1/loop/pause`
 
@@ -110,7 +82,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 { "paused": true }
 ```
 
-→ 実装済み: **`loop` かつシーケンス選択中**のとき、シーケンスのタイムラインを一時停止（`paused: true`）または再開（`paused: false`）。`idle` / `interactive` / `mate` では状態のみ更新され、出力の見え方はモードに従う。`200` + 更新後 `state`（`loopPlaybackPaused` を含む）。
+→ 実装済み: **`loop` かつクリップ選択中**のとき、タイムラインを一時停止（`paused: true`）または再開（`paused: false`）。`idle` / `interactive` では状態のみ更新され、出力の見え方はモードに従う。`200` + 更新後 `state`（`loopPlaybackPaused` を含む）。
 
 ### `POST /api/v1/master-tone`
 
@@ -159,7 +131,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 { "layoutId": "product-geodesic-2v-60" }
 ```
 
-→ 実装済み: ランタイムの **`layoutId` / `ledCount` / `layoutHash` 期待値**を切り替え、プレビューバッファを再確保する。現在のループシーケンスの `manifest.layoutId` または LED 数が一致しない場合は **選択解除**（テストパターンへ）。`config.toml` は書き換えない。`400` + `{ "error": "..." }`（メタ JSON が無い等）。成功時は `200` + 更新後 `state`。
+→ 実装済み: ランタイムの **`layoutId` / `ledCount` / `layoutHash` 期待値**を切り替え、プレビューバッファと UV キャッシュを再確保する。**クリップ選択は維持**（レイアウト非依存のため再変換不要）。`config.toml` は書き換えない。`400` + `{ "error": "..." }`（メタ JSON が無い等）。成功時は `200` + 更新後 `state`。
 
 **注意:** ESP はコンパイル時に埋め込んだ `layout_hash` / `led_count` と一致するフレームのみ受け入れる。Studio のレイアウト選択と実機ファームを揃えること。
 
@@ -172,44 +144,56 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 
 監視・起動確認用。
 
-### `GET /api/v1/sequences`
+### `GET /api/v1/clips`
 
-変換済みシーケンス一覧。実装済み。
+ビルトインデモ + 変換済みメディアクリップの統合一覧。実装済み。
 
 ```json
 [
   {
-    "id": "anim10003",
-    "layoutId": "prototype-icosahedron-15",
-    "ledCount": 225,
-    "frameCount": 1,
-    "fps": 1,
-    "sourceKind": "equirectangular-image",
-    "sourceWidth": 1024,
-    "sourceHeight": 512,
+    "id": "demo/expanding-rings",
+    "kind": "demo",
+    "frameCount": 375,
+    "fps": 30,
+    "width": 256,
+    "height": 128,
+    "sourceWidth": 0,
+    "sourceHeight": 0,
+    "createdAtUnixSec": 0,
+    "displayName": "Expanding rings",
+    "isDemo": true
+  },
+  {
+    "id": "up-550e8400-e29b-41d4-a716-446655440000",
+    "kind": "equirect-video",
+    "frameCount": 300,
+    "fps": 30,
+    "width": 256,
+    "height": 128,
+    "sourceKind": "equirectangular-video",
+    "sourceWidth": 2048,
+    "sourceHeight": 1024,
     "createdAtUnixSec": 1781332800,
     "displayName": "My clip"
   }
 ]
 ```
 
-任意キー **`displayName`**（UI 用・最大約 120 文字）。未設定のシーケンスでは省略され得る。
+### `GET /api/v1/clips/:clipId/source-frame/:frameIndex`
 
-### `GET /api/v1/sequences/:sequenceId/source-frame/:frameIndex`
+→ 実装済み: メディアクリップに同梱されたインポート（`source-import.*`）から、指定フレームを **PNG** で返す。ビルトインデモでは `404`。`frameIndex` は `0 .. frameCount-1`。
 
-→ 実装済み: シーケンスに同梱されたインポート（`source-import.*`）から、指定フレームを **PNG** で返す。`frameIndex` は `0 .. frameCount-1`。`manifest.source.kind` が **`equirectangular-image`**（単一画像は 0 のみ）、**`equirectangular-image-sequence`**、**`equirectangular-video`**（サーバに `ffmpeg` が必要）に対応。インポートファイルが無いシーケンスでは `404`。
+### `DELETE /api/v1/clips/:clipId`
 
-### `DELETE /api/v1/sequences/:sequenceId`
+→ 実装済み: `assets/clips/<clipId>/` をディスクから削除。ビルトインデモは `400`。再生中なら先に選択解除。成功時 **`204 No Content`**。
 
-→ 実装済み: `assets/sequences/<sequenceId>/` を **ディスクから完全削除**（`manifest.json`・`frames.bin`・`source-import.*` など含む）。現在そのシーケンスをループ再生中なら、先に選択を解除してから削除する。成功時は **`204 No Content`**。ディレクトリが無い場合は `404`。
-
-### `PATCH /api/v1/sequences/:sequenceId`
+### `PATCH /api/v1/clips/:clipId`
 
 ```json
 { "displayName": "New label" }
 ```
 
-→ 実装済み: `manifest.json` の `displayName` を更新（空文字でキー削除）。`200` + 更新後のシーケンス要約（`GET /api/v1/sequences` と同形の 1 要素相当）。シーケンスが無い場合は `404`。
+→ 実装済み: メディアクリップの `manifest.json` の `displayName` を更新。ビルトインデモは `400`。`200` + 更新後のクリップ要約。
 
 ### `POST /api/v1/media/upload`
 
@@ -222,16 +206,18 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 ### `POST /api/v1/media/:uploadId/convert`
 
 ```json
-{ "fps": 30, "layoutId": "prototype-icosahedron-15", "displayName": "Optional label" }
+{ "fps": 30, "displayName": "Optional label", "resolution": { "width": 256, "height": 128 } }
 ```
+
+`layoutId` は不要（レイアウト非依存）。`resolution` 省略時は 256×128。
 
 → `{ "jobId": "uuid", "status": "queued" }`
 
-→ 実装済み（**正距円筒 PNG/JPEG 1 枚**、**ZIP 内の同名サイズ PNG/JPEG 連番**・最大 **3600** フレーム・ファイル名ソート、または **動画** を **`ffmpeg`** で指定 `fps` にリサンプルして最大 3600 フレーム）。`manifest.source.kind` は `equirectangular-image` / `equirectangular-image-sequence` / `equirectangular-video`。元ファイルはシーケンスディレクトリに `source-import.<ext>` として複製され、プレビュー API 用の参照になる。
+→ 実装済み: 正距円筒メディアを低解像度 `equirect.bin` + `glowbe-clip` manifest として `assets/clips/` に出力。元ファイルは `source-import.<ext>` として複製。
 
 ### `GET /api/v1/media/:uploadId`
 
-変換進捗・`sequenceId`（完了時）。
+変換進捗・`clipId`（完了時）。
 
 → 実装済み。例:
 
@@ -244,11 +230,11 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 }
 ```
 
-`status`: `stored` | `running` | `done` | `failed`。`running` 中は **`progress` が 0–99** で変換のおおよその進捗（ZIP 多フレーム時）。`done` のとき `sequenceId` と `progress: 100`。`failed` のとき `error`。
+`status`: `stored` | `running` | `done` | `failed`。`running` 中は **`progress` が 0–99** で変換のおおよその進捗（ZIP 多フレーム時）。`done` のとき `clipId` と `progress: 100`。`failed` のとき `error`。
 
 ## WebSocket `GET /api/v1/ws`
 
-→ 実装済み: 接続直後と約 1 秒ごとに `state` を送る。`ping` → `pong`。**`masterSettings`** は任意モードでマスター補正を更新（`POST /api/v1/master-tone` と同等）。**`interactive`** メッセージは、出力モードが **`interactive`** のときだけ合成（それ以外は `event_status` `error`）。**`mate`** メッセージは、出力モードが **`mate`** のときだけ `mate` 状態へ反映（それ以外は `event_status` `error`）。**`previewSubscribe`** で有効化した接続には、約 **30fps** で **バイナリ** LED フレーム（UDP 直前と同一の最終 RGB）が送られる。
+→ 実装済み: 接続直後と約 1 秒ごとに `state` を送る。`ping` → `pong`。**`masterSettings`** は任意モードでマスター補正を更新（`POST /api/v1/master-tone` と同等）。**`interactive`** メッセージは、出力モードが **`interactive`** のときだけ合成（それ以外は `event_status` `error`）。**`previewSubscribe`** で有効化した接続には、約 **30fps** で **バイナリ** LED フレーム（UDP 直前と同一の最終 RGB）が送られる。
 
 ### クライアント → サーバ
 
@@ -263,12 +249,6 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 { "type": "interactive", "action": "pulse", "u": 0.42, "v": 0.71, "amplitude": 1.0, "durationMs": 450, "sigmaRad": 0.14 }
 { "type": "ping" }
 { "type": "previewSubscribe", "enable": true }
-{ "type": "mate", "action": "setExpression", "expression": "happy" }
-{ "type": "mate", "action": "setGaze", "u": 0.42, "v": 0.71, "gazePull": 0.6 }
-{ "type": "mate", "action": "setDynamics", "stiffness": 8.0, "damping": 0.65 }
-{ "type": "mate", "action": "setAppearance", "color": [255, 200, 220], "brightness": 0.95 }
-{ "type": "mate", "action": "setAppearance", "faceAngularRadiusDeg": 58, "featureScale": 0.32, "eyeSpacing": 0.52 }
-{ "type": "mate", "action": "clearMouthOpen" }
 ```
 
 - **`masterSettings`** … `brightness` / `gamma` を任意指定（未指定のキーは**変更しない**）。全モードで有効。
@@ -280,7 +260,6 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
   - 共通: **`amplitude`**（既定 1、0–4）、**`colorRandom`: true** でタップごとに鮮やかな色を自動決定、**`colorRgb`: [r,g,b]`** で固定色（`colorRandom` が true なら無視）。
   - **`sphereGaussian`**: **`durationMs`**（既定 450、100–5000）と **`sigmaRad`**（既定約 0.14 rad、0.02–0.6）で寿命とスポット半径を指定する球面ガウス。
   - **`expandingRingDiagonal`**（リップル）: タップ中心から **大円角距離で等方に拡大する波面**と、通過後の**狭い残光トレイル**。**`ringSpeed`**（波面速度）、**`ringThicknessRad`**（バンド幅）、寿命は速度・幅から自動算出。到達前の立ち上がりは `ringThicknessRad` に依存しない固定の短い時間フェザーでタップ点から。`durationMs` は無視。
-- **`mate` + `action`** … 出力モードが **`mate`** のときのみ。`setExpression` / `setMood` / `setIdle` / `setGaze` / `setDynamics` / `setAppearance` / `setAuto` / `setMouthOpen`（`value`）/ `clearMouthOpen`。フィールドの意味は `POST /api/v1/mate/state` と [`docs/MATE-MODE.md`](../docs/MATE-MODE.md) §12 に準拠。応答は `event_status`（`event`: `mate`）。
 
 ### サーバ → クライアント
 
@@ -290,11 +269,9 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 { "type": "pong" }
 { "type": "event_status", "event": "interactive", "status": "ok", "action": "setSolid", "enabled": true, "colorRgb": [16, 16, 24] }
 { "type": "event_status", "event": "interactive", "status": "ok", "effect": "sphereGaussian" }
-{ "type": "event_status", "event": "mate", "status": "ok", "action": "setGaze" }
-{ "type": "event_status", "event": "mate", "status": "error", "reason": "mate WS events apply only in output mode \"mate\"" }
 ```
 
-`interactive` の `error` は ledmap 欠落など。`mate` の `error` はモード不一致や必須フィールド欠落など。
+`interactive` の `error` は ledmap 欠落など。
 
 **エフェクト:** `sphereGaussian` は球面上ガウス（大円距離）。`expandingRingDiagonal` はタップ中心から**等方に拡大する球面波面**（大円角 θ に対する到達時刻 `θ/c`）と、通過後の指数トレイル。立ち上がりは波面幅に依存しない短い時間フェザーで**点始まり**。トレイルは角度方向にも狭いガウスでゲートし、球全体を埋めない。
 
@@ -318,8 +295,7 @@ WebSocket の **Binary** メッセージ。ビッグエンディアン。
 |----------------|-------|------|
 | `GET /api/v1/state` | 1 | ✅ 実装済 |
 | `GET /health` | 1 | ✅ 実装済 |
-| `POST /api/v1/mode` (`idle` / `loop` / `interactive` / `mate`) | 1 | ✅ 実装済 |
-| `POST /api/v1/mate/state` | 2 | ✅ 実装済 |
+| `POST /api/v1/mode` (`idle` / `loop` / `interactive`) | 1 | ✅ 実装済 |
 | `POST /api/v1/master-tone` | 1 | ✅ 実装済 |
 | `POST /api/v1/loop/select` | 2 | ✅ 実装済 |
 | `POST /api/v1/loop/clear-selection` | 2 | ✅ 実装済 |
@@ -329,9 +305,8 @@ WebSocket の **Binary** メッセージ。ビッグエンディアン。
 | `POST /api/v1/device/layout` | 2 | ✅ 実装済 |
 | `GET /api/v1/ws`（state 配信） | 1–2 | ✅ 実装済 |
 | `GET /api/v1/ws`（interactive） | 1–2 | ✅ interactive UV 合成・複数エフェクト |
-| `GET /api/v1/ws`（mate） | 2 | ✅ mate 状態の WS 更新 |
-| `GET /api/v1/sequences`（任意 `displayName`） | 2 | ✅ 実装済 |
-| `PATCH /api/v1/sequences/:id`（`displayName`） | 2 | ✅ 実装済 |
+| `GET /api/v1/clips`（デモ + メディア統合） | 2 | ✅ 実装済 |
+| `PATCH /api/v1/clips/:id`（`displayName`） | 2 | ✅ 実装済 |
 | `media/*`（upload / convert / GET 進捗） | 2 | 🟡 画像+ZIP 連番。**動画**は未 |
 | `GET /api/v1/ws`（`previewSubscribe` + バイナリ RGB、約 30fps） | 2 | ✅ 実装済 |
 | `GET /api/v1/ws`（`getLayoutUv` → `layoutUv`） | 2 | ✅ 実装済 |

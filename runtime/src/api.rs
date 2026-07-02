@@ -16,10 +16,11 @@ use std::time::{Duration, Instant};
 use tokio::time;
 use uuid::Uuid;
 
+use crate::clip;
 use crate::device_slot::DeviceSlot;
 use crate::devices::DeviceRecord;
 use crate::discover;
-use crate::mate;
+use crate::mate_api;
 use crate::media;
 use crate::state::{
     InteractiveEffectKind, InteractivePulse, MediaUploadEntry, MediaUploadPhase, OutputMode,
@@ -44,7 +45,7 @@ struct StateResponse {
     esp_status_addr: Option<String>,
     output_target_addr: Option<String>,
     led_count: u16,
-    loop_sequence_id: Option<String>,
+    loop_clip_id: Option<String>,
     uptime_sec: u64,
     frame_loop_stale_ms: u64,
     layout_mismatch: bool,
@@ -53,8 +54,6 @@ struct StateResponse {
     master_gamma: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     loop_source_frame: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    mate: Option<mate::MateSummary>,
     loop_playback_paused: bool,
 }
 
@@ -75,7 +74,7 @@ struct ModeRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LoopSelectRequest {
-    sequence_id: String,
+    clip_id: String,
 }
 
 #[derive(Deserialize)]
@@ -97,10 +96,38 @@ struct DeviceLayoutRequest {
     layout_id: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MateExpressionRequest {
+    preset: String,
+    #[serde(default)]
+    transition_ms: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MateBreathingRequest {
+    #[serde(default = "default_breathing_enabled")]
+    enabled: bool,
+}
+
+fn default_breathing_enabled() -> bool {
+    true
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ErrorResponse {
-    error: String,
+struct MatePresetsResponse {
+    presets: Vec<crate::mate::MatePresetSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mate_preset_id: Option<String>,
+    mate_breathing: crate::mate::BreathingParams,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ErrorResponse {
+    pub(crate) error: String,
 }
 
 #[derive(Serialize)]
@@ -125,7 +152,7 @@ struct MediaUploadStatusResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     job_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    sequence_id: Option<String>,
+    clip_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -137,9 +164,17 @@ struct MediaUploadStatusResponse {
 struct MediaConvertRequest {
     #[serde(default = "default_media_fps")]
     fps: u32,
-    layout_id: String,
     #[serde(default)]
     display_name: Option<String>,
+    #[serde(default)]
+    resolution: Option<MediaResolutionRequest>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MediaResolutionRequest {
+    width: u32,
+    height: u32,
 }
 
 fn default_media_fps() -> u32 {
@@ -238,7 +273,7 @@ fn media_status_json(upload_id: &str, entry: &MediaUploadEntry) -> MediaUploadSt
             upload_id: upload_id.to_string(),
             status: "stored",
             job_id: None,
-            sequence_id: None,
+            clip_id: None,
             error: None,
             progress: None,
         },
@@ -246,18 +281,15 @@ fn media_status_json(upload_id: &str, entry: &MediaUploadEntry) -> MediaUploadSt
             upload_id: upload_id.to_string(),
             status: "running",
             job_id: Some(job_id.clone()),
-            sequence_id: None,
+            clip_id: None,
             error: None,
             progress: Some(progress.load(Ordering::Relaxed)),
         },
-        MediaUploadPhase::Done {
-            job_id,
-            sequence_id,
-        } => MediaUploadStatusResponse {
+        MediaUploadPhase::Done { job_id, clip_id } => MediaUploadStatusResponse {
             upload_id: upload_id.to_string(),
             status: "done",
             job_id: Some(job_id.clone()),
-            sequence_id: Some(sequence_id.clone()),
+            clip_id: Some(clip_id.clone()),
             error: None,
             progress: Some(100),
         },
@@ -265,7 +297,7 @@ fn media_status_json(upload_id: &str, entry: &MediaUploadEntry) -> MediaUploadSt
             upload_id: upload_id.to_string(),
             status: "failed",
             job_id: job_id.clone(),
-            sequence_id: None,
+            clip_id: None,
             error: Some(message.clone()),
             progress: None,
         },
@@ -402,22 +434,18 @@ async fn post_media_convert(
     };
     let upload_id = uuid.hyphenated().to_string();
 
-    let layout_id = req.layout_id.trim();
-    if layout_id.is_empty() || layout_id.contains('/') || layout_id.contains('\\') {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "layoutId must be non-empty and path-safe".into(),
-            }),
-        )
-            .into_response();
-    }
-    let layout_id = layout_id.to_string();
     let fps = req.fps.clamp(1, 120);
     let display_name = media::sanitize_display_name(req.display_name.as_deref());
+    let (width, height) = req
+        .resolution
+        .map(|r| (r.width.max(1), r.height.max(1)))
+        .unwrap_or((
+            crate::equirect::DEFAULT_WIDTH,
+            crate::equirect::DEFAULT_HEIGHT,
+        ));
 
     let job_id = Uuid::new_v4().hyphenated().to_string();
-    let sequence_id = format!("up-{upload_id}");
+    let clip_id = format!("up-{upload_id}");
     let progress = Arc::new(AtomicU8::new(0));
     let progress_spawn = progress.clone();
 
@@ -453,25 +481,24 @@ async fn post_media_convert(
         path
     };
 
-    let compiled_dir = app.compiled_dir.clone();
-    let sequences_dir = app.sequences_dir.clone();
+    let clips_dir = app.clips_dir.clone();
     let app2 = app.clone();
     let job_id_spawn = job_id.clone();
     let upload_id_spawn = upload_id.clone();
-    let sequence_id_spawn = sequence_id.clone();
+    let clip_id_spawn = clip_id.clone();
 
     tokio::spawn(async move {
-        let sequence_for_blocking = sequence_id_spawn.clone();
+        let clip_for_blocking = clip_id_spawn.clone();
         let display_opt = display_name;
         let res = tokio::task::spawn_blocking(move || {
-            media::convert_uploaded_media_to_sequence(
+            media::convert_uploaded_media_to_clip(
                 &source_path,
-                &sequence_for_blocking,
-                &layout_id,
-                &compiled_dir,
-                &sequences_dir,
+                &clip_for_blocking,
+                &clips_dir,
                 fps,
                 display_opt.as_deref(),
+                width,
+                height,
                 Some(&progress_spawn),
             )
         })
@@ -485,7 +512,7 @@ async fn post_media_convert(
             Ok(Ok(_)) => {
                 entry.phase = MediaUploadPhase::Done {
                     job_id: job_id_spawn.clone(),
-                    sequence_id: sequence_id_spawn,
+                    clip_id: clip_id_spawn,
                 };
             }
             Ok(Err(e)) => {
@@ -566,6 +593,27 @@ pub fn router(app: SharedState) -> Router {
             }),
         )
         .route(
+            "/api/v1/mate/presets",
+            get({
+                let app = app.clone();
+                move |q| get_mate_presets(app.clone(), q)
+            }),
+        )
+        .route(
+            "/api/v1/mate/expression",
+            post({
+                let app = app.clone();
+                move |q, body| post_mate_expression(app.clone(), q, body)
+            }),
+        )
+        .route(
+            "/api/v1/mate/breathing",
+            post({
+                let app = app.clone();
+                move |q, body| post_mate_breathing(app.clone(), q, body)
+            }),
+        )
+        .route(
             "/api/v1/mode",
             post({
                 let app = app.clone();
@@ -601,40 +649,33 @@ pub fn router(app: SharedState) -> Router {
             }),
         )
         .route(
-            "/api/v1/mate/state",
-            post({
-                let app = app.clone();
-                move |q, body| post_mate_state(app.clone(), q, body)
-            }),
-        )
-        .route(
-            "/api/v1/sequences",
+            "/api/v1/clips",
             get({
                 let app = app.clone();
-                move || get_sequences(app.clone())
+                move || get_clips(app.clone())
             }),
         )
         .route(
-            "/api/v1/sequences/{sequence_id}",
+            "/api/v1/clips/{clip_id}",
             patch({
                 let app = app.clone();
-                move |path, body| patch_sequence_display(app.clone(), path, body)
+                move |path, body| patch_clip_display(app.clone(), path, body)
             })
             .delete({
                 let app = app.clone();
                 move |path: Path<String>| {
                     let app = app.clone();
-                    async move { delete_sequence(app, path).await }
+                    async move { delete_clip(app, path).await }
                 }
             }),
         )
         .route(
-            "/api/v1/sequences/{sequence_id}/source-frame/{frame_index}",
+            "/api/v1/clips/{clip_id}/source-frame/{frame_index}",
             get({
                 let app = app.clone();
                 move |path: Path<(String, u32)>| {
                     let app = app.clone();
-                    async move { get_sequence_source_frame(app, path).await }
+                    async move { get_clip_source_frame(app, path).await }
                 }
             }),
         )
@@ -1043,227 +1084,90 @@ async fn handle_ws_text(
             }
 
             let action = v.get("action").and_then(|a| a.as_str()).unwrap_or("");
-            let patch = match action {
-                "setExpression" => {
-                    let Some(expr) = v.get("expression").and_then(|x| x.as_str()) else {
-                        let reply = json!({
-                            "type": "event_status",
-                            "event": "mate",
-                            "status": "error",
-                            "reason": "setExpression requires \"expression\""
-                        });
-                        socket.send(Message::Text(reply.to_string().into())).await?;
-                        return Ok(());
-                    };
-                    json!({ "expression": expr })
-                }
-                "setMood" => {
-                    let Some(mood) = v.get("mood").and_then(|x| x.as_str()) else {
-                        let reply = json!({
-                            "type": "event_status",
-                            "event": "mate",
-                            "status": "error",
-                            "reason": "setMood requires \"mood\""
-                        });
-                        socket.send(Message::Text(reply.to_string().into())).await?;
-                        return Ok(());
-                    };
-                    json!({ "mood": mood })
-                }
-                "setIdle" => {
-                    use serde_json::Map;
-                    let mut idle = Map::new();
-                    if let Some(r) = v.get("routine").and_then(|x| x.as_str()) {
-                        idle.insert("routine".into(), json!(r));
-                    }
-                    if let Some(sp) = v.get("speed").and_then(|x| x.as_f64()) {
-                        idle.insert("speed".into(), json!(sp));
-                    }
-                    if let Some(ax) = v.get("axis").and_then(|x| x.as_array()) {
-                        idle.insert("axis".into(), json!(ax));
-                    }
-                    if idle.is_empty() {
-                        let reply = json!({
-                            "type": "event_status",
-                            "event": "mate",
-                            "status": "error",
-                            "reason": "setIdle requires \"routine\", \"speed\", and/or \"axis\""
-                        });
-                        socket.send(Message::Text(reply.to_string().into())).await?;
-                        return Ok(());
-                    }
-                    json!({ "idle": serde_json::Value::Object(idle) })
-                }
-                "setGaze" => {
-                    use serde_json::Map;
-                    let mut top = Map::new();
-                    let mut gaze = Map::new();
-                    if let Some(u) = v.get("u").and_then(|x| x.as_f64()) {
-                        gaze.insert("u".into(), json!(u));
-                    }
-                    if let Some(vv) = v.get("v").and_then(|x| x.as_f64()) {
-                        gaze.insert("v".into(), json!(vv));
-                    }
-                    if !gaze.is_empty() {
-                        top.insert("gaze".into(), serde_json::Value::Object(gaze));
-                    }
-                    if let Some(gp) = v.get("gazePull").and_then(|x| x.as_f64()) {
-                        top.insert("gazePull".into(), json!(gp));
-                    }
-                    if let Some(c) = v.get("cluster").and_then(|x| x.as_f64()) {
-                        top.insert("cluster".into(), json!(c));
-                    }
-                    if top.is_empty() {
-                        let reply = json!({
-                            "type": "event_status",
-                            "event": "mate",
-                            "status": "error",
-                            "reason": "setGaze requires \"u\"/\"v\" and/or \"gazePull\"/\"cluster\""
-                        });
-                        socket.send(Message::Text(reply.to_string().into())).await?;
-                        return Ok(());
-                    }
-                    serde_json::Value::Object(top)
-                }
-                "setDynamics" => {
-                    use serde_json::Map;
-                    let mut d = Map::new();
-                    if let Some(x) = v.get("stiffness").and_then(|x| x.as_f64()) {
-                        d.insert("stiffness".into(), json!(x));
-                    }
-                    if let Some(x) = v.get("damping").and_then(|x| x.as_f64()) {
-                        d.insert("damping".into(), json!(x));
-                    }
-                    if let Some(x) = v.get("floatiness").and_then(|x| x.as_f64()) {
-                        d.insert("floatiness".into(), json!(x));
-                    }
-                    if let Some(x) = v.get("trailLag").and_then(|x| x.as_f64()) {
-                        d.insert("trailLag".into(), json!(x));
-                    }
-                    if d.is_empty() {
-                        let reply = json!({
-                            "type": "event_status",
-                            "event": "mate",
-                            "status": "error",
-                            "reason": "setDynamics requires at least one of stiffness, damping, floatiness, trailLag"
-                        });
-                        socket.send(Message::Text(reply.to_string().into())).await?;
-                        return Ok(());
-                    }
-                    json!({ "dynamics": serde_json::Value::Object(d) })
-                }
-                "setAppearance" => {
-                    use serde_json::Map;
-                    let mut ap = Map::new();
-                    if let Some(c) = v.get("color").and_then(|x| x.as_array()) {
-                        ap.insert("color".into(), json!(c));
-                    }
-                    if let Some(x) = v.get("brightness").and_then(|x| x.as_f64()) {
-                        ap.insert("brightness".into(), json!(x));
-                    }
-                    if let Some(x) = v.get("faceAngularRadiusDeg").and_then(|x| x.as_f64()) {
-                        ap.insert("faceAngularRadiusDeg".into(), json!(x));
-                    }
-                    if let Some(x) = v.get("featureScale").and_then(|x| x.as_f64()) {
-                        ap.insert("featureScale".into(), json!(x));
-                    }
-                    if let Some(x) = v.get("eyeSpacing").and_then(|x| x.as_f64()) {
-                        ap.insert("eyeSpacing".into(), json!(x));
-                    }
-                    if let Some(x) = v.get("faceScale").and_then(|x| x.as_f64()) {
-                        ap.insert("faceScale".into(), json!(x));
-                    }
-                    if let Some(x) = v.get("partsScale").and_then(|x| x.as_f64()) {
-                        ap.insert("partsScale".into(), json!(x));
-                    }
-                    if let Some(x) = v.get("useExpressionTint").and_then(|x| x.as_bool()) {
-                        ap.insert("useExpressionTint".into(), json!(x));
-                    }
-                    if ap.is_empty() {
-                        let reply = json!({
-                            "type": "event_status",
-                            "event": "mate",
-                            "status": "error",
-                            "reason": "setAppearance requires color, brightness, faceAngularRadiusDeg, featureScale, eyeSpacing, faceScale, partsScale, and/or useExpressionTint"
-                        });
-                        socket.send(Message::Text(reply.to_string().into())).await?;
-                        return Ok(());
-                    }
-                    json!({ "appearance": serde_json::Value::Object(ap) })
-                }
-                "setAuto" => {
-                    use serde_json::Map;
-                    let mut a = Map::new();
-                    if let Some(x) = v.get("breath").and_then(|x| x.as_bool()) {
-                        a.insert("breath".into(), json!(x));
-                    }
-                    if let Some(x) = v.get("blink").and_then(|x| x.as_bool()) {
-                        a.insert("blink".into(), json!(x));
-                    }
-                    if let Some(x) = v.get("saccade").and_then(|x| x.as_bool()) {
-                        a.insert("saccade".into(), json!(x));
-                    }
-                    if let Some(x) = v.get("tremor").and_then(|x| x.as_bool()) {
-                        a.insert("tremor".into(), json!(x));
-                    }
-                    if a.is_empty() {
-                        let reply = json!({
-                            "type": "event_status",
-                            "event": "mate",
-                            "status": "error",
-                            "reason": "setAuto requires at least one of breath, blink, saccade, tremor"
-                        });
-                        socket.send(Message::Text(reply.to_string().into())).await?;
-                        return Ok(());
-                    }
-                    json!({ "auto": serde_json::Value::Object(a) })
-                }
-                "setMouthOpen" => {
-                    let Some(val) = v.get("value").and_then(|x| x.as_f64()) else {
-                        let reply = json!({
-                            "type": "event_status",
-                            "event": "mate",
-                            "status": "error",
-                            "reason": "setMouthOpen requires \"value\""
-                        });
-                        socket.send(Message::Text(reply.to_string().into())).await?;
-                        return Ok(());
-                    };
-                    json!({ "mouthOpen": val })
-                }
-                "clearMouthOpen" => json!({ "clearMouthOpen": true }),
-                _ => {
-                    let reply = json!({
-                        "type": "event_status",
-                        "event": "mate",
-                        "status": "error",
-                        "reason": format!("unknown mate action: {action}")
-                    });
-                    socket.send(Message::Text(reply.to_string().into())).await?;
-                    return Ok(());
-                }
-            };
-
-            match slot.mate_apply_json(&patch) {
-                Ok(()) => {
-                    let reply = json!({
+            let reply = match action {
+                "blink" => {
+                    slot.trigger_mate_blink();
+                    json!({
                         "type": "event_status",
                         "event": "mate",
                         "status": "ok",
-                        "action": action
-                    });
-                    socket.send(Message::Text(reply.to_string().into())).await?;
+                        "action": "blink"
+                    })
                 }
-                Err(e) => {
-                    let reply = json!({
+                "setBreathing" => {
+                    let mut params = slot.mate_breathing_params();
+                    if let Some(enabled) = v.get("enabled").and_then(|x| x.as_bool()) {
+                        params.enabled = enabled;
+                    }
+                    slot.set_mate_breathing(params);
+                    json!({
                         "type": "event_status",
                         "event": "mate",
-                        "status": "error",
-                        "reason": e
-                    });
-                    socket.send(Message::Text(reply.to_string().into())).await?;
+                        "status": "ok",
+                        "action": "setBreathing",
+                        "enabled": params.enabled
+                    })
                 }
-            }
+                "setExpression" => {
+                    let preset = v
+                        .get("preset")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .trim();
+                    if preset.is_empty() {
+                        json!({
+                            "type": "event_status",
+                            "event": "mate",
+                            "status": "error",
+                            "reason": "setExpression requires non-empty \"preset\""
+                        })
+                    } else {
+                        let transition_ms = v
+                            .get("transitionMs")
+                            .and_then(|x| x.as_u64())
+                            .unwrap_or(crate::mate::DEFAULT_TRANSITION_MS as u64)
+                            .clamp(0, 10_000) as u32;
+                        let layout_id = slot.state.read().await.layout_id.clone();
+                        match mate_api::read_mate_registry(app) {
+                            Ok(registry) => match mate_api::apply_mate_expression(
+                                slot,
+                                &registry,
+                                &app.compiled_dir,
+                                &layout_id,
+                                preset,
+                                transition_ms,
+                            ) {
+                                Ok(()) => json!({
+                                    "type": "event_status",
+                                    "event": "mate",
+                                    "status": "ok",
+                                    "action": "setExpression",
+                                    "preset": preset
+                                }),
+                                Err(reason) => json!({
+                                    "type": "event_status",
+                                    "event": "mate",
+                                    "status": "error",
+                                    "reason": reason
+                                }),
+                            },
+                            Err(resp) => json!({
+                                "type": "event_status",
+                                "event": "mate",
+                                "status": "error",
+                                "reason": resp.1.error
+                            }),
+                        }
+                    }
+                }
+                other => json!({
+                    "type": "event_status",
+                    "event": "mate",
+                    "status": "error",
+                    "reason": format!("unsupported mate action: {other}")
+                }),
+            };
+            socket.send(Message::Text(reply.to_string().into())).await?;
         }
         _ => {
             let reply = json!({
@@ -1276,23 +1180,23 @@ async fn handle_ws_text(
     Ok(())
 }
 
-async fn get_sequence_source_frame(
+async fn get_clip_source_frame(
     app: SharedState,
-    Path((sequence_id, frame_index)): Path<(String, u32)>,
+    Path((clip_id, frame_index)): Path<(String, u32)>,
 ) -> impl IntoResponse {
-    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
+    if clip_id.is_empty() || clip_id.contains('/') || clip_id.contains('\\') {
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: "sequenceId must be non-empty and path-safe".into(),
+                error: "clipId must be non-empty and path-safe".into(),
             }),
         )
             .into_response();
     }
 
-    let sequences_dir = app.sequences_dir.clone();
+    let clips_dir = app.clips_dir.clone();
     let res = tokio::task::spawn_blocking(move || {
-        media::export_sequence_source_frame_png(&sequences_dir, &sequence_id, frame_index)
+        media::export_clip_source_frame_png(&clips_dir, &clip_id, frame_index)
     })
     .await;
 
@@ -1339,39 +1243,46 @@ async fn get_state(
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SequencePatchRequest {
+struct ClipPatchRequest {
     display_name: String,
 }
 
-async fn patch_sequence_display(
+async fn patch_clip_display(
     app: SharedState,
-    Path(sequence_id): Path<String>,
-    Json(body): Json<SequencePatchRequest>,
+    Path(clip_id): Path<String>,
+    Json(body): Json<ClipPatchRequest>,
 ) -> impl IntoResponse {
-    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
+    if clip_id.is_empty() || clip_id.contains('/') || clip_id.contains('\\') {
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: "sequenceId must be non-empty and path-safe".into(),
+                error: "clipId must be non-empty and path-safe".into(),
             }),
         )
             .into_response();
     }
-    let manifest_path = app.sequences_dir.join(&sequence_id).join("manifest.json");
+    if clip::is_demo_id(&clip_id) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "built-in demo clips cannot be renamed".into(),
+            }),
+        )
+            .into_response();
+    }
+    let manifest_path = app.clips_dir.join(&clip_id).join("manifest.json");
     if !manifest_path.is_file() {
         return (
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
-                error: "sequence not found".into(),
+                error: "clip not found".into(),
             }),
         )
             .into_response();
     }
-    if let Err(e) = media::set_sequence_display_name(
-        &app.sequences_dir,
-        &sequence_id,
-        Some(body.display_name.as_str()),
-    ) {
+    if let Err(e) =
+        media::set_clip_display_name(&app.clips_dir, &clip_id, Some(body.display_name.as_str()))
+    {
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -1380,24 +1291,33 @@ async fn patch_sequence_display(
         )
             .into_response();
     }
-    match media::sequence_summary(&app.sequences_dir, &sequence_id) {
+    match media::clip_summary(&app.clips_dir, &clip_id) {
         Ok(s) => (StatusCode::OK, Json(s)).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
-                error: format!("read sequence after patch: {e:#}"),
+                error: format!("read clip after patch: {e:#}"),
             }),
         )
             .into_response(),
     }
 }
 
-async fn delete_sequence(app: SharedState, Path(sequence_id): Path<String>) -> impl IntoResponse {
-    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
+async fn delete_clip(app: SharedState, Path(clip_id): Path<String>) -> impl IntoResponse {
+    if clip_id.is_empty() || clip_id.contains('/') || clip_id.contains('\\') {
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: "sequenceId must be non-empty and path-safe".into(),
+                error: "clipId must be non-empty and path-safe".into(),
+            }),
+        )
+            .into_response();
+    }
+    if clip::is_demo_id(&clip_id) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "built-in demo clips cannot be deleted".into(),
             }),
         )
             .into_response();
@@ -1407,8 +1327,8 @@ async fn delete_sequence(app: SharedState, Path(sequence_id): Path<String>) -> i
         slot.state
             .try_read()
             .ok()
-            .and_then(|s| s.loop_sequence_id.clone())
-            == Some(sequence_id.clone())
+            .and_then(|s| s.loop_clip_id.clone())
+            == Some(clip_id.clone())
     });
     if should_clear {
         for slot in app.devices_ordered() {
@@ -1416,19 +1336,18 @@ async fn delete_sequence(app: SharedState, Path(sequence_id): Path<String>) -> i
                 .state
                 .try_read()
                 .ok()
-                .and_then(|s| s.loop_sequence_id.clone())
-                == Some(sequence_id.clone());
+                .and_then(|s| s.loop_clip_id.clone())
+                == Some(clip_id.clone());
             if clear {
-                slot.clear_sequence().await;
+                slot.clear_clip().await;
             }
         }
     }
 
-    let sequences_dir = app.sequences_dir.clone();
-    let id = sequence_id.clone();
+    let clips_dir = app.clips_dir.clone();
+    let id = clip_id.clone();
     let res =
-        tokio::task::spawn_blocking(move || media::delete_sequence_directory(&sequences_dir, &id))
-            .await;
+        tokio::task::spawn_blocking(move || media::delete_clip_directory(&clips_dir, &id)).await;
 
     match res {
         Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
@@ -1451,13 +1370,13 @@ async fn delete_sequence(app: SharedState, Path(sequence_id): Path<String>) -> i
     }
 }
 
-async fn get_sequences(app: SharedState) -> impl IntoResponse {
-    match media::list_sequences(&app.sequences_dir) {
-        Ok(sequences) => (StatusCode::OK, Json(sequences)).into_response(),
+async fn get_clips(app: SharedState) -> impl IntoResponse {
+    match clip::list_all_clips(&app.clips_dir) {
+        Ok(clips) => (StatusCode::OK, Json(clips)).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
-                error: format!("list sequences failed: {e:#}"),
+                error: format!("list clips failed: {e:#}"),
             }),
         )
             .into_response(),
@@ -1529,6 +1448,103 @@ async fn get_layout_uv(app: SharedState, Query(q): Query<DeviceIdQuery>) -> impl
     }
 }
 
+async fn get_mate_presets(app: SharedState, Query(q): Query<DeviceIdQuery>) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    let layout_id = slot.state.read().await.layout_id.clone();
+    if let Err(resp) = mate_api::guard_mate_layout(&layout_id) {
+        return resp.into_response();
+    }
+    let presets = match mate_api::read_mate_registry(&app) {
+        Ok(g) => g.summaries().to_vec(),
+        Err(resp) => return resp.into_response(),
+    };
+    (
+        StatusCode::OK,
+        Json(MatePresetsResponse {
+            presets,
+            mate_preset_id: slot.mate_preset_id(),
+            mate_breathing: slot.mate_breathing_params(),
+        }),
+    )
+        .into_response()
+}
+
+async fn post_mate_expression(
+    app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
+    Json(req): Json<MateExpressionRequest>,
+) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    let layout_id = slot.state.read().await.layout_id.clone();
+    if let Err(resp) = mate_api::guard_mate_layout(&layout_id) {
+        return resp.into_response();
+    }
+    let preset_id = req.preset.trim();
+    if preset_id.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "preset must be non-empty".into(),
+            }),
+        )
+            .into_response();
+    }
+    let transition_ms = req
+        .transition_ms
+        .unwrap_or(crate::mate::DEFAULT_TRANSITION_MS);
+    let apply_err = {
+        let registry = match mate_api::read_mate_registry(&app) {
+            Ok(g) => g,
+            Err(resp) => return resp.into_response(),
+        };
+        mate_api::apply_mate_expression(
+            &slot,
+            &registry,
+            &app.compiled_dir,
+            &layout_id,
+            preset_id,
+            transition_ms,
+        )
+    };
+    if let Err(reason) = apply_err {
+        let status = if reason.contains("unknown mate preset") {
+            StatusCode::BAD_REQUEST
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
+        };
+        return (status, Json(ErrorResponse { error: reason })).into_response();
+    }
+    slot.set_output_mode(OutputMode::Mate).await;
+    let s = slot.state.read().await;
+    (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
+}
+
+async fn post_mate_breathing(
+    app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
+    Json(req): Json<MateBreathingRequest>,
+) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    let layout_id = slot.state.read().await.layout_id.clone();
+    if let Err(resp) = mate_api::guard_mate_layout(&layout_id) {
+        return resp.into_response();
+    }
+    let mut params = slot.mate_breathing_params();
+    params.enabled = req.enabled;
+    slot.set_mate_breathing(params);
+    let s = slot.state.read().await;
+    (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
+}
+
 async fn post_mode(
     app: SharedState,
     Query(q): Query<DeviceIdQuery>,
@@ -1549,28 +1565,39 @@ async fn post_mode(
     };
 
     if mode == OutputMode::Idle {
-        slot.clear_sequence().await;
+        slot.clear_clip().await;
     }
-    slot.set_output_mode(mode).await;
     if mode == OutputMode::Mate {
-        let (layout_id, led_count) = {
-            let s = slot.state.read().await;
-            (s.layout_id.clone(), s.led_count as usize)
+        let layout_id = slot.state.read().await.layout_id.clone();
+        if let Err(resp) = mate_api::guard_mate_layout(&layout_id) {
+            return resp.into_response();
+        }
+        let mate_setup_err = {
+            let registry = match mate_api::read_mate_registry(&app) {
+                Ok(g) => g,
+                Err(resp) => return resp.into_response(),
+            };
+            slot.ensure_mate_neutral(&registry)
+                .map_err(|e| format!("{e:#}"))
+                .and_then(|()| {
+                    slot.ensure_mate_samples(&app.compiled_dir, &layout_id)
+                        .map_err(|e| format!("{e:#}"))
+                })
         };
-        if let Err(e) = slot.ensure_interactive_uv(&app.compiled_dir, &layout_id, led_count) {
-            tracing::warn!("mate: ensure_interactive_uv failed: {e:#}");
+        if let Err(error) = mate_setup_err {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error }),
+            )
+                .into_response();
         }
     }
+    slot.set_output_mode(mode).await;
     let s = slot.state.read().await;
     (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
 }
 
 fn state_response(slot: &DeviceSlot, s: &RuntimeState) -> StateResponse {
-    let mate = if s.mode == "mate" {
-        Some(slot.mate_summary())
-    } else {
-        None
-    };
     StateResponse {
         device_id: slot.id(),
         layout_id: s.layout_id.clone(),
@@ -1584,7 +1611,7 @@ fn state_response(slot: &DeviceSlot, s: &RuntimeState) -> StateResponse {
         esp_status_addr: s.esp_status_addr.clone(),
         output_target_addr: s.output_target_addr.clone(),
         led_count: s.led_count,
-        loop_sequence_id: s.loop_sequence_id.clone(),
+        loop_clip_id: s.loop_clip_id.clone(),
         uptime_sec: s.uptime_sec(),
         frame_loop_stale_ms: slot.metrics.frame_loop_stale_ms(),
         layout_mismatch: s.layout_mismatch,
@@ -1592,7 +1619,6 @@ fn state_response(slot: &DeviceSlot, s: &RuntimeState) -> StateResponse {
         master_brightness: f64::from(slot.master_brightness()),
         master_gamma: f64::from(slot.master_gamma()),
         loop_source_frame: slot.metrics.loop_source_frame(),
-        mate,
         loop_playback_paused: slot.loop_playback_paused(),
     }
 }
@@ -1606,37 +1632,20 @@ async fn post_loop_select(
         Ok(s) => s,
         Err(e) => return e.into_response(),
     };
-    let sequence = match media::load_sequence(&app.sequences_dir, &req.sequence_id) {
-        Ok(sequence) => sequence,
+    let loaded = match clip::load_clip(&app.clips_dir, &req.clip_id) {
+        Ok(clip) => clip,
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: format!("load sequence failed: {e:#}"),
+                    error: format!("load clip failed: {e:#}"),
                 }),
             )
                 .into_response();
         }
     };
 
-    let (layout_id, led_count) = {
-        let s = slot.state.read().await;
-        (s.layout_id.clone(), s.led_count)
-    };
-    if sequence.layout_id != layout_id || sequence.led_count != led_count as usize {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: format!(
-                    "sequence layout mismatch: {} / {} LEDs, runtime expects {} / {} LEDs",
-                    sequence.layout_id, sequence.led_count, layout_id, led_count
-                ),
-            }),
-        )
-            .into_response();
-    }
-
-    slot.set_sequence(sequence).await;
+    slot.set_clip(loaded).await;
     slot.set_output_mode(OutputMode::Loop).await;
     let s = slot.state.read().await;
     (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
@@ -1650,7 +1659,7 @@ async fn post_loop_clear_selection(
         Ok(s) => s,
         Err(e) => return e.into_response(),
     };
-    slot.clear_sequence().await;
+    slot.clear_clip().await;
     slot.set_output_mode(OutputMode::Loop).await;
     let s = slot.state.read().await;
     (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
@@ -1690,31 +1699,6 @@ async fn post_master_tone(
         Ok(())
     }) {
         tracing::warn!(device = %device_id, "persist master tone failed: {e}");
-    }
-    let s = slot.state.read().await;
-    (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
-}
-
-async fn post_mate_state(
-    app: SharedState,
-    Query(q): Query<DeviceIdQuery>,
-    Json(req): Json<serde_json::Value>,
-) -> impl IntoResponse {
-    let slot = match resolve_slot(&app, &q) {
-        Ok(s) => s,
-        Err(e) => return e.into_response(),
-    };
-    if slot.output_mode() != OutputMode::Mate {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "mate state applies only in output mode \"mate\"".to_string(),
-            }),
-        )
-            .into_response();
-    }
-    if let Err(e) = slot.mate_apply_json(&req) {
-        return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })).into_response();
     }
     let s = slot.state.read().await;
     (StatusCode::OK, Json(state_response(&slot, &s))).into_response()

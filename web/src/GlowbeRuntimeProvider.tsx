@@ -5,13 +5,15 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
-import type { DeviceCreateInput, DeviceRecord, LoadState, MediaUploadStatusPayload, OutputMode, RuntimeState } from '@/types'
+import type { DeviceCreateInput, DeviceRecord, LoadState, MateBreathingParams, MediaUploadStatusPayload, OutputMode, RuntimeState } from '@/types'
 import {
   API_BASE,
   apiDeviceQuery,
   fetchDevices,
   fetchState,
   POLL_MS,
+  postMateExpression,
+  postMateBreathing,
   readActiveDeviceFromUrl,
   writeActiveDeviceToUrl,
 } from '@/api'
@@ -33,11 +35,13 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
   const [activeDeviceId, setActiveDeviceId] = useState<string | null>(() => readActiveDeviceFromUrl())
   const [devices, setDevices] = useState<DeviceRecord[]>([])
   const [modeBusy, setModeBusy] = useState<string | null>(null)
-  const [sequenceBusy, setSequenceBusy] = useState<string | null>(null)
+  const [clipBusy, setClipBusy] = useState<string | null>(null)
   const [layoutBusy, setLayoutBusy] = useState(false)
   const [masterToneBusy, setMasterToneBusy] = useState(false)
   const [mediaUploadBusy, setMediaUploadBusy] = useState(false)
   const [mediaConvertBusy, setMediaConvertBusy] = useState(false)
+  const [mateExpressionBusy, setMateExpressionBusy] = useState<string | null>(null)
+  const [mateBreathingBusy, setMateBreathingBusy] = useState(false)
 
   const syncDevices = useCallback(async (signal: AbortSignal) => {
     const list = await fetchDevices(signal)
@@ -142,7 +146,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
           kind: 'ready',
           state: newState,
           health: prev.kind === 'error' && prev.health ? prev.health : { ok: true, text: 'ok' },
-          sequences: [],
+          clips: [],
           fetchedAt: new Date(),
         }
       })
@@ -172,7 +176,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ mode }),
         signal: controller.signal,
       })
-      if (!res.ok) throw new Error(`Could not change output mode (error ${res.status}).`)
+      if (!res.ok) throw new Error(await readApiError(res))
       const newState = (await res.json()) as RuntimeState
       setLoad((prev) => {
         if (prev.kind === 'ready') {
@@ -186,7 +190,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
           kind: 'ready',
           state: newState,
           health: prev.kind === 'error' && prev.health ? prev.health : { ok: true, text: 'ok' },
-          sequences: [],
+          clips: [],
           fetchedAt: new Date(),
         }
       })
@@ -203,8 +207,83 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [activeDeviceId])
 
+  const setMateExpression = useCallback(
+    async (preset: string, transitionMs = 320) => {
+      setMateExpressionBusy(preset)
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 3500)
+      try {
+        const newState = await postMateExpression(
+          controller.signal,
+          activeDeviceId,
+          preset,
+          transitionMs,
+        )
+        setLoad((prev) => {
+          if (prev.kind === 'ready') {
+            return { ...prev, state: newState, fetchedAt: new Date() }
+          }
+          return {
+            kind: 'ready',
+            state: newState,
+            health: { ok: true, text: 'ok' },
+            clips: [],
+            fetchedAt: new Date(),
+          }
+        })
+      } catch (err) {
+        setLoad((prev) => ({
+          kind: 'error',
+          message: err instanceof Error ? err.message : String(err),
+          health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
+          fetchedAt: new Date(),
+        }))
+        throw err
+      } finally {
+        window.clearTimeout(timeout)
+        setMateExpressionBusy(null)
+      }
+    },
+    [activeDeviceId],
+  )
+
+  const setMateBreathing = useCallback(
+    async (params: Partial<MateBreathingParams> & { enabled: boolean }) => {
+      setMateBreathingBusy(true)
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 3500)
+      try {
+        const newState = await postMateBreathing(controller.signal, activeDeviceId, params)
+        setLoad((prev) => {
+          if (prev.kind === 'ready') {
+            return { ...prev, state: newState, fetchedAt: new Date() }
+          }
+          return {
+            kind: 'ready',
+            state: newState,
+            health: { ok: true, text: 'ok' },
+            clips: [],
+            fetchedAt: new Date(),
+          }
+        })
+      } catch (err) {
+        setLoad((prev) => ({
+          kind: 'error',
+          message: err instanceof Error ? err.message : String(err),
+          health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
+          fetchedAt: new Date(),
+        }))
+        throw err
+      } finally {
+        window.clearTimeout(timeout)
+        setMateBreathingBusy(false)
+      }
+    },
+    [activeDeviceId],
+  )
+
   const clearLoopSelection = useCallback(async () => {
-    setSequenceBusy('__clear__')
+    setClipBusy('__clear__')
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 3500)
     try {
@@ -224,7 +303,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
           kind: 'ready',
           state: newState,
           health: { ok: true, text: 'ok' },
-          sequences: [],
+          clips: [],
           fetchedAt: new Date(),
         }
       })
@@ -237,7 +316,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       }))
     } finally {
       window.clearTimeout(timeout)
-      setSequenceBusy(null)
+      setClipBusy(null)
     }
   }, [activeDeviceId])
 
@@ -274,8 +353,8 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [activeDeviceId])
 
-  const selectSequence = useCallback(async (sequenceId: string) => {
-    setSequenceBusy(sequenceId)
+  const selectClip = useCallback(async (clipId: string) => {
+    setClipBusy(clipId)
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 3500)
     try {
@@ -283,10 +362,10 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`${API_BASE}/api/v1/loop/select${q}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sequenceId }),
+        body: JSON.stringify({ clipId }),
         signal: controller.signal,
       })
-      if (!res.ok) throw new Error(`Could not select sequence (error ${res.status}).`)
+      if (!res.ok) throw new Error(await readApiError(res))
       const newState = (await res.json()) as RuntimeState
       setLoad((prev) => {
         if (prev.kind === 'ready') {
@@ -296,7 +375,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
           kind: 'ready',
           state: newState,
           health: { ok: true, text: 'ok' },
-          sequences: [],
+          clips: [],
           fetchedAt: new Date(),
         }
       })
@@ -309,7 +388,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       }))
     } finally {
       window.clearTimeout(timeout)
-      setSequenceBusy(null)
+      setClipBusy(null)
     }
   }, [activeDeviceId])
 
@@ -410,7 +489,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const convertMediaUpload = useCallback(
-    async (uploadId: string, layoutId: string, fps = 30, displayName?: string) => {
+    async (uploadId: string, fps = 30, displayName?: string) => {
       setMediaConvertBusy(true)
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), 180_000)
@@ -422,7 +501,6 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
-              layoutId,
               fps,
               ...(dn ? { displayName: dn } : {}),
             }),
@@ -453,13 +531,13 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     [refreshLoad],
   )
 
-  const setSequenceDisplayName = useCallback(
-    async (sequenceId: string, displayName: string) => {
+  const setClipDisplayName = useCallback(
+    async (clipId: string, displayName: string) => {
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), 3500)
       try {
         const res = await fetch(
-          `${API_BASE}/api/v1/sequences/${encodeURIComponent(sequenceId)}`,
+          `${API_BASE}/api/v1/clips/${encodeURIComponent(clipId)}`,
           {
             method: 'PATCH',
             headers: { 'content-type': 'application/json' },
@@ -476,14 +554,14 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     [refreshLoad],
   )
 
-  const deleteSequence = useCallback(
-    async (sequenceId: string) => {
-      setSequenceBusy(sequenceId)
+  const deleteClip = useCallback(
+    async (clipId: string) => {
+      setClipBusy(clipId)
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), 3500)
       try {
         const res = await fetch(
-          `${API_BASE}/api/v1/sequences/${encodeURIComponent(sequenceId)}`,
+          `${API_BASE}/api/v1/clips/${encodeURIComponent(clipId)}`,
           {
             method: 'DELETE',
             signal: controller.signal,
@@ -500,7 +578,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         }))
       } finally {
         window.clearTimeout(timeout)
-        setSequenceBusy(null)
+        setClipBusy(null)
       }
     },
     [refreshLoad],
@@ -512,20 +590,24 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       activeDeviceId,
       devices,
       modeBusy,
-      sequenceBusy,
+      clipBusy,
       layoutBusy,
       masterToneBusy,
       mediaUploadBusy,
       mediaConvertBusy,
+      mateExpressionBusy,
+      mateBreathingBusy,
       setMode,
-      selectSequence,
+      setMateExpression,
+      setMateBreathing,
+      selectClip,
       clearLoopSelection,
       setLoopPlaybackPaused,
       setMasterTone,
       uploadMediaFile,
       convertMediaUpload,
-      setSequenceDisplayName,
-      deleteSequence,
+      setClipDisplayName,
+      deleteClip,
       setDeviceLayout,
       refreshLoad,
       refreshDevices,
@@ -539,20 +621,24 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       activeDeviceId,
       devices,
       modeBusy,
-      sequenceBusy,
+      clipBusy,
       layoutBusy,
       masterToneBusy,
       mediaUploadBusy,
       mediaConvertBusy,
+      mateExpressionBusy,
+      mateBreathingBusy,
       setMode,
-      selectSequence,
+      setMateExpression,
+      setMateBreathing,
+      selectClip,
       clearLoopSelection,
       setLoopPlaybackPaused,
       setMasterTone,
       uploadMediaFile,
       convertMediaUpload,
-      setSequenceDisplayName,
-      deleteSequence,
+      setClipDisplayName,
+      deleteClip,
       setDeviceLayout,
       refreshLoad,
       refreshDevices,

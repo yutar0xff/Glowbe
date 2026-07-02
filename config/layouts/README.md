@@ -7,6 +7,7 @@
 | 用途 | パス | `id` |
 |------|------|------|
 | 製品版 | [`product.layout.json`](product.layout.json) | `product-geodesic-2v-60` |
+| 製品版（S3 検証 GPIO） | [`product-s3-dev.layout.json`](product-s3-dev.layout.json) | `product-geodesic-2v-60-s3-dev` |
 | プロトタイプ | [`prototype.layout.json`](prototype.layout.json) | `prototype-icosahedron-15` |
 
 スキーマ: [`protocol/glowbe-layout.schema.json`](../protocol/glowbe-layout.schema.json)
@@ -48,6 +49,7 @@ node tools/migrate-studio-layout.mjs <旧.json> <新.layout.json> product|protot
    ```bash
    npx tsx tools/layout-compile.ts config/layouts/prototype.layout.json
    npx tsx tools/layout-compile.ts config/layouts/product.layout.json
+   npx tsx tools/layout-compile.ts config/layouts/product-s3-dev.layout.json
    ```
 
 3. ファーム: `platformio.ini` の各 `env` で `-I include/generated/<layout-id>` を **`include` より前**に置き、その ID の `glowbe_layout.h` が選ばれるようにする。

@@ -1,10 +1,15 @@
 mod api;
+mod clip;
 mod config;
+mod demos;
 mod device_slot;
 mod devices;
 mod discover;
+mod equirect;
 mod master_tone;
 mod mate;
+mod mate_api;
+mod mate_state;
 mod media;
 mod metrics;
 mod output;
@@ -15,14 +20,13 @@ mod wire;
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use tokio::net::TcpListener;
 use tracing::info;
 
 use crate::devices::{devices_json_path, DeviceRegistry};
-use crate::state::{new_shared, InteractiveEffectKind, InteractivePulse};
+use crate::state::new_shared;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -37,11 +41,8 @@ async fn main() -> Result<()> {
     if args.first().is_some_and(|arg| arg == "convert-image") {
         return convert_image_command(&args[1..]);
     }
-    if args
-        .first()
-        .is_some_and(|arg| arg == "gen-demo-expanding-rings")
-    {
-        return gen_demo_expanding_rings_command(&args[1..]);
+    if args.first().is_some_and(|arg| arg == "mate-import-stamp") {
+        return mate_import_stamp_command(&args[1..]);
     }
 
     let config_path = args
@@ -51,10 +52,15 @@ async fn main() -> Result<()> {
     let config = config::load(Path::new(&config_path)).context("load config")?;
 
     let compiled_dir = compiled_dir(&config)?;
-    let sequences_dir = sequences_dir(&config)?;
+    let clips_dir = clips_dir(&config)?;
+    std::fs::create_dir_all(&clips_dir)
+        .with_context(|| format!("create clips dir {}", clips_dir.display()))?;
     let uploads_dir = uploads_dir(&config)?;
     std::fs::create_dir_all(&uploads_dir)
         .with_context(|| format!("create uploads dir {}", uploads_dir.display()))?;
+    let mate_assets_dir = mate_assets_dir()?;
+    std::fs::create_dir_all(&mate_assets_dir)
+        .with_context(|| format!("create mate assets dir {}", mate_assets_dir.display()))?;
     let devices_path = devices_json_path(&config).context("devices path")?;
     let registry =
         DeviceRegistry::load_or_seed(devices_path, &config, &compiled_dir).context("devices")?;
@@ -63,8 +69,9 @@ async fn main() -> Result<()> {
         registry,
         &config.modes.default,
         compiled_dir.clone(),
-        sequences_dir,
+        clips_dir,
         uploads_dir,
+        mate_assets_dir,
     )
     .context("init shared state")?;
 
@@ -97,15 +104,15 @@ fn compiled_dir(config: &config::Config) -> Result<PathBuf> {
     find_repo_root().map(|r| r.join("assets/compiled"))
 }
 
-fn sequences_dir(config: &config::Config) -> Result<PathBuf> {
-    if let Some(ref p) = config.assets.sequences_dir {
+fn clips_dir(config: &config::Config) -> Result<PathBuf> {
+    if let Some(ref p) = config.assets.clips_dir {
         let pb = PathBuf::from(p);
         if pb.is_absolute() {
             return Ok(pb);
         }
         return Ok(std::env::current_dir().context("cwd")?.join(pb));
     }
-    find_repo_root().map(|r| r.join("assets/sequences"))
+    find_repo_root().map(|r| r.join("assets/clips"))
 }
 
 fn uploads_dir(config: &config::Config) -> Result<PathBuf> {
@@ -119,121 +126,61 @@ fn uploads_dir(config: &config::Config) -> Result<PathBuf> {
     find_repo_root().map(|r| r.join("assets/uploads"))
 }
 
-fn convert_image_command(args: &[String]) -> Result<()> {
-    let image_path = args
+fn mate_assets_dir() -> Result<PathBuf> {
+    find_repo_root().map(|r| r.join("assets/mate"))
+}
+
+fn mate_import_stamp_command(args: &[String]) -> Result<()> {
+    let src = args
         .first()
-        .context("usage: glowbe-runtime convert-image <image> <sequence-id> [config.toml]")?;
-    let sequence_id = args
+        .context("usage: glowbe-runtime mate-import-stamp <src.png> <name> [--out path]")?;
+    let name = args
         .get(1)
-        .context("usage: glowbe-runtime convert-image <image> <sequence-id> [config.toml]")?;
-    let config_path = args.get(2).map(String::as_str).unwrap_or("config.toml");
-    let config = config::load(Path::new(config_path)).context("load config")?;
-    let compiled_dir = compiled_dir(&config)?;
-    let sequences_dir = sequences_dir(&config)?;
-    let out_dir = media::convert_equirect_image_to_sequence(
-        Path::new(image_path),
-        sequence_id,
-        &config.device.layout_id,
-        &compiled_dir,
-        &sequences_dir,
-        1,
-    )?;
-    println!("wrote sequence {}", out_dir.display());
+        .context("usage: glowbe-runtime mate-import-stamp <src.png> <name> [--out path]")?;
+
+    let mut out: Option<PathBuf> = None;
+    let mut i = 2;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--out" => {
+                out = Some(PathBuf::from(
+                    args.get(i + 1).context("--out requires path")?,
+                ));
+                i += 2;
+            }
+            other => anyhow::bail!("unknown flag: {other}"),
+        }
+    }
+
+    let asset = mate::import_stamp_from_png(Path::new(src), name)?;
+    let out_path = out.unwrap_or_else(|| {
+        find_repo_root()
+            .map(|r| {
+                r.join("assets/mate/stamps")
+                    .join(format!("{name}.stamp.json"))
+            })
+            .unwrap_or_else(|_| PathBuf::from(format!("{name}.stamp.json")))
+    });
+    mate::write_stamp_json(&out_path, &asset)?;
+    println!("wrote {}", out_path.display());
     Ok(())
 }
 
-fn gen_demo_expanding_rings_command(args: &[String]) -> Result<()> {
-    let sequence_id = args
+fn convert_image_command(args: &[String]) -> Result<()> {
+    let image_path = args
         .first()
-        .cloned()
-        .unwrap_or_else(|| "demo-expanding-rings".to_string());
-    let config_path = args.get(1).map(String::as_str).unwrap_or("config.toml");
+        .context("usage: glowbe-runtime convert-image <image> <clip-id> [config.toml]")?;
+    let clip_id = args
+        .get(1)
+        .context("usage: glowbe-runtime convert-image <image> <clip-id> [config.toml]")?;
+    let config_path = args.get(2).map(String::as_str).unwrap_or("config.toml");
     let config = config::load(Path::new(config_path)).context("load config")?;
-    let compiled_dir = compiled_dir(&config)?;
-    let sequences_dir = sequences_dir(&config)?;
-    let layout_id = config.device.layout_id.as_str();
-
-    let layout = media::load_layout_uv(&compiled_dir, layout_id)?;
-    let mut uv = vec![(0.5f32, 0.5f32); layout.led_count];
-    for p in &layout.leds {
-        if p.i < uv.len() {
-            uv[p.i] = (p.u, p.v);
-        }
-    }
-
-    #[derive(Clone, Copy)]
-    struct Xor(u64);
-    impl Xor {
-        fn next(&mut self) -> u64 {
-            self.0 ^= self.0 << 13;
-            self.0 ^= self.0 >> 7;
-            self.0 ^= self.0 << 17;
-            self.0
-        }
-        fn u32(&mut self) -> u32 {
-            self.next() as u32
-        }
-        fn f01(&mut self) -> f32 {
-            (self.u32() as f64 / u32::MAX as f64) as f32
-        }
-        fn range(&mut self, lo: f32, hi: f32) -> f32 {
-            lo + (hi - lo) * self.f01()
-        }
-    }
-
-    let mut rng = Xor(0x0DEB_171D_ED00);
-    let seq_base = Instant::now();
-    let mut pulses: Vec<InteractivePulse> = Vec::new();
-    for _ in 0..18 {
-        let center_u = rng.range(0.1, 0.9);
-        let center_v = rng.range(0.1, 0.9);
-        let t0 = rng.range(0.0, 7.8);
-        let ring_speed = rng.range(0.82, 1.48);
-        let d = output::ring_dynamics(ring_speed, 0.0);
-        let life_s = d.lifetime + 0.5;
-        let started = seq_base + Duration::from_secs_f32(t0);
-        pulses.push(InteractivePulse {
-            center_u,
-            center_v,
-            amplitude: 1.0,
-            sigma_rad: 0.14,
-            effect: InteractiveEffectKind::ExpandingRingDiagonal,
-            started,
-            duration: Duration::from_secs_f32(life_s),
-            color_r: (rng.u32() % 210 + 40) as u8,
-            color_g: (rng.u32() % 210 + 40) as u8,
-            color_b: (rng.u32() % 210 + 40) as u8,
-            ring_speed,
-            ring_thickness_rad: 0.0,
-        });
-    }
-
-    let fps = 30u32;
-    let sec = 12.5f32;
-    let frame_count = (sec * fps as f32).ceil() as u32;
-    let frames =
-        output::encode_demo_expanding_ring_sequence_bytes(&uv, &pulses, seq_base, fps, frame_count);
-
-    let out = sequences_dir.join(&sequence_id);
-    if out.exists() {
-        std::fs::remove_dir_all(&out).with_context(|| format!("remove {}", out.display()))?;
-    }
-
-    media::write_synthetic_demo_sequence(
-        &sequences_dir,
-        &sequence_id,
-        layout_id,
-        layout.led_count,
-        fps,
-        frame_count,
-        &frames,
-        Some("Ripple rings (demo)"),
-    )?;
-    println!(
-        "wrote demo sequence '{}' under {}",
-        sequence_id,
-        sequences_dir.display()
-    );
+    let clips_dir = clips_dir(&config)?;
+    std::fs::create_dir_all(&clips_dir)
+        .with_context(|| format!("create clips dir {}", clips_dir.display()))?;
+    let out_dir =
+        media::convert_equirect_image_to_clip(Path::new(image_path), clip_id, &clips_dir, 1)?;
+    println!("wrote clip {}", out_dir.display());
     Ok(())
 }
 

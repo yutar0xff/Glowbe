@@ -1,0 +1,46 @@
+{
+  "layoutId": "product-geodesic-2v-60-s3-dev",
+  "layoutHash": 1355247875,
+  "displayName": "Glowbe Product — S3 dev bench GPIOs",
+  "variant": "product",
+  "ledCount": 1260,
+  "dataLineCount": 10,
+  "gpios": [
+    13,
+    14,
+    16,
+    17,
+    18,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "ledsPerLine": [
+    105,
+    147,
+    105,
+    147,
+    105,
+    147,
+    105,
+    147,
+    105,
+    147
+  ],
+  "lineGlobalOffset": [
+    0,
+    105,
+    252,
+    357,
+    504,
+    609,
+    756,
+    861,
+    1008,
+    1113
+  ],
+  "chip": "SK6805",
+  "colorOrder": "GRB"
+}

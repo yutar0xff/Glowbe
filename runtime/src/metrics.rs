@@ -9,7 +9,7 @@ pub struct OutputMetrics {
     frames_sent: AtomicU64,
     fps_out_bits: AtomicU64,
     last_tick_wall_ms: AtomicU64,
-    /// Loop ＋シーケンス再生時のソースフレーム index（`/sequences/.../source-frame` と同期）。
+    /// Loop ＋クリップ再生時のソースフレーム index（`/clips/.../source-frame` と同期）。
     loop_source_frame: AtomicU32,
 }
 

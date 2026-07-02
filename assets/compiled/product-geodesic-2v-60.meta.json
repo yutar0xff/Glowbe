@@ -1,6 +1,6 @@
 {
   "layoutId": "product-geodesic-2v-60",
-  "layoutHash": 1605286023,
+  "layoutHash": 1442917163,
   "displayName": "Glowbe Product (Geodesic 2V, 60 panels)",
   "variant": "product",
   "ledCount": 1260,
@@ -11,14 +11,13 @@
     16,
     17,
     18,
-    19,
-    21,
-    22,
+    25,
     23,
-    25
+    22,
+    21,
+    19
   ],
   "ledsPerLine": [
-    147,
     105,
     147,
     105,
@@ -27,19 +26,20 @@
     147,
     105,
     147,
-    105
+    105,
+    147
   ],
   "lineGlobalOffset": [
     0,
-    147,
+    105,
     252,
-    399,
+    357,
     504,
-    651,
+    609,
     756,
-    903,
+    861,
     1008,
-    1155
+    1113
   ],
   "chip": "SK6805",
   "colorOrder": "GRB"

@@ -7,6 +7,7 @@ dist/
 
 # Build / assets
 assets/uploads/
+assets/clips/
 assets/sequences/
 
 # Secrets / local config
@@ -27,3 +28,5 @@ config.toml
 # Legacy / local exports (use config/layouts/)
 docs/Glowbe-Product-Geodesic-2V-60-panels.json
 docs/icosahedron.json
+config/upload.json
+*.bak

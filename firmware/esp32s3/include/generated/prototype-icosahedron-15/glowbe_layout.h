@@ -4,10 +4,10 @@
 #define GLOWBE_LAYOUT_HASH ((uint32_t)0x7c501117u)
 #define GLOWBE_LED_COUNT 225
 #define GLOWBE_DATA_LINES 5
+#define GLOWBE_MAX_LINE_LEDS 45
 static const uint8_t GLOWBE_GPIO_PINS[5] = { 16, 17, 18, 19, 21 };
 static const uint16_t GLOWBE_LINE_LED_COUNTS[5] = { 45, 45, 45, 45, 45 };
 
-// NeoPixelBus: データ線ごとに NeoPixelBus(count, pin)。
-// S3 は NeoEsp32LcdX8/X16Ws2812xMethod、無印は NeoEsp32I2s0X8/X16Ws2812xMethod（I2S0）。
-// 論理インデックスは `GLOWBE_LINE_LED_COUNTS` の先頭から順に各 GPIO へ割当（一次元 UDP と一致）。
+// NeoPixelBus 並列: 全線を GLOWBE_MAX_LINE_LEDS で駆動（短いチェーンは黒パディング）。
+// 論理インデックスは GLOWBE_LINE_LED_COUNTS 順（一次元 UDP と一致）。
 // 並列幅: X8（≤8 本）
