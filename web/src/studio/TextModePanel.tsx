@@ -23,6 +23,8 @@ import {
   TEXT_SIZE_DEG_MIN,
   THICKNESS_MAX,
   THICKNESS_MIN,
+  TILT_AZIMUTH_DEG_MAX,
+  TILT_AZIMUTH_DEG_MIN,
   TILT_DEG_MAX,
   TILT_DEG_MIN,
 } from '@/text/constants'
@@ -275,7 +277,7 @@ export function TextModePanel({ state }: { state: RuntimeState }) {
             />
             <NumberSliderRow
               id="text-tilt"
-              label="Rotation axis (tilt)"
+              label="Tilt amount (θ)"
               unit="°"
               min={TILT_DEG_MIN}
               max={TILT_DEG_MAX}
@@ -283,6 +285,17 @@ export function TextModePanel({ state }: { state: RuntimeState }) {
               value={params.tiltDeg}
               disabled={textConfigBusy}
               onCommit={(v) => commit({ tiltDeg: v })}
+            />
+            <NumberSliderRow
+              id="text-tilt-azimuth"
+              label="Tilt direction (φ)"
+              unit="°"
+              min={TILT_AZIMUTH_DEG_MIN}
+              max={TILT_AZIMUTH_DEG_MAX}
+              step={1}
+              value={params.tiltAzimuthDeg}
+              disabled={textConfigBusy}
+              onCommit={(v) => commit({ tiltAzimuthDeg: v })}
             />
             <NumberSliderRow
               id="text-thickness"

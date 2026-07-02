@@ -310,7 +310,7 @@ async fn device_output_loop(
                             app.text_font.as_deref(),
                             &layout_id,
                             uv,
-                            raw_elapsed,
+                            loop_start + raw_elapsed,
                             &mut rgb,
                         );
                     } else {

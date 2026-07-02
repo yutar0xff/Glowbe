@@ -140,7 +140,12 @@ impl DeviceSlot {
 
     pub async fn set_output_mode(&self, mode: OutputMode) {
         self.reset_loop_playback_timing();
+        let prev = self.output_mode();
         self.mode_code.store(mode.code(), Ordering::Relaxed);
+        // text へ切り替わったら必ず先頭の文字から表示し直す。
+        if mode == OutputMode::Text && prev != OutputMode::Text {
+            self.text.restart(Instant::now());
+        }
         self.bump_output_send_epoch();
         let mut state = self.state.write().await;
         state.mode = mode.as_str().to_string();
@@ -490,16 +495,10 @@ impl DeviceSlot {
         font: Option<&fontdue::Font>,
         layout_id: &str,
         layout_uv: &[(f32, f32)],
-        elapsed: Duration,
+        now: Instant,
         rgb: &mut [u8],
     ) {
-        self.text.render(
-            font,
-            layout_uv,
-            layout_id,
-            self.front_yaw_deg(),
-            elapsed,
-            rgb,
-        );
+        self.text
+            .render(font, layout_uv, layout_id, self.front_yaw_deg(), now, rgb);
     }
 }
