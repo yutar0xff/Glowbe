@@ -5,7 +5,7 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
-import type { DeviceCreateInput, DeviceRecord, LoadState, MateBreathingParams, MediaUploadStatusPayload, OutputMode, RuntimeState } from '@/types'
+import type { DeviceCreateInput, DeviceRecord, LoadState, MateBreathingParams, MediaUploadStatusPayload, OutputMode, RuntimeState, TextModeParams } from '@/types'
 import {
   API_BASE,
   apiDeviceQuery,
@@ -14,6 +14,7 @@ import {
   POLL_MS,
   postMateExpression,
   postMateBreathing,
+  postTextConfig,
   readActiveDeviceFromUrl,
   writeActiveDeviceToUrl,
 } from '@/api'
@@ -42,6 +43,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
   const [mediaConvertBusy, setMediaConvertBusy] = useState(false)
   const [mateExpressionBusy, setMateExpressionBusy] = useState<string | null>(null)
   const [mateBreathingBusy, setMateBreathingBusy] = useState(false)
+  const [textConfigBusy, setTextConfigBusy] = useState(false)
 
   const syncDevices = useCallback(async (signal: AbortSignal) => {
     const list = await fetchDevices(signal)
@@ -277,6 +279,41 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       } finally {
         window.clearTimeout(timeout)
         setMateBreathingBusy(false)
+      }
+    },
+    [activeDeviceId],
+  )
+
+  const setTextConfig = useCallback(
+    async (params: Partial<TextModeParams>) => {
+      setTextConfigBusy(true)
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 3500)
+      try {
+        const newState = await postTextConfig(controller.signal, activeDeviceId, params)
+        setLoad((prev) => {
+          if (prev.kind === 'ready') {
+            return { ...prev, state: newState, fetchedAt: new Date() }
+          }
+          return {
+            kind: 'ready',
+            state: newState,
+            health: { ok: true, text: 'ok' },
+            clips: [],
+            fetchedAt: new Date(),
+          }
+        })
+      } catch (err) {
+        setLoad((prev) => ({
+          kind: 'error',
+          message: err instanceof Error ? err.message : String(err),
+          health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
+          fetchedAt: new Date(),
+        }))
+        throw err
+      } finally {
+        window.clearTimeout(timeout)
+        setTextConfigBusy(false)
       }
     },
     [activeDeviceId],
@@ -599,9 +636,11 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       mediaConvertBusy,
       mateExpressionBusy,
       mateBreathingBusy,
+      textConfigBusy,
       setMode,
       setMateExpression,
       setMateBreathing,
+      setTextConfig,
       selectClip,
       clearLoopSelection,
       setLoopPlaybackPaused,
@@ -630,9 +669,11 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       mediaConvertBusy,
       mateExpressionBusy,
       mateBreathingBusy,
+      textConfigBusy,
       setMode,
       setMateExpression,
       setMateBreathing,
+      setTextConfig,
       selectClip,
       clearLoopSelection,
       setLoopPlaybackPaused,

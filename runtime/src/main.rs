@@ -16,6 +16,8 @@ mod output;
 mod pattern;
 mod sphere;
 mod state;
+mod text_api;
+mod text_state;
 mod wire;
 
 use std::net::SocketAddr;
@@ -65,6 +67,8 @@ async fn main() -> Result<()> {
     let registry =
         DeviceRegistry::load_or_seed(devices_path, &config, &compiled_dir).context("devices")?;
 
+    let text_font = load_text_font(&config);
+
     let app = new_shared(
         registry,
         &config.modes.default,
@@ -72,6 +76,7 @@ async fn main() -> Result<()> {
         clips_dir,
         uploads_dir,
         mate_assets_dir,
+        text_font,
     )
     .context("init shared state")?;
 
@@ -128,6 +133,51 @@ fn uploads_dir(config: &config::Config) -> Result<PathBuf> {
 
 fn mate_assets_dir() -> Result<PathBuf> {
     find_repo_root().map(|r| r.join("assets/mate"))
+}
+
+fn text_font_path(config: &config::Config) -> Result<PathBuf> {
+    if let Some(ref p) = config.assets.text_font_path {
+        let pb = PathBuf::from(p);
+        if pb.is_absolute() {
+            return Ok(pb);
+        }
+        return Ok(std::env::current_dir().context("cwd")?.join(pb));
+    }
+    find_repo_root().map(|r| r.join("assets/text/NotoSansJP.ttf"))
+}
+
+/// text モード用フォントを読み込む。失敗しても `None` を返し、text モードは背景色のみ描画。
+fn load_text_font(config: &config::Config) -> Option<std::sync::Arc<fontdue::Font>> {
+    let path = match text_font_path(config) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!("text font path unresolved: {e:#}; text mode renders background only");
+            return None;
+        }
+    };
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(
+                "text font not loaded ({}): {e}; text mode renders background only",
+                path.display()
+            );
+            return None;
+        }
+    };
+    match fontdue::Font::from_bytes(bytes.as_slice(), fontdue::FontSettings::default()) {
+        Ok(font) => {
+            info!("text font loaded: {}", path.display());
+            Some(std::sync::Arc::new(font))
+        }
+        Err(e) => {
+            tracing::warn!(
+                "text font parse failed ({}): {e}; text mode renders background only",
+                path.display()
+            );
+            None
+        }
+    }
 }
 
 fn mate_import_stamp_command(args: &[String]) -> Result<()> {

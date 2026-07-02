@@ -1,5 +1,12 @@
 import { createContext, useContext } from 'react'
-import type { DeviceCreateInput, DeviceRecord, LoadState, MateBreathingParams, OutputMode } from './types'
+import type {
+  DeviceCreateInput,
+  DeviceRecord,
+  LoadState,
+  MateBreathingParams,
+  OutputMode,
+  TextModeParams,
+} from './types'
 
 export type GlowbeRuntimeContextValue = {
   load: LoadState
@@ -13,10 +20,13 @@ export type GlowbeRuntimeContextValue = {
   mediaConvertBusy: boolean
   mateExpressionBusy: string | null
   mateBreathingBusy: boolean
+  textConfigBusy: boolean
   setMode: (mode: OutputMode) => Promise<void>
   /** Switch to mate mode and apply a face preset (morph transition on device). */
   setMateExpression: (preset: string, transitionMs?: number) => Promise<void>
   setMateBreathing: (params: Partial<MateBreathingParams> & { enabled: boolean }) => Promise<void>
+  /** Switch to text mode and update flow params (partial patch). */
+  setTextConfig: (params: Partial<TextModeParams>) => Promise<void>
   selectClip: (clipId: string) => Promise<void>
   /** Clears the selected clip and stays in loop mode (built-in test pattern). */
   clearLoopSelection: () => Promise<void>

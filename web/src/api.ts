@@ -7,6 +7,7 @@ import type {
   MatePresetsResponse,
   RuntimeState,
   ClipSummary,
+  TextModeParams,
 } from './types'
 
 export const API_BASE = import.meta.env.VITE_GLOWBE_API_BASE ?? ''
@@ -122,6 +123,44 @@ export async function postMateBreathing(
       if (e instanceof Error && e.message !== msg) throw e
     }
     throw new Error(msg || `Could not set mate breathing (error ${res.status}).`)
+  }
+  return (await res.json()) as RuntimeState
+}
+
+export async function fetchTextConfig(
+  signal: AbortSignal,
+  deviceId: string | null,
+): Promise<TextModeParams> {
+  const q = apiDeviceQuery(deviceId)
+  const res = await fetch(`${API_BASE}/api/v1/text/config${q}`, { signal })
+  if (!res.ok) {
+    const msg = await res.text()
+    throw new Error(msg || `Could not load text config (error ${res.status}).`)
+  }
+  return (await res.json()) as TextModeParams
+}
+
+export async function postTextConfig(
+  signal: AbortSignal,
+  deviceId: string | null,
+  params: Partial<TextModeParams>,
+): Promise<RuntimeState> {
+  const q = apiDeviceQuery(deviceId)
+  const res = await fetch(`${API_BASE}/api/v1/text/config${q}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(params),
+    signal,
+  })
+  if (!res.ok) {
+    const msg = await res.text()
+    try {
+      const j = JSON.parse(msg) as { error?: string }
+      if (j.error) throw new Error(j.error)
+    } catch (e) {
+      if (e instanceof Error && e.message !== msg) throw e
+    }
+    throw new Error(msg || `Could not set text config (error ${res.status}).`)
   }
   return (await res.json()) as RuntimeState
 }

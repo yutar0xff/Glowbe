@@ -31,7 +31,7 @@ const tabsListVariants = cva(
           "inline-flex w-fit bg-muted p-[3px] group-data-horizontal/tabs:h-8",
         line: "inline-flex w-fit gap-1 bg-transparent p-[3px]",
         segmented:
-          "grid h-auto w-full min-h-0 grid-cols-2 items-stretch gap-1 bg-muted p-1 sm:h-12 sm:grid-cols-4 sm:items-center sm:gap-0.5",
+          "grid h-auto w-full min-h-0 grid-cols-2 items-stretch gap-1 bg-muted p-1 sm:h-auto sm:min-h-12 sm:grid-cols-5 sm:items-stretch sm:gap-1",
       },
     },
     defaultVariants: {

@@ -18,6 +18,7 @@ use crate::state::{
     InteractiveEffectKind, InteractivePulse, LoopPlaybackTiming, OutputMode, RuntimeState,
     MAX_INTERACTIVE_PULSES,
 };
+use crate::text_state::{TextParams, TextRuntimeState};
 
 pub struct DeviceSlot {
     pub record: StdRwLock<DeviceRecord>,
@@ -40,6 +41,7 @@ pub struct DeviceSlot {
     pub(crate) loop_raw_elapsed_tick: StdRwLock<Duration>,
     pub(crate) loop_playback_timing: StdRwLock<LoopPlaybackTiming>,
     mate: MateRuntimeState,
+    text: TextRuntimeState,
 }
 
 impl DeviceSlot {
@@ -98,6 +100,7 @@ impl DeviceSlot {
             loop_raw_elapsed_tick: StdRwLock::new(Duration::ZERO),
             loop_playback_timing: StdRwLock::new(LoopPlaybackTiming::default()),
             mate: MateRuntimeState::new(anim_origin),
+            text: TextRuntimeState::new(),
         }))
     }
 
@@ -413,6 +416,7 @@ impl DeviceSlot {
             *g = None;
         }
         self.mate.clear_samples_cache();
+        self.text.clear_samples();
         if let Ok(mut g) = self.expected_layout_hash.write() {
             *g = expected_layout_hash;
         }
@@ -470,5 +474,32 @@ impl DeviceSlot {
 
     pub fn render_mate(&self, rgb: &mut [u8]) {
         self.mate.render(rgb);
+    }
+
+    pub fn text_params(&self) -> TextParams {
+        self.text.params()
+    }
+
+    pub fn set_text_params(&self, params: TextParams) {
+        self.text.set_params(params);
+        self.bump_output_send_epoch();
+    }
+
+    pub fn render_text(
+        &self,
+        font: Option<&fontdue::Font>,
+        layout_id: &str,
+        layout_uv: &[(f32, f32)],
+        elapsed: Duration,
+        rgb: &mut [u8],
+    ) {
+        self.text.render(
+            font,
+            layout_uv,
+            layout_id,
+            self.front_yaw_deg(),
+            elapsed,
+            rgb,
+        );
     }
 }

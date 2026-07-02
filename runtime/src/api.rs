@@ -127,6 +127,75 @@ struct MatePresetsResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct TextConfigResponse {
+    content: String,
+    text_size_deg: f32,
+    speed_deg_per_sec: f32,
+    center_lat_deg: f32,
+    tilt_deg: f32,
+    fade_start_deg: f32,
+    fade_end_deg: f32,
+    thickness: f32,
+    loop_interval_sec: f32,
+    bg_color: String,
+    text_color: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TextConfigRequest {
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    text_size_deg: Option<f32>,
+    #[serde(default)]
+    speed_deg_per_sec: Option<f32>,
+    #[serde(default)]
+    center_lat_deg: Option<f32>,
+    #[serde(default)]
+    tilt_deg: Option<f32>,
+    #[serde(default)]
+    fade_start_deg: Option<f32>,
+    #[serde(default)]
+    fade_end_deg: Option<f32>,
+    #[serde(default)]
+    thickness: Option<f32>,
+    #[serde(default)]
+    loop_interval_sec: Option<f32>,
+    #[serde(default)]
+    bg_color: Option<String>,
+    #[serde(default)]
+    text_color: Option<String>,
+}
+
+/// リクエストの色フィールドを解釈する。未指定なら `Ok(None)`、不正な hex なら 400 用のメッセージを返す。
+fn parse_text_color_field(hex: Option<String>, field: &str) -> Result<Option<[u8; 3]>, String> {
+    match hex {
+        None => Ok(None),
+        Some(hex) => crate::text_api::parse_hex_rgb(&hex)
+            .map(Some)
+            .ok_or_else(|| format!("invalid {field}: {hex}")),
+    }
+}
+
+fn text_config_response(params: &crate::text_state::TextParams) -> TextConfigResponse {
+    TextConfigResponse {
+        content: params.content.clone(),
+        text_size_deg: params.text_size_deg,
+        speed_deg_per_sec: params.speed_deg_per_sec,
+        center_lat_deg: params.center_lat_deg,
+        tilt_deg: params.tilt_deg,
+        fade_start_deg: params.fade_start_deg,
+        fade_end_deg: params.fade_end_deg,
+        thickness: params.thickness,
+        loop_interval_sec: params.loop_interval_sec,
+        bg_color: crate::text_api::hex_rgb(params.bg_color),
+        text_color: crate::text_api::hex_rgb(params.text_color),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ErrorResponse {
     pub(crate) error: String,
 }
@@ -616,6 +685,17 @@ pub fn router(app: SharedState) -> Router {
             post({
                 let app = app.clone();
                 move |q, body| post_mate_breathing(app.clone(), q, body)
+            }),
+        )
+        .route(
+            "/api/v1/text/config",
+            get({
+                let app = app.clone();
+                move |q| get_text_config(app.clone(), q)
+            })
+            .post({
+                let app = app.clone();
+                move |q, body| post_text_config(app.clone(), q, body)
             }),
         )
         .route(
@@ -1556,6 +1636,75 @@ async fn post_mate_breathing(
     let mut params = slot.mate_breathing_params();
     params.enabled = req.enabled;
     slot.set_mate_breathing(params);
+    let s = slot.state.read().await;
+    (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
+}
+
+async fn get_text_config(app: SharedState, Query(q): Query<DeviceIdQuery>) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    let params = slot.text_params();
+    (StatusCode::OK, Json(text_config_response(&params))).into_response()
+}
+
+async fn post_text_config(
+    app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
+    Json(req): Json<TextConfigRequest>,
+) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    let mut params = slot.text_params();
+    if let Some(content) = req.content {
+        params.content = content
+            .chars()
+            .take(crate::text_api::MAX_CONTENT_CHARS)
+            .collect();
+    }
+    if let Some(v) = req.text_size_deg {
+        params.text_size_deg = v;
+    }
+    if let Some(v) = req.speed_deg_per_sec {
+        params.speed_deg_per_sec = v;
+    }
+    if let Some(v) = req.center_lat_deg {
+        params.center_lat_deg = v;
+    }
+    if let Some(v) = req.tilt_deg {
+        params.tilt_deg = v;
+    }
+    if let Some(v) = req.fade_start_deg {
+        params.fade_start_deg = v;
+    }
+    if let Some(v) = req.fade_end_deg {
+        params.fade_end_deg = v;
+    }
+    if let Some(v) = req.thickness {
+        params.thickness = v;
+    }
+    if let Some(v) = req.loop_interval_sec {
+        params.loop_interval_sec = v;
+    }
+    match parse_text_color_field(req.bg_color, "bgColor") {
+        Ok(Some(c)) => params.bg_color = c,
+        Ok(None) => {}
+        Err(error) => {
+            return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error })).into_response()
+        }
+    }
+    match parse_text_color_field(req.text_color, "textColor") {
+        Ok(Some(c)) => params.text_color = c,
+        Ok(None) => {}
+        Err(error) => {
+            return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error })).into_response()
+        }
+    }
+    slot.set_text_params(params);
+    slot.set_output_mode(OutputMode::Text).await;
     let s = slot.state.read().await;
     (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
 }

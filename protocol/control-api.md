@@ -57,10 +57,10 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 ### `POST /api/v1/mode`
 
 ```json
-{ "mode": "idle" | "loop" | "interactive" | "mic" | "clock_digital" | "clock_analog" }
+{ "mode": "idle" | "loop" | "interactive" | "mate" | "text" }
 ```
 
-→ 実装済み: **`idle`**（全消灯・**選択クリップ解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択クリップ）、**`interactive`**（既定は全消灯ベース。WebSocket の **`setSolid`** で全 LED を同一 RGB にしたうえで、インタラクティブ・パルスを UDP 出力に合成。クリップ選択は保持）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
+→ 実装済み: **`idle`**（全消灯・**選択クリップ解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択クリップ）、**`interactive`**（既定は全消灯ベース。WebSocket の **`setSolid`** で全 LED を同一 RGB にしたうえで、インタラクティブ・パルスを UDP 出力に合成。クリップ選択は保持）、**`text`**（任意の文章を球面の周りに流す。パラメータは `POST /api/v1/text/config` で設定）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
 
 ### `POST /api/v1/loop/select`
 
@@ -93,6 +93,46 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 ```
 
 → 実装済み: **全出力モード**で、フレームを UDP に送る直前に適用するマスター補正。`brightness` は 0–1（クランプ、1 = 100%）、`gamma` は約 0.45–3.5（クランプ）。`200` + 更新後 `state` オブジェクト。
+
+### `GET /api/v1/text/config`
+
+`?deviceId=` で対象デバイスを指定（省略時は既定デバイス）。text モードの現在のパラメータを返す。
+
+```json
+{
+  "content": "This is Glowbe.",
+  "textSizeDeg": 140.0,
+  "speedDegPerSec": 80.0,
+  "centerLatDeg": 15.0,
+  "tiltDeg": 0.0,
+  "fadeStartDeg": 0.0,
+  "fadeEndDeg": 120.0,
+  "thickness": 1.0,
+  "loopIntervalSec": 2.0,
+  "bgColor": "#000000",
+  "textColor": "#3b82f6"
+}
+```
+
+### `POST /api/v1/text/config`
+
+`?deviceId=` で対象デバイスを指定。全フィールド省略可の部分更新。1 つでも送ると出力モードを **`text`** に自動切替する。`200` + 更新後 `state` オブジェクト。色が不正な `#rrggbb` の場合は `400`。
+
+| フィールド | 単位 / 型 | 範囲 | 既定 | 説明 |
+| --- | --- | --- | --- | --- |
+| `content` | string | 最大 256 文字 | `"This is Glowbe."` | 表示文字列（日本語可）。空なら背景色のみ。 |
+| `textSizeDeg` | 度 | 10–180 | 140 | 文字の角度高さ。 |
+| `speedDegPerSec` | 度/秒 | -360–360 | 80 | flow 速度。符号で流れる向き。 |
+| `centerLatDeg` | 度 | -80–80 | 15 | flow 中心緯度（0 = 赤道）。 |
+| `tiltDeg` | 度 | -90–90 | 0 | 帯の傾き（正面軸まわりの回転、0 = 水平）。 |
+| `fadeStartDeg` | 度 | 0–180 | 0 | 真裏（0°）からこの角度までは明るさ 0（背景色）。 |
+| `fadeEndDeg` | 度 | 0–180 | 120 | この角度で明るさ最大（文字色）。start→end で明るさをグラデーション。 |
+| `thickness` | — | 0–6 | 1 | 文字の太さ（リボン被覆のダイレーション量、小数可）。 |
+| `loopIntervalSec` | 秒 | 0–30 | 2 | 全文字が流れ切ってから次ループ開始までに挟む空白の長さ。走査速度で角度に換算する。 |
+| `bgColor` | `#rrggbb` | — | `#000000` | 背景色。 |
+| `textColor` | `#rrggbb` | — | `#3b82f6` | 文字色。 |
+
+→ 実装済み: 各 LED の正面 yaw 適用済み UV から色を生成する。正面（`u=0.5`）を中心に文章が流れ、デバイスの真裏（`u=0.0/1.0` の継ぎ目）から出現・消失する。真裏付近は `fadeStartDeg`〜`fadeEndDeg` の範囲で明るさが 0→最大に線形グラデーションし背景色へフェードする。`frontYawDeg` を変更すると正面・真裏の位置も追従する。文字列が周長（360°）を超える場合は全長をスクロール周期とし、全文字が流れ切ってから先頭が再登場する（自身との重なりは生じない）。`loopIntervalSec` を指定すると全長のあとに空白帯（`loopIntervalSec × |speedDegPerSec|` 度）を挟んでから次ループを開始する。グリフは同梱 TTF（`assets/text/NotoSansJP.ttf`、`[assets].text_font_path` で変更可）を実行時にラスタライズし、`thickness` でリボン被覆をダイレーションして太らせる。フォント読み込みに失敗した場合は背景色のみを描画する。
 
 ### `GET /api/v1/layout/uv`
 
@@ -297,8 +337,9 @@ WebSocket の **Binary** メッセージ。ビッグエンディアン。
 |----------------|-------|------|
 | `GET /api/v1/state` | 1 | ✅ 実装済 |
 | `GET /health` | 1 | ✅ 実装済 |
-| `POST /api/v1/mode` (`idle` / `loop` / `interactive`) | 1 | ✅ 実装済 |
+| `POST /api/v1/mode` (`idle` / `loop` / `interactive` / `mate` / `text`) | 1 | ✅ 実装済 |
 | `POST /api/v1/master-tone` | 1 | ✅ 実装済 |
+| `GET` / `POST /api/v1/text/config` | 3 | ✅ 実装済 |
 | `POST /api/v1/loop/select` | 2 | ✅ 実装済 |
 | `POST /api/v1/loop/clear-selection` | 2 | ✅ 実装済 |
 | `POST /api/v1/loop/pause` | 2 | ✅ 実装済 |
