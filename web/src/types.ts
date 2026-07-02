@@ -81,7 +81,7 @@ export type LoadState =
   | { kind: 'ready'; state: RuntimeState; health: Health; clips: ClipSummary[]; fetchedAt: Date }
   | { kind: 'error'; message: string; health?: Health; fetchedAt?: Date }
 
-export type OutputMode = 'idle' | 'loop' | 'interactive' | 'mate'
+export type OutputMode = 'idle' | 'loop' | 'interactive' | 'mate' | 'text'
 
 export { MATE_LAYOUT_ID } from '@/mate/constants'
 export type {
@@ -89,6 +89,7 @@ export type {
   MatePresetSummary,
   MatePresetsResponse,
 } from '@/mate/types'
+export type { TextModeParams } from '@/text/types'
 
 export type InteractiveEffectKind = 'sphereGaussian' | 'expandingRingDiagonal'
 

@@ -81,6 +81,8 @@ pub enum OutputMode {
     Interactive,
     /// 顔パーツ SDF 合成（製品レイアウト向け）。
     Mate,
+    /// 任意の文章を球面の周りに流すテキストモード。
+    Text,
 }
 
 impl OutputMode {
@@ -88,6 +90,7 @@ impl OutputMode {
     const LOOP: u8 = 1;
     const INTERACTIVE: u8 = 2;
     const MATE: u8 = 3;
+    const TEXT: u8 = 4;
 
     pub fn parse(id: &str) -> Option<Self> {
         match id {
@@ -95,6 +98,7 @@ impl OutputMode {
             "loop" => Some(Self::Loop),
             "interactive" => Some(Self::Interactive),
             "mate" => Some(Self::Mate),
+            "text" => Some(Self::Text),
             _ => None,
         }
     }
@@ -105,6 +109,7 @@ impl OutputMode {
             Self::Loop => "loop",
             Self::Interactive => "interactive",
             Self::Mate => "mate",
+            Self::Text => "text",
         }
     }
 
@@ -114,6 +119,7 @@ impl OutputMode {
             Self::Loop => Self::LOOP,
             Self::Interactive => Self::INTERACTIVE,
             Self::Mate => Self::MATE,
+            Self::Text => Self::TEXT,
         }
     }
 
@@ -123,6 +129,7 @@ impl OutputMode {
             Self::LOOP => Self::Loop,
             Self::INTERACTIVE => Self::Interactive,
             Self::MATE => Self::Mate,
+            Self::TEXT => Self::Text,
             _ => Self::Loop,
         }
     }
@@ -210,6 +217,8 @@ pub struct SharedApp {
     pub uploads_dir: std::path::PathBuf,
     pub media_uploads: RwLock<HashMap<String, MediaUploadEntry>>,
     pub mate_presets: StdRwLock<crate::mate::PresetRegistry>,
+    /// text モードのグリフラスタライズに使うフォント。読み込み失敗時は `None`（背景色のみ描画）。
+    pub text_font: Option<Arc<fontdue::Font>>,
 }
 
 pub type SharedState = Arc<SharedApp>;
@@ -221,6 +230,7 @@ pub fn new_shared(
     clips_dir: std::path::PathBuf,
     uploads_dir: std::path::PathBuf,
     mate_assets_dir: std::path::PathBuf,
+    text_font: Option<Arc<fontdue::Font>>,
 ) -> anyhow::Result<SharedState> {
     let default_device_id = registry
         .devices()
@@ -247,6 +257,7 @@ pub fn new_shared(
         uploads_dir,
         media_uploads: RwLock::new(HashMap::new()),
         mate_presets: StdRwLock::new(mate_presets),
+        text_font,
     }))
 }
 

@@ -303,6 +303,20 @@ async fn device_output_loop(
                         slot.render_mate(&mut rgb);
                     }
                 }
+                OutputMode::Text => {
+                    slot.metrics.set_loop_source_frame(None);
+                    if let Some(ref uv) = layout_uv {
+                        slot.render_text(
+                            app.text_font.as_deref(),
+                            &layout_id,
+                            uv,
+                            raw_elapsed,
+                            &mut rgb,
+                        );
+                    } else {
+                        rgb.fill(0);
+                    }
+                }
             }
 
             if output_mode == OutputMode::Interactive {

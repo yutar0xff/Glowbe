@@ -20,6 +20,17 @@ pub fn unit_dir_from_equirect_uv_y_up(u: f32, v: f32) -> [f32; 3] {
     [x, y, z]
 }
 
+/// 単位球上の方向ベクトル（Y 上）から正距円筒 UV へ戻す。`unit_dir_from_equirect_uv_y_up` の逆。
+#[must_use]
+pub fn equirect_uv_from_unit_dir_y_up(x: f32, y: f32, z: f32) -> (f32, f32) {
+    let ny = y.clamp(-1.0, 1.0);
+    let phi = ny.asin();
+    let v = (0.5 - phi / PI).clamp(0.0, 1.0);
+    let lam = z.atan2(x);
+    let u = ((lam + PI) / (2.0 * PI)).rem_euclid(1.0);
+    (u, v)
+}
+
 /// 正距円筒の経度 `u` を、デバイス正面の yaw（度）ぶん回した値（[0,1) にラップ）。
 ///
 /// `u` は経度なので、鉛直 Y 軸まわりの yaw 回転は水平シフトと等価。全モードが
@@ -55,6 +66,17 @@ mod tests {
         let ta = angle_rad_between_unit(c, a);
         let tb = angle_rad_between_unit(c, b);
         assert!((ta - tb).abs() < 1e-4);
+    }
+
+    #[test]
+    fn uv_dir_roundtrip() {
+        for &(u, v) in &[(0.1f32, 0.2f32), (0.5, 0.5), (0.83, 0.71), (0.0, 0.5)] {
+            let d = unit_dir_from_equirect_uv_y_up(u, v);
+            let (u2, v2) = equirect_uv_from_unit_dir_y_up(d[0], d[1], d[2]);
+            assert!((v - v2).abs() < 1e-4, "v {v} != {v2}");
+            let du = (u - u2).rem_euclid(1.0);
+            assert!(!(1e-4..=1.0 - 1e-4).contains(&du), "u {u} != {u2}");
+        }
     }
 
     #[test]

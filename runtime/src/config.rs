@@ -57,6 +57,9 @@ pub struct Assets {
     /// Persistent device registry JSON. Default: `assets/devices.json` under repo root.
     #[serde(default)]
     pub devices_path: Option<String>,
+    /// TTF used by text mode glyph rasterization. Default: `assets/text/NotoSansJP.ttf` under repo root.
+    #[serde(default)]
+    pub text_font_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
