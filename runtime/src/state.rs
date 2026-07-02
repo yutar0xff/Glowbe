@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::RwLock as StdRwLock;
 use std::time::{Duration, Instant};
 
+use anyhow::Context;
 use tokio::sync::RwLock;
 
 use crate::device_slot::DeviceSlot;
@@ -78,7 +79,7 @@ pub enum OutputMode {
     Loop,
     /// 消灯ベース。WebSocket のインタラクティブ・パルスのみ UDP に合成。
     Interactive,
-    /// 相棒（球面顔・手続き描画）。
+    /// 顔パーツ SDF 合成（製品レイアウト向け）。
     Mate,
 }
 
@@ -139,7 +140,7 @@ pub struct RuntimeState {
     pub esp_status_addr: Option<String>,
     pub output_target_addr: Option<String>,
     pub layout_mismatch: bool,
-    pub loop_sequence_id: Option<String>,
+    pub loop_clip_id: Option<String>,
     pub started_at: Instant,
 }
 
@@ -156,7 +157,7 @@ impl RuntimeState {
             esp_status_addr: None,
             output_target_addr: None,
             layout_mismatch: false,
-            loop_sequence_id: None,
+            loop_clip_id: None,
             started_at: Instant::now(),
         }
     }
@@ -190,7 +191,7 @@ pub enum MediaUploadPhase {
     },
     Done {
         job_id: String,
-        sequence_id: String,
+        clip_id: String,
     },
     Failed {
         job_id: Option<String>,
@@ -205,9 +206,10 @@ pub struct SharedApp {
     pub default_device_id: String,
     pub default_mode: String,
     pub compiled_dir: std::path::PathBuf,
-    pub sequences_dir: std::path::PathBuf,
+    pub clips_dir: std::path::PathBuf,
     pub uploads_dir: std::path::PathBuf,
     pub media_uploads: RwLock<HashMap<String, MediaUploadEntry>>,
+    pub mate_presets: StdRwLock<crate::mate::PresetRegistry>,
 }
 
 pub type SharedState = Arc<SharedApp>;
@@ -216,8 +218,9 @@ pub fn new_shared(
     registry: DeviceRegistry,
     default_mode: &str,
     compiled_dir: std::path::PathBuf,
-    sequences_dir: std::path::PathBuf,
+    clips_dir: std::path::PathBuf,
     uploads_dir: std::path::PathBuf,
+    mate_assets_dir: std::path::PathBuf,
 ) -> anyhow::Result<SharedState> {
     let default_device_id = registry
         .devices()
@@ -231,6 +234,7 @@ pub fn new_shared(
         order.push(rec.id.clone());
         slot_map.insert(rec.id.clone(), slot);
     }
+    let mate_presets = crate::mate::PresetRegistry::load(&mate_assets_dir).context("mate presets")?;
     Ok(Arc::new(SharedApp {
         registry: StdRwLock::new(registry),
         slots: StdRwLock::new(slot_map),
@@ -238,9 +242,10 @@ pub fn new_shared(
         default_device_id,
         default_mode: default_mode.to_string(),
         compiled_dir,
-        sequences_dir,
+        clips_dir,
         uploads_dir,
         media_uploads: RwLock::new(HashMap::new()),
+        mate_presets: StdRwLock::new(mate_presets),
     }))
 }
 

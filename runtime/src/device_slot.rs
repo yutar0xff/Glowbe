@@ -9,8 +9,10 @@ use anyhow::Context;
 use tokio::sync::RwLock;
 
 use crate::devices::DeviceRecord;
-use crate::mate::{self, MateState};
-use crate::media::{self, LoadedSequence};
+use crate::mate::{self, BreathingParams};
+use crate::mate_state::MateRuntimeState;
+use crate::clip::LoadedClip;
+use crate::media;
 use crate::metrics::OutputMetrics;
 use crate::state::{
     InteractiveEffectKind, InteractivePulse, LoopPlaybackTiming, OutputMode, RuntimeState,
@@ -22,13 +24,12 @@ pub struct DeviceSlot {
     pub metrics: Arc<OutputMetrics>,
     pub state: RwLock<RuntimeState>,
     mode_code: AtomicU8,
-    sequence: StdRwLock<Option<Arc<LoadedSequence>>>,
+    clip: StdRwLock<Option<Arc<LoadedClip>>>,
     pub expected_layout_hash: StdRwLock<Option<u32>>,
-    pub(crate) interactive_uv: StdRwLock<Option<Vec<(f32, f32)>>>,
-    pub(crate) interactive_uv_layout_id: StdRwLock<Option<String>>,
+    pub(crate) layout_uv: StdRwLock<Option<Vec<(f32, f32)>>>,
+    pub(crate) layout_uv_layout_id: StdRwLock<Option<String>>,
     pub(crate) interactive_pulses: StdRwLock<Vec<InteractivePulse>>,
     pub(crate) interactive_solid: StdRwLock<Option<[u8; 3]>>,
-    pub(crate) mate_state: StdRwLock<MateState>,
     interactive_default_effect: AtomicU8,
     master_brightness_bits: AtomicU32,
     master_gamma_bits: AtomicU32,
@@ -37,6 +38,7 @@ pub struct DeviceSlot {
     output_send_epoch: AtomicU32,
     pub(crate) loop_raw_elapsed_tick: StdRwLock<Duration>,
     pub(crate) loop_playback_timing: StdRwLock<LoopPlaybackTiming>,
+    mate: MateRuntimeState,
 }
 
 impl DeviceSlot {
@@ -54,7 +56,7 @@ impl DeviceSlot {
             .get("layoutHash")
             .and_then(|v| v.as_u64())
             .map(|x| x as u32);
-        let initial_mode = OutputMode::parse(default_mode).unwrap_or(OutputMode::Loop);
+        let initial_mode = OutputMode::parse(default_mode).unwrap_or(OutputMode::Idle);
         let preview_len = led_count as usize * 3;
         let layout_id = record.layout_id.clone();
         let display = if record.display_name.is_empty() {
@@ -64,6 +66,7 @@ impl DeviceSlot {
         };
         let brightness = crate::master_tone::clamp_brightness_f32(record.master_brightness as f32);
         let gamma = crate::master_tone::clamp_gamma_f32(record.master_gamma as f32);
+        let anim_origin = Instant::now();
         Ok(Arc::new(Self {
             record: StdRwLock::new(DeviceRecord {
                 display_name: display,
@@ -76,13 +79,12 @@ impl DeviceSlot {
                 initial_mode.as_str().to_string(),
             )),
             mode_code: AtomicU8::new(initial_mode.code()),
-            sequence: StdRwLock::new(None),
+            clip: StdRwLock::new(None),
             expected_layout_hash: StdRwLock::new(expected_layout_hash),
-            interactive_uv: StdRwLock::new(None),
-            interactive_uv_layout_id: StdRwLock::new(None),
+            layout_uv: StdRwLock::new(None),
+            layout_uv_layout_id: StdRwLock::new(None),
             interactive_pulses: StdRwLock::new(Vec::new()),
             interactive_solid: StdRwLock::new(None),
-            mate_state: StdRwLock::new(MateState::default()),
             interactive_default_effect: AtomicU8::new(
                 InteractiveEffectKind::ExpandingRingDiagonal.code(),
             ),
@@ -93,6 +95,7 @@ impl DeviceSlot {
             output_send_epoch: AtomicU32::new(0),
             loop_raw_elapsed_tick: StdRwLock::new(Duration::ZERO),
             loop_playback_timing: StdRwLock::new(LoopPlaybackTiming::default()),
+            mate: MateRuntimeState::new(anim_origin),
         }))
     }
 
@@ -138,27 +141,27 @@ impl DeviceSlot {
         state.mode = mode.as_str().to_string();
     }
 
-    pub fn selected_sequence(&self) -> Option<Arc<LoadedSequence>> {
-        self.sequence.read().ok().and_then(|guard| guard.clone())
+    pub fn selected_clip(&self) -> Option<Arc<LoadedClip>> {
+        self.clip.read().ok().and_then(|guard| guard.clone())
     }
 
-    pub async fn set_sequence(&self, sequence: LoadedSequence) {
-        let id = sequence.id.clone();
-        if let Ok(mut slot) = self.sequence.write() {
-            *slot = Some(Arc::new(sequence));
+    pub async fn set_clip(&self, clip: LoadedClip) {
+        let id = clip.id.clone();
+        if let Ok(mut slot) = self.clip.write() {
+            *slot = Some(Arc::new(clip));
         }
         self.bump_output_send_epoch();
         let mut state = self.state.write().await;
-        state.loop_sequence_id = Some(id);
+        state.loop_clip_id = Some(id);
     }
 
-    pub async fn clear_sequence(&self) {
-        if let Ok(mut slot) = self.sequence.write() {
+    pub async fn clear_clip(&self) {
+        if let Ok(mut slot) = self.clip.write() {
             *slot = None;
         }
         self.bump_output_send_epoch();
         let mut state = self.state.write().await;
-        state.loop_sequence_id = None;
+        state.loop_clip_id = None;
         self.reset_loop_playback_timing();
     }
 
@@ -174,7 +177,7 @@ impl DeviceSlot {
         }
     }
 
-    pub fn sequence_elapsed_for_loop(&self, raw: Duration) -> Duration {
+    pub fn clip_elapsed_for_loop(&self, raw: Duration) -> Duration {
         let Ok(g) = self.loop_playback_timing.read() else {
             return raw;
         };
@@ -270,16 +273,13 @@ impl DeviceSlot {
         }
     }
 
-    pub fn ensure_interactive_uv(
+    pub fn ensure_layout_uv(
         &self,
         compiled_dir: &std::path::Path,
         layout_id: &str,
         led_count: usize,
     ) -> anyhow::Result<()> {
-        if let (Ok(uv_g), Ok(id_g)) = (
-            self.interactive_uv.read(),
-            self.interactive_uv_layout_id.read(),
-        ) {
+        if let (Ok(uv_g), Ok(id_g)) = (self.layout_uv.read(), self.layout_uv_layout_id.read()) {
             if let (Some(v), Some(id)) = (uv_g.as_ref(), id_g.as_deref()) {
                 if id == layout_id && v.len() == led_count {
                     return Ok(());
@@ -301,16 +301,29 @@ impl DeviceSlot {
             }
         }
         let mut slot = self
-            .interactive_uv
+            .layout_uv
             .write()
-            .map_err(|e| anyhow::anyhow!("interactive_uv lock: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("layout_uv lock: {e}"))?;
         *slot = Some(table);
         let mut id_slot = self
-            .interactive_uv_layout_id
+            .layout_uv_layout_id
             .write()
-            .map_err(|e| anyhow::anyhow!("interactive_uv_layout_id lock: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("layout_uv_layout_id lock: {e}"))?;
         *id_slot = Some(layout_id.to_string());
         Ok(())
+    }
+
+    pub fn layout_uv_table(&self) -> Option<Vec<(f32, f32)>> {
+        self.layout_uv.read().ok().and_then(|g| g.clone())
+    }
+
+    pub fn ensure_interactive_uv(
+        &self,
+        compiled_dir: &std::path::Path,
+        layout_id: &str,
+        led_count: usize,
+    ) -> anyhow::Result<()> {
+        self.ensure_layout_uv(compiled_dir, layout_id, led_count)
     }
 
     pub fn master_brightness(&self) -> f32 {
@@ -349,22 +362,6 @@ impl DeviceSlot {
         g.retain(|p| now < p.started + p.duration);
     }
 
-    pub fn mate_apply_json(&self, v: &serde_json::Value) -> Result<(), String> {
-        let mut g = self
-            .mate_state
-            .write()
-            .map_err(|_| "mate_state lock poisoned".to_string())?;
-        g.apply_json_patch(v)
-    }
-
-    pub fn mate_summary(&self) -> mate::MateSummary {
-        self.mate_state
-            .read()
-            .ok()
-            .map(|g| g.summary())
-            .unwrap_or_else(|| MateState::default().summary())
-    }
-
     pub async fn switch_layout(
         &self,
         compiled_dir: &std::path::Path,
@@ -384,26 +381,21 @@ impl DeviceSlot {
             .and_then(|v| v.as_u64())
             .map(|x| x as u32);
 
-        if let Some(seq) = self.selected_sequence() {
-            if seq.layout_id != new_layout_id || seq.led_count != led_count as usize {
-                self.clear_sequence().await;
-            }
-        }
-
         if let Ok(mut w) = self.preview_frame.write() {
             *w = vec![0u8; led_count as usize * 3];
         }
         self.preview_seq.store(0, Ordering::Relaxed);
 
-        if let Ok(mut g) = self.interactive_uv.write() {
+        if let Ok(mut g) = self.layout_uv.write() {
             *g = None;
         }
-        if let Ok(mut g) = self.interactive_uv_layout_id.write() {
+        if let Ok(mut g) = self.layout_uv_layout_id.write() {
             *g = None;
         }
         if let Ok(mut g) = self.interactive_solid.write() {
             *g = None;
         }
+        self.mate.clear_samples_cache();
         if let Ok(mut g) = self.expected_layout_hash.write() {
             *g = expected_layout_hash;
         }
@@ -417,5 +409,48 @@ impl DeviceSlot {
         }
         self.bump_output_send_epoch();
         Ok(())
+    }
+
+    pub fn mate_preset_id(&self) -> Option<String> {
+        self.mate.preset_id()
+    }
+
+    pub fn ensure_mate_samples(
+        &self,
+        compiled_dir: &std::path::Path,
+        layout_id: &str,
+    ) -> anyhow::Result<()> {
+        self.mate.ensure_samples(compiled_dir, layout_id)
+    }
+
+    pub fn set_mate_expression(
+        &self,
+        preset_id: &str,
+        registry: &mate::PresetRegistry,
+        transition_ms: u32,
+    ) -> anyhow::Result<()> {
+        self.mate.set_expression(preset_id, registry, transition_ms)
+    }
+
+    pub fn mate_breathing_params(&self) -> BreathingParams {
+        self.mate.breathing_params()
+    }
+
+    pub fn set_mate_breathing(&self, params: BreathingParams) {
+        self.mate.set_breathing(params);
+        self.bump_output_send_epoch();
+    }
+
+    pub fn trigger_mate_blink(&self) {
+        self.mate.trigger_blink();
+        self.bump_output_send_epoch();
+    }
+
+    pub fn ensure_mate_neutral(&self, registry: &mate::PresetRegistry) -> anyhow::Result<()> {
+        self.mate.ensure_neutral(registry)
+    }
+
+    pub fn render_mate(&self, rgb: &mut [u8]) {
+        self.mate.render(rgb);
     }
 }

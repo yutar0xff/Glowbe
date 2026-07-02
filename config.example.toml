@@ -9,8 +9,8 @@ layout_id = "prototype-icosahedron-15"
 [assets]
 # 省略時: リポジトリの assets/compiled（カレントから上位に `assets/compiled` を探索）
 # compiled_dir = "/var/lib/glowbe/compiled"
-# 省略時: リポジトリの assets/sequences
-# sequences_dir = "/var/lib/glowbe/sequences"
+# 省略時: リポジトリの assets/clips
+# clips_dir = "/var/lib/glowbe/clips"
 # 省略時: リポジトリの assets/uploads（POST /api/v1/media/upload の一時保存）
 # uploads_dir = "/var/lib/glowbe/uploads"
 
@@ -19,7 +19,7 @@ udp_port = 49152
 status_port = 49153
 
 [modes]
-default = "loop"
+default = "idle"
 
 [server]
 bind = "0.0.0.0:8080"

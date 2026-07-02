@@ -22,4 +22,4 @@
 
 ## Studio のライブ LED プレビュー
 
-Loop（シーケンス再生中）・Interactive・Mate の各 Studio タブに組み込み済み。ランタイムの WebSocket `previewSubscribe` とバイナリ LED フレーム（約 30fps、マスター補正後の最終 RGB）で 2D / 3D マップを更新する。仕様は [`protocol/control-api.md`](../protocol/control-api.md) を参照。
+Loop（シーケンス再生中）・Interactive の各 Studio タブに組み込み済み。ランタイムの WebSocket `previewSubscribe` とバイナリ LED フレーム（約 30fps、マスター補正後の最終 RGB）で 2D / 3D マップを更新する。仕様は [`protocol/control-api.md`](../protocol/control-api.md) を参照。

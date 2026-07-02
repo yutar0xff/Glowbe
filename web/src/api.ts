@@ -3,8 +3,10 @@ import type {
   DiscoveredEsp,
   Health,
   LoadState,
+  MateBreathingParams,
+  MatePresetsResponse,
   RuntimeState,
-  SequenceSummary,
+  ClipSummary,
 } from './types'
 
 export const API_BASE = import.meta.env.VITE_GLOWBE_API_BASE ?? ''
@@ -60,6 +62,70 @@ async function fetchText(path: string, signal: AbortSignal): Promise<{
   return { ok: res.ok, status: res.status, text: await res.text() }
 }
 
+export async function fetchMatePresets(
+  signal: AbortSignal,
+  deviceId: string | null,
+): Promise<MatePresetsResponse> {
+  const q = apiDeviceQuery(deviceId)
+  const res = await fetch(`${API_BASE}/api/v1/mate/presets${q}`, { signal })
+  if (!res.ok) {
+    const msg = await res.text()
+    throw new Error(msg || `Could not list mate presets (error ${res.status}).`)
+  }
+  return (await res.json()) as MatePresetsResponse
+}
+
+export async function postMateExpression(
+  signal: AbortSignal,
+  deviceId: string | null,
+  preset: string,
+  transitionMs: number,
+): Promise<RuntimeState> {
+  const q = apiDeviceQuery(deviceId)
+  const res = await fetch(`${API_BASE}/api/v1/mate/expression${q}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ preset, transitionMs }),
+    signal,
+  })
+  if (!res.ok) {
+    const msg = await res.text()
+    try {
+      const j = JSON.parse(msg) as { error?: string }
+      if (j.error) throw new Error(j.error)
+    } catch (e) {
+      if (e instanceof Error && e.message !== msg) throw e
+    }
+    throw new Error(msg || `Could not set mate expression (error ${res.status}).`)
+  }
+  return (await res.json()) as RuntimeState
+}
+
+export async function postMateBreathing(
+  signal: AbortSignal,
+  deviceId: string | null,
+  params: Partial<MateBreathingParams> & { enabled: boolean },
+): Promise<RuntimeState> {
+  const q = apiDeviceQuery(deviceId)
+  const res = await fetch(`${API_BASE}/api/v1/mate/breathing${q}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(params),
+    signal,
+  })
+  if (!res.ok) {
+    const msg = await res.text()
+    try {
+      const j = JSON.parse(msg) as { error?: string }
+      if (j.error) throw new Error(j.error)
+    } catch (e) {
+      if (e instanceof Error && e.message !== msg) throw e
+    }
+    throw new Error(msg || `Could not set mate breathing (error ${res.status}).`)
+  }
+  return (await res.json()) as RuntimeState
+}
+
 export async function fetchDevices(signal: AbortSignal): Promise<DeviceListResponse> {
   const res = await fetch(`${API_BASE}/api/v1/devices`, { signal })
   if (!res.ok) throw new Error(`Could not list devices (error ${res.status}).`)
@@ -77,14 +143,14 @@ export async function fetchState(
   deviceId: string | null,
 ): Promise<LoadState> {
   const q = apiDeviceQuery(deviceId)
-  const [stateRes, healthRes, sequencesRes] = await Promise.all([
+  const [stateRes, healthRes, clipsRes] = await Promise.all([
     fetch(`${API_BASE}/api/v1/state${q}`, { signal }),
     fetchText('/health', signal).catch((err: unknown) => ({
       ok: false,
       status: 0,
       text: err instanceof Error ? err.message : String(err),
     })),
-    fetch(`${API_BASE}/api/v1/sequences`, { signal }).catch(() => undefined),
+    fetch(`${API_BASE}/api/v1/clips`, { signal }).catch(() => undefined),
   ])
 
   const health: Health = {
@@ -105,7 +171,7 @@ export async function fetchState(
     kind: 'ready',
     state: (await stateRes.json()) as RuntimeState,
     health,
-    sequences: sequencesRes?.ok ? ((await sequencesRes.json()) as SequenceSummary[]) : [],
+    clips: clipsRes?.ok ? ((await clipsRes.json()) as ClipSummary[]) : [],
     fetchedAt: new Date(),
   }
 }

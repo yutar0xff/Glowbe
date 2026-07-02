@@ -11,6 +11,8 @@ use image::ImageReader;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::equirect::{self, DEFAULT_HEIGHT, DEFAULT_WIDTH};
+
 /// ZIP 内の連番画像から取り込むフレーム数の上限（メモリ・処理時間の安全弁）。
 const MAX_ZIP_FRAMES: usize = 3600;
 
@@ -43,53 +45,48 @@ pub struct LayoutUv {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SequenceManifest {
-    format: String,
-    version: u8,
-    id: String,
-    layout_id: String,
-    led_count: usize,
-    frame_count: u32,
-    fps: u32,
-    source: SequenceSource,
-    created_at_unix_sec: u64,
+pub struct ClipManifest {
+    pub format: String,
+    pub version: u8,
+    pub id: String,
+    pub kind: String,
+    pub fps: u32,
+    pub frame_count: u32,
+    pub width: u32,
+    pub height: u32,
+    pub source: ClipSourceMeta,
+    pub created_at_unix_sec: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    display_name: Option<String>,
+    pub display_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SequenceSource {
-    kind: String,
-    path: String,
-    width: u32,
-    height: u32,
+pub struct ClipSourceMeta {
+    pub kind: String,
+    pub path: String,
+    pub orig_width: u32,
+    pub orig_height: u32,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SequenceSummary {
+pub struct ClipSummary {
     pub id: String,
-    pub layout_id: String,
-    pub led_count: usize,
+    pub kind: String,
     pub frame_count: u32,
     pub fps: u32,
-    pub source_kind: String,
+    pub width: u32,
+    pub height: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_kind: Option<String>,
     pub source_width: u32,
     pub source_height: u32,
     pub created_at_unix_sec: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct LoadedSequence {
-    pub id: String,
-    pub layout_id: String,
-    pub led_count: usize,
-    pub frame_count: usize,
-    pub fps: u32,
-    frames: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_demo: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -180,41 +177,6 @@ fn set_prog(progress: Option<&Arc<AtomicU8>>, v: u8) {
     }
 }
 
-fn load_ledmap(compiled_dir: &Path, layout_id: &str) -> Result<LedMap> {
-    let ledmap_path = compiled_dir.join(format!("{layout_id}.ledmap.json"));
-    let ledmap: LedMap = serde_json::from_str(
-        &fs::read_to_string(&ledmap_path)
-            .with_context(|| format!("read {}", ledmap_path.display()))?,
-    )
-    .with_context(|| format!("parse {}", ledmap_path.display()))?;
-    if ledmap.layout_id != layout_id {
-        anyhow::bail!(
-            "ledmap layout id mismatch: expected {layout_id}, got {}",
-            ledmap.layout_id
-        );
-    }
-    Ok(ledmap)
-}
-
-fn encode_frame(ledmap: &LedMap, image: &image::RgbaImage) -> Result<Vec<u8>> {
-    let mut frame = vec![0u8; ledmap.leds.len() * 3];
-    for led in &ledmap.leds {
-        let [r, g, b] = sample_bilinear_rgb(image, led.u, led.v);
-        let o = led.i * 3;
-        if o + 2 >= frame.len() {
-            anyhow::bail!(
-                "led index {} out of bounds for {} LEDs",
-                led.i,
-                ledmap.leds.len()
-            );
-        }
-        frame[o] = r;
-        frame[o + 1] = g;
-        frame[o + 2] = b;
-    }
-    Ok(frame)
-}
-
 fn is_zip_file(path: &Path) -> Result<bool> {
     if path
         .extension()
@@ -269,11 +231,12 @@ fn zip_collect_image_names<R: Read + Seek>(
     Ok(names)
 }
 
-fn build_frames_from_zip(
+fn build_equirect_from_zip(
     source_path: &Path,
-    ledmap: &LedMap,
+    width: u32,
+    height: u32,
     progress: Option<&Arc<AtomicU8>>,
-) -> Result<(Vec<u8>, u32, SequenceSource)> {
+) -> Result<(Vec<u8>, u32, ClipSourceMeta)> {
     let file =
         fs::File::open(source_path).with_context(|| format!("open {}", source_path.display()))?;
     let mut archive =
@@ -295,15 +258,15 @@ fn build_frames_from_zip(
     let first_img = image::load_from_memory(&first_buf)
         .with_context(|| format!("decode {}", names[0]))?
         .to_rgba8();
-    let w = first_img.width();
-    let h = first_img.height();
-    if w == 0 || h == 0 {
+    let orig_w = first_img.width();
+    let orig_h = first_img.height();
+    if orig_w == 0 || orig_h == 0 {
         anyhow::bail!("invalid image size in zip");
     }
 
-    let frame_size = ledmap.leds.len() * 3;
+    let frame_size = (width * height * 3) as usize;
     let mut all: Vec<u8> = Vec::with_capacity(frame_size * names.len());
-    all.extend_from_slice(&encode_frame(ledmap, &first_img)?);
+    all.extend_from_slice(&equirect::rgba_to_equirect_rgb(&first_img, width, height));
     set_prog(
         progress,
         (100u32.saturating_div(names.len() as u32).max(1)) as u8,
@@ -319,36 +282,37 @@ fn build_frames_from_zip(
         let img = image::load_from_memory(&buf)
             .with_context(|| format!("decode {name}"))?
             .to_rgba8();
-        if img.width() != w || img.height() != h {
+        if img.width() != orig_w || img.height() != orig_h {
             anyhow::bail!(
                 "all zip images must share size {}×{}, but {name} is {}×{}",
-                w,
-                h,
+                orig_w,
+                orig_h,
                 img.width(),
                 img.height()
             );
         }
-        all.extend_from_slice(&encode_frame(ledmap, &img)?);
+        all.extend_from_slice(&equirect::rgba_to_equirect_rgb(&img, width, height));
         let pct = (((idx + 1) as u32 * 100) / names.len() as u32).min(99) as u8;
         set_prog(progress, pct.max(2));
     }
 
-    let source = SequenceSource {
+    let source = ClipSourceMeta {
         kind: "equirectangular-image-sequence".to_string(),
         path: String::new(),
-        width: w,
-        height: h,
+        orig_width: orig_w,
+        orig_height: orig_h,
     };
 
     Ok((all, names.len() as u32, source))
 }
 
-fn build_frames_from_video(
+fn build_equirect_from_video(
     source_path: &Path,
-    ledmap: &LedMap,
+    width: u32,
+    height: u32,
     fps: u32,
     progress: Option<&Arc<AtomicU8>>,
-) -> Result<(Vec<u8>, u32, SequenceSource)> {
+) -> Result<(Vec<u8>, u32, ClipSourceMeta)> {
     let tmp = std::env::temp_dir().join(format!("glowbe-vid-{}", Uuid::new_v4()));
     fs::create_dir_all(&tmp).with_context(|| format!("mkdir {}", tmp.display()))?;
     let out_pattern = tmp.join("frame_%06d.png");
@@ -379,10 +343,7 @@ fn build_frames_from_video(
         .with_context(|| format!("read {}", tmp.display()))?
         .filter_map(|e| e.ok())
         .map(|e| e.file_name().to_string_lossy().to_string())
-        .filter(|n| {
-            let l = n.to_ascii_lowercase();
-            l.ends_with(".png")
-        })
+        .filter(|n| n.to_ascii_lowercase().ends_with(".png"))
         .collect();
     names.sort();
     if names.is_empty() {
@@ -401,16 +362,16 @@ fn build_frames_from_video(
         .decode()
         .with_context(|| format!("decode {}", first_path.display()))?
         .to_rgba8();
-    let w = first_img.width();
-    let h = first_img.height();
-    if w == 0 || h == 0 {
+    let orig_w = first_img.width();
+    let orig_h = first_img.height();
+    if orig_w == 0 || orig_h == 0 {
         let _ = fs::remove_dir_all(&tmp);
         anyhow::bail!("invalid frame size from video");
     }
 
-    let frame_size = ledmap.leds.len() * 3;
+    let frame_size = (width * height * 3) as usize;
     let mut all: Vec<u8> = Vec::with_capacity(frame_size * names.len());
-    all.extend_from_slice(&encode_frame(ledmap, &first_img)?);
+    all.extend_from_slice(&equirect::rgba_to_equirect_rgb(&first_img, width, height));
     set_prog(
         progress,
         (100u32.saturating_div(names.len() as u32).max(1)) as u8,
@@ -423,34 +384,34 @@ fn build_frames_from_video(
             .decode()
             .with_context(|| format!("decode {}", p.display()))?
             .to_rgba8();
-        if img.width() != w || img.height() != h {
+        if img.width() != orig_w || img.height() != orig_h {
             let _ = fs::remove_dir_all(&tmp);
             anyhow::bail!(
                 "video frames must share size {}×{}, but {name} is {}×{}",
-                w,
-                h,
+                orig_w,
+                orig_h,
                 img.width(),
                 img.height()
             );
         }
-        all.extend_from_slice(&encode_frame(ledmap, &img)?);
+        all.extend_from_slice(&equirect::rgba_to_equirect_rgb(&img, width, height));
         let pct = (((idx + 1) as u32 * 100) / names.len() as u32).min(99) as u8;
         set_prog(progress, pct.max(2));
     }
 
     let _ = fs::remove_dir_all(&tmp);
 
-    let source = SequenceSource {
+    let source = ClipSourceMeta {
         kind: "equirectangular-video".to_string(),
         path: String::new(),
-        width: w,
-        height: h,
+        orig_width: orig_w,
+        orig_height: orig_h,
     };
 
     Ok((all, names.len() as u32, source))
 }
 
-fn copy_upload_to_sequence_import(source_path: &Path, out_dir: &Path) -> Result<String> {
+fn copy_upload_to_clip_import(source_path: &Path, out_dir: &Path) -> Result<String> {
     let ext = source_path
         .extension()
         .and_then(|e| e.to_str())
@@ -470,17 +431,17 @@ fn rgba_to_png_bytes(img: &image::RgbaImage) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
-fn resolve_stored_import_path(seq_dir: &Path, source: &SequenceSource) -> Result<PathBuf> {
+fn resolve_stored_import_path(clip_dir: &Path, source: &ClipSourceMeta) -> Result<PathBuf> {
     let raw = Path::new(&source.path);
     let cand = if raw.is_absolute() {
         raw.to_path_buf()
     } else {
-        seq_dir.join(raw)
+        clip_dir.join(raw)
     };
     if cand.is_file() {
         return Ok(cand);
     }
-    for entry in fs::read_dir(seq_dir).with_context(|| format!("read {}", seq_dir.display()))? {
+    for entry in fs::read_dir(clip_dir).with_context(|| format!("read {}", clip_dir.display()))? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with("source-import.") && entry.file_type()?.is_file() {
@@ -488,9 +449,9 @@ fn resolve_stored_import_path(seq_dir: &Path, source: &SequenceSource) -> Result
         }
     }
     anyhow::bail!(
-        "import media not found for sequence (expected {} or source-import.* under {})",
+        "import media not found for clip (expected {} or source-import.* under {})",
         cand.display(),
-        seq_dir.display()
+        clip_dir.display()
     )
 }
 
@@ -538,17 +499,18 @@ fn extract_video_frame_png(import_path: &Path, fps: u32, frame_index: u32) -> Re
     Ok(bytes)
 }
 
-/// UI 用: シーケンスディレクトリに保存したインポート（画像 / zip 連番 / 動画）から 1 フレームを PNG で返す。
-pub fn export_sequence_source_frame_png(
-    sequences_dir: &Path,
-    sequence_id: &str,
+/// UI 用: クリップディレクトリに保存したインポートから 1 フレームを PNG で返す。
+pub fn export_clip_source_frame_png(
+    clips_dir: &Path,
+    clip_id: &str,
     frame_index: u32,
 ) -> Result<Vec<u8>> {
-    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
-        anyhow::bail!("sequence id must be non-empty and path-safe");
+    crate::clip::validate_clip_id(clip_id)?;
+    if crate::clip::is_demo_id(clip_id) {
+        anyhow::bail!("demo clips have no stored source frame");
     }
-    let dir = sequences_dir.join(sequence_id);
-    let manifest = read_manifest(&dir)?;
+    let dir = clips_dir.join(clip_id);
+    let manifest = read_clip_manifest(&dir)?;
     if frame_index >= manifest.frame_count {
         anyhow::bail!(
             "frame index {} out of range (frameCount={})",
@@ -561,7 +523,7 @@ pub fn export_sequence_source_frame_png(
     match manifest.source.kind.as_str() {
         "equirectangular-image" => {
             if idx != 0 {
-                anyhow::bail!("single-image sequence only has frame 0");
+                anyhow::bail!("single-image clip only has frame 0");
             }
             let image = ImageReader::open(&import_path)
                 .with_context(|| format!("open {}", import_path.display()))?
@@ -575,131 +537,57 @@ pub fn export_sequence_source_frame_png(
             rgba_to_png_bytes(&rgba)
         }
         "equirectangular-video" => extract_video_frame_png(&import_path, manifest.fps, frame_index),
-        "synthetic-expanding-ring-demo" => fs::read(&import_path)
-            .with_context(|| format!("read synthetic thumbnail {}", import_path.display())),
         other => anyhow::bail!("unsupported source kind for preview: {other}"),
     }
 }
 
-/// シーケンスディレクトリをディスクから完全削除する。
-pub fn delete_sequence_directory(sequences_dir: &Path, sequence_id: &str) -> Result<()> {
-    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
-        anyhow::bail!("sequence id must be non-empty and must not contain path separators");
+/// クリップディレクトリをディスクから完全削除する。
+pub fn delete_clip_directory(clips_dir: &Path, clip_id: &str) -> Result<()> {
+    crate::clip::validate_clip_id(clip_id)?;
+    if crate::clip::is_demo_id(clip_id) {
+        anyhow::bail!("cannot delete built-in demo clip");
     }
-    let dir = sequences_dir.join(sequence_id);
+    let dir = clips_dir.join(clip_id);
     if !dir.is_dir() {
-        anyhow::bail!("sequence not found: {sequence_id}");
+        anyhow::bail!("clip not found: {clip_id}");
     }
     fs::remove_dir_all(&dir).with_context(|| format!("remove {}", dir.display()))?;
     Ok(())
 }
 
-fn write_gradient_placeholder_png(path: &Path, w: u32, h: u32) -> Result<()> {
-    let mut img = image::RgbaImage::new(w, h);
-    let wm = w.saturating_sub(1).max(1);
-    let hm = h.saturating_sub(1).max(1);
-    for (x, y, pixel) in img.enumerate_pixels_mut() {
-        let r = (x * 255 / wm) as u8;
-        let g = (y * 255 / hm) as u8;
-        *pixel = image::Rgba([r, g, 220, 255]);
+fn clip_kind_from_source(source_kind: &str) -> String {
+    match source_kind {
+        "equirectangular-image" => "equirect-image".to_string(),
+        "equirectangular-image-sequence" => "equirect-image-sequence".to_string(),
+        "equirectangular-video" => "equirect-video".to_string(),
+        other => other.to_string(),
     }
-    let mut buf = Vec::new();
-    image::DynamicImage::from(img)
-        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
-        .context("encode placeholder png")?;
-    fs::write(path, buf).with_context(|| format!("write {}", path.display()))?;
-    Ok(())
 }
 
-/// 合成デモ用: `frames.bin` + `manifest.json` + グリッド用プレースホルダ PNG。
+/// 正距円筒 **単一画像**、**ZIP 内 PNG/JPEG 連番**、または **動画（ffmpeg）** からクリップを生成する。
 #[allow(clippy::too_many_arguments)]
-pub fn write_synthetic_demo_sequence(
-    sequences_dir: &Path,
-    sequence_id: &str,
-    layout_id: &str,
-    led_count: usize,
-    fps: u32,
-    frame_count: u32,
-    frames: &[u8],
-    display_name: Option<&str>,
-) -> Result<PathBuf> {
-    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
-        anyhow::bail!("sequence id must be non-empty and must not contain path separators");
-    }
-    let fps = fps.clamp(1, 120);
-    let expected = led_count * 3 * frame_count as usize;
-    if frames.len() != expected {
-        anyhow::bail!(
-            "frames size mismatch: got {}, expected {} ({} LEDs × {} frames × 3)",
-            frames.len(),
-            expected,
-            led_count,
-            frame_count
-        );
-    }
-    let out_dir = sequences_dir.join(sequence_id);
-    fs::create_dir_all(&out_dir).with_context(|| format!("create {}", out_dir.display()))?;
-    fs::write(out_dir.join("frames.bin"), frames)
-        .with_context(|| format!("write {}", out_dir.join("frames.bin").display()))?;
-    write_gradient_placeholder_png(&out_dir.join("source-import.png"), 256, 128)?;
-
-    let dn = sanitize_display_name(display_name);
-    let manifest = SequenceManifest {
-        format: "glowbe-sequence".to_string(),
-        version: 1,
-        id: sequence_id.to_string(),
-        layout_id: layout_id.to_string(),
-        led_count,
-        frame_count,
-        fps,
-        source: SequenceSource {
-            kind: "synthetic-expanding-ring-demo".to_string(),
-            path: "source-import.png".to_string(),
-            width: 256,
-            height: 128,
-        },
-        created_at_unix_sec: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
-        display_name: dn,
-    };
-    let manifest_json = serde_json::to_vec_pretty(&manifest).context("serialize manifest")?;
-    fs::write(
-        out_dir.join("manifest.json"),
-        [manifest_json, b"\n".to_vec()].concat(),
-    )
-    .with_context(|| format!("write {}", out_dir.join("manifest.json").display()))?;
-    Ok(out_dir)
-}
-
-/// 正距円筒 **単一画像**、**ZIP 内 PNG/JPEG 連番**、または **動画（ffmpeg）** からシーケンスを生成する。
-#[allow(clippy::too_many_arguments)]
-pub fn convert_uploaded_media_to_sequence(
+pub fn convert_uploaded_media_to_clip(
     source_path: &Path,
-    sequence_id: &str,
-    layout_id: &str,
-    compiled_dir: &Path,
-    sequences_dir: &Path,
+    clip_id: &str,
+    clips_dir: &Path,
     fps: u32,
     display_name: Option<&str>,
+    width: u32,
+    height: u32,
     progress: Option<&Arc<AtomicU8>>,
 ) -> Result<PathBuf> {
     let fps = fps.clamp(1, 120);
-    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
-        anyhow::bail!("sequence id must be non-empty and must not contain path separators");
-    }
+    let width = width.max(1);
+    let height = height.max(1);
+    crate::clip::validate_clip_id(clip_id)?;
 
     set_prog(progress, 2);
-    let ledmap = load_ledmap(compiled_dir, layout_id)?;
-    set_prog(progress, 5);
-
     let dn = sanitize_display_name(display_name);
 
     let (frame_bytes, frame_count, mut source) = if is_zip_file(source_path)? {
-        build_frames_from_zip(source_path, &ledmap, progress)?
+        build_equirect_from_zip(source_path, width, height, progress)?
     } else if is_video_file(source_path) {
-        build_frames_from_video(source_path, &ledmap, fps, progress)?
+        build_equirect_from_video(source_path, width, height, fps, progress)?
     } else {
         set_prog(progress, 12);
         let image = ImageReader::open(source_path)
@@ -707,39 +595,41 @@ pub fn convert_uploaded_media_to_sequence(
             .decode()
             .with_context(|| format!("decode {}", source_path.display()))?
             .to_rgba8();
-        let width = image.width();
-        let height = image.height();
-        if width == 0 || height == 0 {
+        let orig_w = image.width();
+        let orig_h = image.height();
+        if orig_w == 0 || orig_h == 0 {
             anyhow::bail!("image has zero width or height");
         }
         set_prog(progress, 40);
-        let frame = encode_frame(&ledmap, &image)?;
+        let frame = equirect::rgba_to_equirect_rgb(&image, width, height);
         set_prog(progress, 85);
-        let source = SequenceSource {
+        let source = ClipSourceMeta {
             kind: "equirectangular-image".to_string(),
             path: String::new(),
-            width,
-            height,
+            orig_width: orig_w,
+            orig_height: orig_h,
         };
         (frame, 1, source)
     };
 
-    let out_dir = sequences_dir.join(sequence_id);
+    let out_dir = clips_dir.join(clip_id);
     fs::create_dir_all(&out_dir).with_context(|| format!("create {}", out_dir.display()))?;
-    fs::write(out_dir.join("frames.bin"), &frame_bytes)
-        .with_context(|| format!("write {}", out_dir.join("frames.bin").display()))?;
+    fs::write(out_dir.join("equirect.bin"), &frame_bytes)
+        .with_context(|| format!("write {}", out_dir.join("equirect.bin").display()))?;
 
-    let import_rel = copy_upload_to_sequence_import(source_path, &out_dir)?;
+    let import_rel = copy_upload_to_clip_import(source_path, &out_dir)?;
     source.path = import_rel;
 
-    let manifest = SequenceManifest {
-        format: "glowbe-sequence".to_string(),
+    let kind = clip_kind_from_source(&source.kind);
+    let manifest = ClipManifest {
+        format: "glowbe-clip".to_string(),
         version: 1,
-        id: sequence_id.to_string(),
-        layout_id: layout_id.to_string(),
-        led_count: ledmap.leds.len(),
-        frame_count,
+        id: clip_id.to_string(),
+        kind,
         fps,
+        frame_count,
+        width,
+        height,
         source,
         created_at_unix_sec: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -747,48 +637,42 @@ pub fn convert_uploaded_media_to_sequence(
             .as_secs(),
         display_name: dn,
     };
-    let manifest_json = serde_json::to_vec_pretty(&manifest).context("serialize manifest")?;
-    fs::write(
-        out_dir.join("manifest.json"),
-        [manifest_json, b"\n".to_vec()].concat(),
-    )
-    .with_context(|| format!("write {}", out_dir.join("manifest.json").display()))?;
+    write_clip_manifest(&out_dir, &manifest)?;
 
     set_prog(progress, 100);
     Ok(out_dir)
 }
 
 /// CLI 用: 単一画像のみ（表示名・進捗なし）。
-pub fn convert_equirect_image_to_sequence(
+pub fn convert_equirect_image_to_clip(
     image_path: &Path,
-    sequence_id: &str,
-    layout_id: &str,
-    compiled_dir: &Path,
-    sequences_dir: &Path,
+    clip_id: &str,
+    clips_dir: &Path,
     fps: u32,
 ) -> Result<PathBuf> {
-    convert_uploaded_media_to_sequence(
+    convert_uploaded_media_to_clip(
         image_path,
-        sequence_id,
-        layout_id,
-        compiled_dir,
-        sequences_dir,
+        clip_id,
+        clips_dir,
         fps,
         None,
+        DEFAULT_WIDTH,
+        DEFAULT_HEIGHT,
         None,
     )
 }
 
 /// `manifest.json` の `displayName` を更新（`None` または空文字でキー削除）。
-pub fn set_sequence_display_name(
-    sequences_dir: &Path,
-    sequence_id: &str,
+pub fn set_clip_display_name(
+    clips_dir: &Path,
+    clip_id: &str,
     display_name: Option<&str>,
 ) -> Result<()> {
-    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
-        anyhow::bail!("sequence id must be non-empty and must not contain path separators");
+    crate::clip::validate_clip_id(clip_id)?;
+    if crate::clip::is_demo_id(clip_id) {
+        anyhow::bail!("cannot rename built-in demo clip");
     }
-    let path = sequences_dir.join(sequence_id).join("manifest.json");
+    let path = clips_dir.join(clip_id).join("manifest.json");
     let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
     let mut v: serde_json::Value =
         serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
@@ -809,77 +693,32 @@ pub fn set_sequence_display_name(
     Ok(())
 }
 
-pub fn sequence_summary(sequences_dir: &Path, sequence_id: &str) -> Result<SequenceSummary> {
-    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
-        anyhow::bail!("sequence id must be non-empty and must not contain path separators");
+pub fn clip_summary(clips_dir: &Path, clip_id: &str) -> Result<ClipSummary> {
+    crate::clip::validate_clip_id(clip_id)?;
+    if let Some(demo) = crate::demos::DemoId::parse(clip_id) {
+        return Ok(crate::demos::demo_clip_summaries()
+            .into_iter()
+            .find(|s| s.id == demo.clip_id())
+            .context("demo summary missing")?);
     }
-    let dir = sequences_dir.join(sequence_id);
-    let manifest = read_manifest(&dir)?;
+    let dir = clips_dir.join(clip_id);
+    let manifest = read_clip_manifest(&dir)?;
     Ok(summary_from_manifest(&manifest))
 }
 
-fn summary_from_manifest(manifest: &SequenceManifest) -> SequenceSummary {
-    SequenceSummary {
-        id: manifest.id.clone(),
-        layout_id: manifest.layout_id.clone(),
-        led_count: manifest.led_count,
-        frame_count: manifest.frame_count,
-        fps: manifest.fps,
-        source_kind: manifest.source.kind.clone(),
-        source_width: manifest.source.width,
-        source_height: manifest.source.height,
-        created_at_unix_sec: manifest.created_at_unix_sec,
-        display_name: manifest.display_name.clone(),
-    }
-}
-
-pub fn load_sequence(sequence_dir: &Path, sequence_id: &str) -> Result<LoadedSequence> {
-    if sequence_id.is_empty() || sequence_id.contains('/') || sequence_id.contains('\\') {
-        anyhow::bail!("sequence id must be non-empty and must not contain path separators");
-    }
-    let dir = sequence_dir.join(sequence_id);
-    let manifest = read_manifest(&dir)?;
-
-    let frames_path = dir.join("frames.bin");
-    let frames =
-        fs::read(&frames_path).with_context(|| format!("read {}", frames_path.display()))?;
-    let frame_size = manifest.led_count * 3;
-    let expected_len = frame_size * manifest.frame_count as usize;
-    if frames.len() != expected_len {
-        anyhow::bail!(
-            "frames.bin size mismatch: got {}, expected {} ({} LEDs x {} frames)",
-            frames.len(),
-            expected_len,
-            manifest.led_count,
-            manifest.frame_count
-        );
-    }
-
-    Ok(LoadedSequence {
-        id: manifest.id,
-        layout_id: manifest.layout_id,
-        led_count: manifest.led_count,
-        frame_count: manifest.frame_count as usize,
-        fps: manifest.fps,
-        frames,
-    })
-}
-
-pub fn list_sequences(sequence_dir: &Path) -> Result<Vec<SequenceSummary>> {
-    if !sequence_dir.exists() {
+pub fn list_media_clips(clips_dir: &Path) -> Result<Vec<ClipSummary>> {
+    if !clips_dir.exists() {
         return Ok(Vec::new());
     }
 
     let mut out = Vec::new();
-    for entry in
-        fs::read_dir(sequence_dir).with_context(|| format!("read {}", sequence_dir.display()))?
-    {
+    for entry in fs::read_dir(clips_dir).with_context(|| format!("read {}", clips_dir.display()))? {
         let entry = entry?;
         if !entry.file_type()?.is_dir() {
             continue;
         }
         let dir = entry.path();
-        if let Ok(manifest) = read_manifest(&dir) {
+        if let Ok(manifest) = read_clip_manifest(&dir) {
             out.push(summary_from_manifest(&manifest));
         }
     }
@@ -887,15 +726,15 @@ pub fn list_sequences(sequence_dir: &Path) -> Result<Vec<SequenceSummary>> {
     Ok(out)
 }
 
-fn read_manifest(dir: &Path) -> Result<SequenceManifest> {
+pub fn read_clip_manifest(dir: &Path) -> Result<ClipManifest> {
     let manifest_path = dir.join("manifest.json");
     let manifest_raw = fs::read_to_string(&manifest_path)
         .with_context(|| format!("read {}", manifest_path.display()))?;
-    let manifest: SequenceManifest = serde_json::from_str(&manifest_raw)
+    let manifest: ClipManifest = serde_json::from_str(&manifest_raw)
         .with_context(|| format!("parse {}", manifest_path.display()))?;
-    if manifest.format != "glowbe-sequence" || manifest.version != 1 {
+    if manifest.format != "glowbe-clip" || manifest.version != 1 {
         anyhow::bail!(
-            "unsupported sequence format/version: {} v{}",
+            "unsupported clip format/version: {} v{}",
             manifest.format,
             manifest.version
         );
@@ -903,75 +742,36 @@ fn read_manifest(dir: &Path) -> Result<SequenceManifest> {
     Ok(manifest)
 }
 
-impl LoadedSequence {
-    #[inline]
-    pub fn frame_index_at(&self, elapsed: std::time::Duration) -> usize {
-        ((elapsed.as_secs_f64() * self.fps as f64).floor() as usize) % self.frame_count.max(1)
-    }
-
-    pub fn copy_frame_at(&self, elapsed: std::time::Duration, out: &mut [u8]) -> Result<()> {
-        let frame_size = self.led_count * 3;
-        if out.len() != frame_size {
-            anyhow::bail!(
-                "output buffer size mismatch: got {}, expected {}",
-                out.len(),
-                frame_size
-            );
-        }
-        let frame = self.frame_index_at(elapsed);
-        let start = frame * frame_size;
-        out.copy_from_slice(&self.frames[start..start + frame_size]);
-        Ok(())
-    }
+fn write_clip_manifest(dir: &Path, manifest: &ClipManifest) -> Result<()> {
+    let manifest_json = serde_json::to_vec_pretty(manifest).context("serialize manifest")?;
+    fs::write(
+        dir.join("manifest.json"),
+        [manifest_json, b"\n".to_vec()].concat(),
+    )
+    .with_context(|| format!("write {}", dir.join("manifest.json").display()))?;
+    Ok(())
 }
 
-fn sample_bilinear_rgb(image: &image::RgbaImage, u: f32, v: f32) -> [u8; 3] {
-    let width = image.width();
-    let height = image.height();
-
-    let u = u.rem_euclid(1.0);
-    let v = v.clamp(0.0, 1.0);
-    let x = u * width as f32;
-    let y = v * (height.saturating_sub(1)) as f32;
-
-    let x0 = x.floor() as u32 % width;
-    let x1 = (x0 + 1) % width;
-    let y0 = y.floor() as u32;
-    let y1 = (y0 + 1).min(height - 1);
-    let tx = x - x.floor();
-    let ty = y - y.floor();
-
-    let c00 = image.get_pixel(x0, y0).0;
-    let c10 = image.get_pixel(x1, y0).0;
-    let c01 = image.get_pixel(x0, y1).0;
-    let c11 = image.get_pixel(x1, y1).0;
-
-    [
-        lerp2(c00[0], c10[0], c01[0], c11[0], tx, ty),
-        lerp2(c00[1], c10[1], c01[1], c11[1], tx, ty),
-        lerp2(c00[2], c10[2], c01[2], c11[2], tx, ty),
-    ]
-}
-
-fn lerp2(c00: u8, c10: u8, c01: u8, c11: u8, tx: f32, ty: f32) -> u8 {
-    let top = c00 as f32 * (1.0 - tx) + c10 as f32 * tx;
-    let bottom = c01 as f32 * (1.0 - tx) + c11 as f32 * tx;
-    (top * (1.0 - ty) + bottom * ty).round().clamp(0.0, 255.0) as u8
+fn summary_from_manifest(manifest: &ClipManifest) -> ClipSummary {
+    ClipSummary {
+        id: manifest.id.clone(),
+        kind: manifest.kind.clone(),
+        frame_count: manifest.frame_count,
+        fps: manifest.fps,
+        width: manifest.width,
+        height: manifest.height,
+        source_kind: Some(manifest.source.kind.clone()),
+        source_width: manifest.source.orig_width,
+        source_height: manifest.source.orig_height,
+        created_at_unix_sec: manifest.created_at_unix_sec,
+        display_name: manifest.display_name.clone(),
+        is_demo: None,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn bilinear_wraps_horizontally() {
-        let mut image = image::RgbaImage::new(2, 1);
-        image.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
-        image.put_pixel(1, 0, image::Rgba([0, 0, 255, 255]));
-        assert_eq!(sample_bilinear_rgb(&image, 0.0, 0.0), [255, 0, 0]);
-        assert_eq!(sample_bilinear_rgb(&image, 0.5, 0.0), [0, 0, 255]);
-        assert_eq!(sample_bilinear_rgb(&image, 1.0, 0.0), [255, 0, 0]);
-    }
 
     #[test]
     fn sanitize_display_name_trims_and_drops_empty() {

@@ -2,7 +2,7 @@
 
 > **役割:** 本書は「いま何ができていて、次に何をやるか」の**正本**。
 > 設計の「あるべき姿」は [`ARCHITECTURE.md`](ARCHITECTURE.md)、各仕様は [`../protocol/`](../protocol/)。
-> 最終更新: 2026-06-17（Mate 製品 1260 LED 顔リデザイン・`faceAngularRadiusDeg` 等）
+> 最終更新: 2026-06-17（mate モード削除）
 
 ---
 
@@ -14,7 +14,7 @@
 | ランタイム | loop パターン / 選択シーケンス再生 + 状態 API。`cargo test` **16** 件パス |
 | ファーム | UDP 受信・フレーム再構成・S3(NeoPixelBus LCD)/無印(NeoPixelBus I2S0) ドライバ実装済。欠落時は前フレーム保持 + プレイアウト遅延 |
 | UDP E2E | ESP32 **無印**で 60fps×5 分ベンチ通過、ちらつき解消を確認（記録: [`BENCHMARK.md`](BENCHMARK.md)）。**ESP32-S3 本番ボードでは未再計測** |
-| Web | **Glowbe Studio**（Loop / Interactive / Idle / **Mate**・状態/モード・シーケンス表示名・ZIP/画像アップロード・**UV 散布プレビュー**） |
+| Web | **Glowbe Studio**（Loop / Interactive / Idle・状態/モード・シーケンス表示名・ZIP/画像アップロード・**UV 散布プレビュー**） |
 | メディアパイプライン | **Phase 2**（静止画 / **ZIP 連番**→シーケンス・`displayName`・進捗 GET） |
 
 > ハードウェア前提: ESP32-S3 が本番。S3 実機が「届いたら本番」、手元の ESP32 無印で先行検証する想定（`docs/firmware/LED-OUTPUT.md`）。
@@ -28,7 +28,7 @@
 | コンポーネント | パス | 状況 | 備考 |
 |----------------|------|------|------|
 | Rust ランタイム | `runtime/` | 🟡 | 送信失敗でループ停止しない・60 連続失敗で再接続／mDNS（`esp_ip` 省略時）／`[assets].compiled_dir`／ホットパス atomics／`layoutMismatch`・**論理 RGB** ワイヤ |
-| `Mode` trait・モード合成 | `runtime/`（§9） | 🟡 | trait 化は未実装。`idle` / `loop` / `interactive` / **`mate`** |
+| `Mode` trait・モード合成 | `runtime/`（§9） | 🟡 | trait 化は未実装。`idle` / `loop` / `interactive` |
 | メディアワーカー / 変換 | `runtime/src/media.rs` + HTTP `media/*` | 🟡 | CLI + **REST**（PNG/JPEG・**ZIP 連番**・`PATCH …/sequences` で表示名） |
 | サーバマイク（cpal） | `runtime/`（§6.1） | ⬜ | Phase 4 |
 | Web クライアント | `web/` | ✅ | **Glowbe Studio**（Loop: 画像/ZIP アップロード・表示名・**UV プレビュー**・シーケンス一覧） |
@@ -46,17 +46,15 @@
 
 | エンドポイント | 状況 | メモ |
 |----------------|------|------|
-| `GET /api/v1/state` | ✅ | `layoutId, mode, …`。**`mode` が `mate` のとき任意で `mate` 要約**（[`MATE-MODE.md`](MATE-MODE.md)） |
+| `GET /api/v1/state` | ✅ | `layoutId, mode, …` |
 | `GET /health` | ✅ | 出力ループ tick が **1s 超 stale** なら **503**、そうでなければ **200 ok** |
-| `POST /api/v1/mode` | ✅ | `idle` / `loop` / `interactive` / **`mate`** |
-| `POST /api/v1/mate/state` | ✅ | **`mate` 時のみ** JSON パッチ（表情・視線・外観・自動微動作など） |
+| `POST /api/v1/mode` | ✅ | `idle` / `loop` / `interactive` |
 | `POST /api/v1/master-tone` | ✅ | 全モード最終段の明るさ・ガンマ（`masterBrightness` / `masterGamma` を `state` に反映） |
 | `GET /api/v1/sequences` | ✅ | 一覧（任意 **`displayName`**） |
 | `PATCH /api/v1/sequences/:id` | ✅ | `manifest.json` の **`displayName`** 更新 |
 | `GET /api/v1/layout/uv` | ✅ | `assets/compiled/<layoutId>.ledmap.json` を返す |
 | `GET /api/v1/ws`（state 配信） | ✅ | 接続直後 + 1 秒ごとに state を送信 |
 | `GET /api/v1/ws`（interactive） | ✅ | `interactive` 複数パルス同時加算・色/輪パラメータ・`masterSettings` |
-| `GET /api/v1/ws`（mate） | ✅ | **`mate` 時のみ** `type: "mate"` + `action` で状態更新（[`MATE-MODE.md`](MATE-MODE.md) §12） |
 | `media/upload`, `media/convert`, `GET …/media/:uploadId` | 🟡 | **PNG/JPEG + ZIP**（正距円筒連番）・進捗 **`progress`**。**動画**は未 |
 | `GET /api/v1/ws` `getLayoutUv` | ✅ | **`layoutUv`** 応答（`GET /layout/uv` 相当） |
 
@@ -70,7 +68,6 @@
 |--------|-----|------|
 | ループ再生 | `loop` | 🟡 シーケンス未選択時は内蔵テストパターン（`pattern.rs`）。色相は **`ledmap` の (u,v)**（欠落時はワイヤ順フォールバック） |
 | インタラクティブ（消灯＋WS） | `interactive` | ✅ 消灯出力＋WS `interactive` でパルス合成。エフェクト: `sphereGaussian` / `expandingRingDiagonal`（既定 `expandingRingDiagonal`）。`loop` では WS 合成は拒否 |
-| 相棒（球面顔） | `mate` | ✅ 製品 1260 LED 向け顔キャンバス（α=58°）＋白目/瞳/眉/頬/口 SDF（`mate.rs`）。`POST /api/v1/mate/state` と WS `mate`。設計 [`MATE-MODE.md`](MATE-MODE.md) |
 | デジタル時計 | `clock_digital` | ⬜ Phase 4a（ロードマップ分割後） |
 | アナログ時計 | `clock_analog` | ⬜ Phase 4a |
 | サーバマイク | `mic` | ⬜ Phase 4b |
