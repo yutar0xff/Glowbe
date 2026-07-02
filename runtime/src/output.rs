@@ -137,6 +137,7 @@ async fn device_output_loop(
         (lc, vec![0u8; lc as usize * 3])
     };
     let mut layout_uv_layout_cache: Option<String> = None;
+    let mut layout_uv_yaw_cache: f32 = f32::NAN;
 
     loop {
         let record = slot.record_snapshot();
@@ -229,12 +230,19 @@ async fn device_output_loop(
                 let s = slot.state.read().await;
                 (s.layout_id.clone(), s.led_count)
             };
-            if layout_uv_layout_cache.as_deref() != Some(layout_id.as_str()) || lc != led_count {
-                led_count = lc;
-                rgb.resize(led_count as usize * 3, 0);
+            let front_yaw = rec.front_yaw_deg as f32;
+            let layout_changed =
+                layout_uv_layout_cache.as_deref() != Some(layout_id.as_str()) || lc != led_count;
+            let yaw_changed = layout_uv_yaw_cache.to_bits() != front_yaw.to_bits();
+            if layout_changed || yaw_changed {
+                if layout_changed {
+                    led_count = lc;
+                    rgb.resize(led_count as usize * 3, 0);
+                    layout_uv_layout_cache = Some(layout_id.clone());
+                }
                 last_sent_rgb = None;
                 force_sends_after_epoch = 4;
-                layout_uv_layout_cache = Some(layout_id.clone());
+                layout_uv_yaw_cache = front_yaw;
                 if let Err(e) =
                     slot.ensure_layout_uv(&app.compiled_dir, &layout_id, led_count as usize)
                 {

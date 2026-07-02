@@ -28,6 +28,7 @@ pub struct DeviceSlot {
     pub expected_layout_hash: StdRwLock<Option<u32>>,
     pub(crate) layout_uv: StdRwLock<Option<Vec<(f32, f32)>>>,
     pub(crate) layout_uv_layout_id: StdRwLock<Option<String>>,
+    layout_uv_yaw_bits: AtomicU32,
     pub(crate) interactive_pulses: StdRwLock<Vec<InteractivePulse>>,
     pub(crate) interactive_solid: StdRwLock<Option<[u8; 3]>>,
     interactive_default_effect: AtomicU8,
@@ -83,6 +84,7 @@ impl DeviceSlot {
             expected_layout_hash: StdRwLock::new(expected_layout_hash),
             layout_uv: StdRwLock::new(None),
             layout_uv_layout_id: StdRwLock::new(None),
+            layout_uv_yaw_bits: AtomicU32::new(f32::to_bits(f32::NAN)),
             interactive_pulses: StdRwLock::new(Vec::new()),
             interactive_solid: StdRwLock::new(None),
             interactive_default_effect: AtomicU8::new(
@@ -273,15 +275,29 @@ impl DeviceSlot {
         }
     }
 
+    /// デバイス正面の yaw（度）。`0` が既定の正面。
+    pub fn front_yaw_deg(&self) -> f32 {
+        self.record
+            .read()
+            .map(|r| r.front_yaw_deg as f32)
+            .unwrap_or(0.0)
+    }
+
+    /// レイアウト UV テーブル（正面 yaw 適用済み）。全モードの色生成が共有する。
     pub fn ensure_layout_uv(
         &self,
         compiled_dir: &std::path::Path,
         layout_id: &str,
         led_count: usize,
     ) -> anyhow::Result<()> {
+        let front_yaw = self.front_yaw_deg();
+        let yaw_bits = f32::to_bits(front_yaw);
         if let (Ok(uv_g), Ok(id_g)) = (self.layout_uv.read(), self.layout_uv_layout_id.read()) {
             if let (Some(v), Some(id)) = (uv_g.as_ref(), id_g.as_deref()) {
-                if id == layout_id && v.len() == led_count {
+                if id == layout_id
+                    && v.len() == led_count
+                    && self.layout_uv_yaw_bits.load(Ordering::Relaxed) == yaw_bits
+                {
                     return Ok(());
                 }
             }
@@ -297,7 +313,7 @@ impl DeviceSlot {
         let mut table = vec![(0.5f32, 0.5f32); led_count];
         for p in layout.leds {
             if p.i < table.len() {
-                table[p.i] = (p.u, p.v);
+                table[p.i] = (crate::sphere::apply_front_yaw_u(p.u, front_yaw), p.v);
             }
         }
         let mut slot = self
@@ -310,6 +326,7 @@ impl DeviceSlot {
             .write()
             .map_err(|e| anyhow::anyhow!("layout_uv_layout_id lock: {e}"))?;
         *id_slot = Some(layout_id.to_string());
+        self.layout_uv_yaw_bits.store(yaw_bits, Ordering::Relaxed);
         Ok(())
     }
 
@@ -420,7 +437,8 @@ impl DeviceSlot {
         compiled_dir: &std::path::Path,
         layout_id: &str,
     ) -> anyhow::Result<()> {
-        self.mate.ensure_samples(compiled_dir, layout_id)
+        self.mate
+            .ensure_samples(compiled_dir, layout_id, self.front_yaw_deg())
     }
 
     pub fn set_mate_expression(

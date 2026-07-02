@@ -52,6 +52,7 @@ struct StateResponse {
     frames_sent: u64,
     master_brightness: f64,
     master_gamma: f64,
+    front_yaw_deg: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     loop_source_frame: Option<u32>,
     loop_playback_paused: bool,
@@ -212,6 +213,8 @@ struct DeviceCreateRequest {
     master_brightness: f64,
     #[serde(default = "default_master_gamma")]
     master_gamma: f64,
+    #[serde(default)]
+    front_yaw_deg: f64,
 }
 
 #[derive(Deserialize)]
@@ -229,6 +232,8 @@ struct DeviceUpdateRequest {
     master_brightness: f64,
     #[serde(default = "default_master_gamma")]
     master_gamma: f64,
+    #[serde(default)]
+    front_yaw_deg: f64,
 }
 
 fn default_master_brightness() -> f64 {
@@ -857,7 +862,11 @@ async fn handle_ws_text(
                 s.layout_id.clone()
             };
             match media::load_layout_uv(&app.compiled_dir, &layout_id) {
-                Ok(uv) => {
+                Ok(mut uv) => {
+                    let yaw = slot.front_yaw_deg();
+                    for p in &mut uv.leds {
+                        p.u = crate::sphere::apply_front_yaw_u(p.u, yaw);
+                    }
                     let mut payload = serde_json::to_value(&uv).expect("serialize layout uv");
                     if let serde_json::Value::Object(ref mut m) = payload {
                         m.insert("type".into(), serde_json::Value::String("layoutUv".into()));
@@ -1437,7 +1446,13 @@ async fn get_layout_uv(app: SharedState, Query(q): Query<DeviceIdQuery>) -> impl
         s.layout_id.clone()
     };
     match media::load_layout_uv(&app.compiled_dir, &layout_id) {
-        Ok(layout) => (StatusCode::OK, Json(layout)).into_response(),
+        Ok(mut layout) => {
+            let yaw = slot.front_yaw_deg();
+            for p in &mut layout.leds {
+                p.u = crate::sphere::apply_front_yaw_u(p.u, yaw);
+            }
+            (StatusCode::OK, Json(layout)).into_response()
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -1598,13 +1613,14 @@ async fn post_mode(
 }
 
 fn state_response(slot: &DeviceSlot, s: &RuntimeState) -> StateResponse {
+    let rec = slot.record_snapshot();
     StateResponse {
         device_id: slot.id(),
         layout_id: s.layout_id.clone(),
         mode: s.mode.clone(),
         fps_out: slot.metrics.fps_out(),
         fps_rx: s.fps_rx,
-        target_fps: slot.record_snapshot().output_fps,
+        target_fps: rec.output_fps,
         esp_frames_complete: s.esp_frames_complete,
         esp_rssi: s.esp_rssi,
         esp_drops: s.esp_drops,
@@ -1618,6 +1634,7 @@ fn state_response(slot: &DeviceSlot, s: &RuntimeState) -> StateResponse {
         frames_sent: slot.metrics.frames_sent(),
         master_brightness: f64::from(slot.master_brightness()),
         master_gamma: f64::from(slot.master_gamma()),
+        front_yaw_deg: rec.front_yaw_deg,
         loop_source_frame: slot.metrics.loop_source_frame(),
         loop_playback_paused: slot.loop_playback_paused(),
     }
@@ -1751,6 +1768,7 @@ async fn post_device(app: SharedState, Json(req): Json<DeviceCreateRequest>) -> 
         output_fps: req.output_fps,
         master_brightness: req.master_brightness,
         master_gamma: req.master_gamma,
+        front_yaw_deg: req.front_yaw_deg,
     };
     if let Err(e) = app.with_registry_mut(|reg| {
         reg.upsert(rec.clone(), &app.compiled_dir)?;
@@ -1820,6 +1838,7 @@ async fn patch_device(
         output_fps: req.output_fps,
         master_brightness: req.master_brightness,
         master_gamma: req.master_gamma,
+        front_yaw_deg: req.front_yaw_deg,
     };
     if let Err(e) = app.with_registry_mut(|reg| {
         reg.upsert(rec.clone(), &app.compiled_dir)?;

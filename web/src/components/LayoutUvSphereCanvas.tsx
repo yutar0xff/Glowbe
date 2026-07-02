@@ -27,6 +27,14 @@ import type { TapUvHighlight } from '@/components/LayoutUvMap'
 const LED_SURFACE_OFFSET = 1.0 + 1e-3
 const HI_SURFACE = 1.0 + 2e-3
 
+/**
+ * デバイス正面（equirect 中心 u=0.5）はローカルで +X を向くため、これを世界の青軸（+Z）へ
+ * 合わせるための Y 軸まわり回転。LED 群・ヒット球・タップ表示にのみ適用し、軸ヘルパは
+ * 世界固定のまま残す。タップのレイは逆回転してローカル座標へ戻す。
+ */
+const FRONT_TO_BLUE_AXIS_Y = -Math.PI / 2
+const WORLD_UP = new THREE.Vector3(0, 1, 0)
+
 const SPHERE_TAP_MAX_PX = 20
 const SPHERE_TAP_MAX_MS = 750
 /** 主指がこの移動量を超えると回転モード（タップ扱いしない） */
@@ -282,7 +290,7 @@ function SpherePointerRouter({
       const hits = raycaster.intersectObject(mesh, false)
       const hit = hits[0]
       if (!hit) return
-      const p = hit.point.clone().normalize()
+      const p = hit.point.clone().normalize().applyAxisAngle(WORLD_UP, -FRONT_TO_BLUE_AXIS_Y)
       const hitUv = unitDirYUpToUv(p.x, p.y, p.z)
       const { u, v } = sphereHitUvToDeviceEquirectUv(hitUv.u, hitUv.v)
       onTapRef.current(u, v, hitUv.u)
@@ -416,27 +424,29 @@ function Scene({
       <directionalLight position={[3, 4, 5]} intensity={0.85} />
       <directionalLight position={[-4, -1, -2]} intensity={0.25} />
 
-      <BackdropSphere />
+      <group rotation={[0, FRONT_TO_BLUE_AXIS_Y, 0]}>
+        <BackdropSphere />
 
-      <mesh ref={hitSphereRef}>
-        <sphereGeometry args={[1, 72, 72]} />
-        <meshStandardMaterial
-          color="#94a3b8"
-          opacity={disabled ? 0.06 : 0.16}
-          transparent
-          roughness={0.4}
-          metalness={0.08}
-          depthWrite={false}
-        />
-      </mesh>
+        <mesh ref={hitSphereRef}>
+          <sphereGeometry args={[1, 72, 72]} />
+          <meshStandardMaterial
+            color="#94a3b8"
+            opacity={disabled ? 0.06 : 0.16}
+            transparent
+            roughness={0.4}
+            metalness={0.08}
+            depthWrite={false}
+          />
+        </mesh>
 
-      <LedInstanced uv={uv} liveLedRgb={liveLedRgb} />
+        <LedInstanced uv={uv} liveLedRgb={liveLedRgb} />
+
+        {pulseHighlights.map((h) => (
+          <TapHighlight3D key={h.id} pulse={h} />
+        ))}
+      </group>
 
       <UvWorldAxes />
-
-      {pulseHighlights.map((h) => (
-        <TapHighlight3D key={h.id} pulse={h} />
-      ))}
 
       <PreventBrowserPinchZoomOnCanvas />
       <SpherePointerRouter

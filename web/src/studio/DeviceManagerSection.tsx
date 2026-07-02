@@ -43,6 +43,7 @@ export function DeviceManagerSection() {
   const layoutId = load.kind === 'ready' ? load.state.layoutId : 'prototype-icosahedron-15'
   const defaultFps = load.kind === 'ready' ? load.state.targetFps : DEFAULT_OUTPUT_FPS
   const liveTone = liveToneFromLoad(load)
+  const liveFrontYaw = load.kind === 'ready' ? load.state.frontYawDeg : undefined
   const { catalog, layoutLabel } = useLayoutCatalog()
 
   const [editMode, setEditMode] = useState(false)
@@ -185,6 +186,7 @@ export function DeviceManagerSection() {
         outputFps: fps.value,
         masterBrightness: createDraft.masterBrightness,
         masterGamma: createDraft.masterGamma,
+        frontYawDeg: createDraft.frontYawDeg,
       }
       if (!input.layoutId) {
         setError('Layout is required.')
@@ -221,6 +223,24 @@ export function DeviceManagerSection() {
       await updateDevice({
         ...selectedDevice,
         outputFps: fps,
+        masterBrightness: selectedDevice.masterBrightness ?? liveTone?.brightness ?? DEFAULT_MASTER_BRIGHTNESS,
+        masterGamma: selectedDevice.masterGamma ?? liveTone?.gamma ?? DEFAULT_MASTER_GAMMA,
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setQuickSettingsBusy(false)
+    }
+  }
+
+  const commitQuickFrontYaw = async (deg: number) => {
+    if (!selectedDevice || deg === (selectedDevice.frontYawDeg ?? 0)) return
+    setQuickSettingsBusy(true)
+    setError(null)
+    try {
+      await updateDevice({
+        ...selectedDevice,
+        frontYawDeg: deg,
         masterBrightness: selectedDevice.masterBrightness ?? liveTone?.brightness ?? DEFAULT_MASTER_BRIGHTNESS,
         masterGamma: selectedDevice.masterGamma ?? liveTone?.gamma ?? DEFAULT_MASTER_GAMMA,
       })
@@ -292,10 +312,14 @@ export function DeviceManagerSection() {
             fps={defaultFps}
             brightness={liveTone.brightness}
             gamma={liveTone.gamma}
+            frontYawDeg={liveFrontYaw ?? selectedDevice.frontYawDeg ?? 0}
             disabled={quickSettingsBusyOrTone}
             onFpsCommit={commitQuickFps}
             onToneCommit={(masterBrightness, masterGamma) => {
               void setMasterTone(masterBrightness, masterGamma)
+            }}
+            onFrontYawCommit={(deg) => {
+              void commitQuickFrontYaw(deg)
             }}
           />
         </div>

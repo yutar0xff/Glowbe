@@ -29,6 +29,8 @@ export type RuntimeState = {
   framesSent: number
   masterBrightness: number
   masterGamma: number
+  /** Device front yaw (deg). Rotates sampling UV around the vertical axis. */
+  frontYawDeg: number
 }
 
 export type ClipSummary = {
@@ -99,6 +101,7 @@ export type DeviceRecord = {
   outputFps: number
   masterBrightness?: number
   masterGamma?: number
+  frontYawDeg?: number
 }
 
 export type DiscoveredEsp = {
@@ -122,4 +125,5 @@ export type DeviceCreateInput = {
   outputFps: number
   masterBrightness?: number
   masterGamma?: number
+  frontYawDeg?: number
 }

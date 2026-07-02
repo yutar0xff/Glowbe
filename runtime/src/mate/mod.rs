@@ -1413,6 +1413,7 @@ fn sphere_log_map(d0: [f32; 3], d: [f32; 3], face_up: [f32; 3]) -> (f32, f32) {
 pub struct MateSamplesCache {
     pub layout_id: String,
     pub frame_key: u64,
+    pub front_yaw_bits: u32,
     pub frame: FaceFrame,
     pub samples: Vec<FaceSample>,
 }
@@ -1421,12 +1422,13 @@ pub fn load_face_samples(
     compiled_dir: &std::path::Path,
     layout_id: &str,
     frame: &FaceFrame,
+    front_yaw_deg: f32,
 ) -> Result<Vec<FaceSample>> {
     let layout = media::load_layout_uv(compiled_dir, layout_id)?;
     let mut uv = vec![(0.5f32, 0.5f32); layout.led_count];
     for p in layout.leds {
         if p.i < uv.len() {
-            uv[p.i] = (p.u, p.v);
+            uv[p.i] = (crate::sphere::apply_front_yaw_u(p.u, front_yaw_deg), p.v);
         }
     }
     Ok(build_face_samples(&uv, frame))
