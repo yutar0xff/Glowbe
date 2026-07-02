@@ -696,10 +696,10 @@ pub fn set_clip_display_name(
 pub fn clip_summary(clips_dir: &Path, clip_id: &str) -> Result<ClipSummary> {
     crate::clip::validate_clip_id(clip_id)?;
     if let Some(demo) = crate::demos::DemoId::parse(clip_id) {
-        return Ok(crate::demos::demo_clip_summaries()
+        return crate::demos::demo_clip_summaries()
             .into_iter()
             .find(|s| s.id == demo.clip_id())
-            .context("demo summary missing")?);
+            .context("demo summary missing");
     }
     let dir = clips_dir.join(clip_id);
     let manifest = read_clip_manifest(&dir)?;

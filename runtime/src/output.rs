@@ -235,7 +235,8 @@ async fn device_output_loop(
                 last_sent_rgb = None;
                 force_sends_after_epoch = 4;
                 layout_uv_layout_cache = Some(layout_id.clone());
-                if let Err(e) = slot.ensure_layout_uv(&app.compiled_dir, &layout_id, led_count as usize)
+                if let Err(e) =
+                    slot.ensure_layout_uv(&app.compiled_dir, &layout_id, led_count as usize)
                 {
                     warn!(
                         "device {device_id}: ledmap load failed for {}: {e:#}",

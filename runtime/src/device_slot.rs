@@ -8,10 +8,10 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use tokio::sync::RwLock;
 
+use crate::clip::LoadedClip;
 use crate::devices::DeviceRecord;
 use crate::mate::{self, BreathingParams};
 use crate::mate_state::MateRuntimeState;
-use crate::clip::LoadedClip;
 use crate::media;
 use crate::metrics::OutputMetrics;
 use crate::state::{

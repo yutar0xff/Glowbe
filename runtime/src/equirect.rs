@@ -43,7 +43,8 @@ fn lerp2(c00: u8, c10: u8, c01: u8, c11: u8, tx: f32, ty: f32) -> u8 {
 
 /// Resize an RGBA image to the default equirect resolution and pack as raw RGB.
 pub fn rgba_to_equirect_rgb(img: &image::RgbaImage, width: u32, height: u32) -> Vec<u8> {
-    let resized = image::imageops::resize(img, width, height, image::imageops::FilterType::Triangle);
+    let resized =
+        image::imageops::resize(img, width, height, image::imageops::FilterType::Triangle);
     let mut out = vec![0u8; (width * height * 3) as usize];
     for (x, y, pixel) in resized.enumerate_pixels() {
         let o = ((y * width + x) * 3) as usize;

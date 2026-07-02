@@ -38,10 +38,7 @@ async fn main() -> Result<()> {
         .init();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args
-        .first()
-        .is_some_and(|arg| arg == "convert-image")
-    {
+    if args.first().is_some_and(|arg| arg == "convert-image") {
         return convert_image_command(&args[1..]);
     }
     if args.first().is_some_and(|arg| arg == "mate-import-stamp") {
@@ -158,7 +155,10 @@ fn mate_import_stamp_command(args: &[String]) -> Result<()> {
     let asset = mate::import_stamp_from_png(Path::new(src), name)?;
     let out_path = out.unwrap_or_else(|| {
         find_repo_root()
-            .map(|r| r.join("assets/mate/stamps").join(format!("{name}.stamp.json")))
+            .map(|r| {
+                r.join("assets/mate/stamps")
+                    .join(format!("{name}.stamp.json"))
+            })
             .unwrap_or_else(|_| PathBuf::from(format!("{name}.stamp.json")))
     });
     mate::write_stamp_json(&out_path, &asset)?;
@@ -178,12 +178,8 @@ fn convert_image_command(args: &[String]) -> Result<()> {
     let clips_dir = clips_dir(&config)?;
     std::fs::create_dir_all(&clips_dir)
         .with_context(|| format!("create clips dir {}", clips_dir.display()))?;
-    let out_dir = media::convert_equirect_image_to_clip(
-        Path::new(image_path),
-        clip_id,
-        &clips_dir,
-        1,
-    )?;
+    let out_dir =
+        media::convert_equirect_image_to_clip(Path::new(image_path), clip_id, &clips_dir, 1)?;
     println!("wrote clip {}", out_dir.display());
     Ok(())
 }

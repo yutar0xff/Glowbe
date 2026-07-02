@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 
 use crate::mate::{
-    self, BreathingParams, BlinkState, Expression, FaceFrame, FaceFrameParams, MateSamplesCache,
+    self, BlinkState, BreathingParams, Expression, FaceFrame, FaceFrameParams, MateSamplesCache,
     MateTransition, PresetRegistry,
 };
 
@@ -46,11 +46,7 @@ impl MateRuntimeState {
     }
 
     pub fn breathing_params(&self) -> BreathingParams {
-        self.breathing
-            .read()
-            .ok()
-            .map(|g| *g)
-            .unwrap_or_default()
+        self.breathing.read().ok().map(|g| *g).unwrap_or_default()
     }
 
     pub fn set_breathing(&self, params: BreathingParams) {
@@ -74,11 +70,10 @@ impl MateRuntimeState {
         if !mate::layout_supported(layout_id) {
             anyhow::bail!("mate mode is not supported for layout {layout_id}");
         }
-        let frame_params = self
+        let frame_params = *self
             .frame_params
             .read()
-            .map_err(|e| anyhow::anyhow!("mate_frame_params lock: {e}"))?
-            .clone();
+            .map_err(|e| anyhow::anyhow!("mate_frame_params lock: {e}"))?;
         let frame = FaceFrame::from_params(frame_params);
         let frame_key = frame.cache_key();
         if let Ok(cache) = self.samples_cache.read() {
@@ -139,7 +134,13 @@ impl MateRuntimeState {
     }
 
     pub fn ensure_neutral(&self, registry: &PresetRegistry) -> anyhow::Result<()> {
-        if self.expression.read().ok().and_then(|g| g.clone()).is_some() {
+        if self
+            .expression
+            .read()
+            .ok()
+            .and_then(|g| g.clone())
+            .is_some()
+        {
             return Ok(());
         }
         self.set_expression(mate::DEFAULT_PRESET_ID, registry, 0)

@@ -234,7 +234,8 @@ pub fn new_shared(
         order.push(rec.id.clone());
         slot_map.insert(rec.id.clone(), slot);
     }
-    let mate_presets = crate::mate::PresetRegistry::load(&mate_assets_dir).context("mate presets")?;
+    let mate_presets =
+        crate::mate::PresetRegistry::load(&mate_assets_dir).context("mate presets")?;
     Ok(Arc::new(SharedApp {
         registry: StdRwLock::new(registry),
         slots: StdRwLock::new(slot_map),

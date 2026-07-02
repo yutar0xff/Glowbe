@@ -439,7 +439,10 @@ async fn post_media_convert(
     let (width, height) = req
         .resolution
         .map(|r| (r.width.max(1), r.height.max(1)))
-        .unwrap_or((crate::equirect::DEFAULT_WIDTH, crate::equirect::DEFAULT_HEIGHT));
+        .unwrap_or((
+            crate::equirect::DEFAULT_WIDTH,
+            crate::equirect::DEFAULT_HEIGHT,
+        ));
 
     let job_id = Uuid::new_v4().hyphenated().to_string();
     let clip_id = format!("up-{upload_id}");
@@ -1125,9 +1128,9 @@ async fn handle_ws_text(
                             .unwrap_or(crate::mate::DEFAULT_TRANSITION_MS as u64)
                             .clamp(0, 10_000) as u32;
                         let layout_id = slot.state.read().await.layout_id.clone();
-                        match mate_api::read_mate_registry(&app) {
+                        match mate_api::read_mate_registry(app) {
                             Ok(registry) => match mate_api::apply_mate_expression(
-                                &slot,
+                                slot,
                                 &registry,
                                 &app.compiled_dir,
                                 &layout_id,
@@ -1277,11 +1280,9 @@ async fn patch_clip_display(
         )
             .into_response();
     }
-    if let Err(e) = media::set_clip_display_name(
-        &app.clips_dir,
-        &clip_id,
-        Some(body.display_name.as_str()),
-    ) {
+    if let Err(e) =
+        media::set_clip_display_name(&app.clips_dir, &clip_id, Some(body.display_name.as_str()))
+    {
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -1447,10 +1448,7 @@ async fn get_layout_uv(app: SharedState, Query(q): Query<DeviceIdQuery>) -> impl
     }
 }
 
-async fn get_mate_presets(
-    app: SharedState,
-    Query(q): Query<DeviceIdQuery>,
-) -> impl IntoResponse {
+async fn get_mate_presets(app: SharedState, Query(q): Query<DeviceIdQuery>) -> impl IntoResponse {
     let slot = match resolve_slot(&app, &q) {
         Ok(s) => s,
         Err(e) => return e.into_response(),
@@ -1497,7 +1495,9 @@ async fn post_mate_expression(
         )
             .into_response();
     }
-    let transition_ms = req.transition_ms.unwrap_or(crate::mate::DEFAULT_TRANSITION_MS);
+    let transition_ms = req
+        .transition_ms
+        .unwrap_or(crate::mate::DEFAULT_TRANSITION_MS);
     let apply_err = {
         let registry = match mate_api::read_mate_registry(&app) {
             Ok(g) => g,

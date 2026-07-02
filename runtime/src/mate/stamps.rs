@@ -82,7 +82,10 @@ impl StampMask {
 
     /// Pixel coverage in sphere tangent space (radians). `angular_half` matches preset `size`.
     pub fn coverage_angular(&self, tangent_x: f32, tangent_y: f32, angular_half: f32) -> f32 {
-        if self.sample_index(tangent_x, tangent_y, angular_half).is_some() {
+        if self
+            .sample_index(tangent_x, tangent_y, angular_half)
+            .is_some()
+        {
             1.0
         } else {
             0.0

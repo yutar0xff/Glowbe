@@ -76,7 +76,9 @@ impl FaceFrame {
             world_up[1] - dot * forward[1],
             world_up[2] - dot * forward[2],
         ];
-        let up_len = (up[0] * up[0] + up[1] * up[1] + up[2] * up[2]).sqrt().max(1e-6);
+        let up_len = (up[0] * up[0] + up[1] * up[1] + up[2] * up[2])
+            .sqrt()
+            .max(1e-6);
         up = [up[0] / up_len, up[1] / up_len, up[2] / up_len];
         let right = normalize3(cross3(up, forward));
         let up = normalize3(cross3(forward, right));
@@ -341,7 +343,8 @@ impl PresetRegistry {
         let mut expressions = HashMap::new();
         let mut summaries = Vec::new();
         for raw in BUILTIN_PRESETS {
-            if let Err(e) = Self::insert_preset(&stamps, &mut expressions, &mut summaries, raw, "builtin")
+            if let Err(e) =
+                Self::insert_preset(&stamps, &mut expressions, &mut summaries, raw, "builtin")
             {
                 warn!("skip builtin mate preset: {e:#}");
             }
@@ -524,10 +527,7 @@ fn lerp_part(from: &Part, to: &Part, t: f32) -> Part {
             part.morph_to = Some(to.kind.clone());
             part.morph_t = t;
         }
-        (
-            PartKind::Stamp { mask: m0, .. },
-            PartKind::Stamp { mask: m1, .. },
-        ) if m0.id != m1.id => {
+        (PartKind::Stamp { mask: m0, .. }, PartKind::Stamp { mask: m1, .. }) if m0.id != m1.id => {
             part.morph_to = Some(to.kind.clone());
             part.morph_t = t;
         }
@@ -622,9 +622,15 @@ fn lerp2(a: [f32; 2], b: [f32; 2], t: f32) -> [f32; 2] {
 #[inline]
 fn lerp_rgb(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
     [
-        lerp_f32(a[0] as f32, b[0] as f32, t).round().clamp(0.0, 255.0) as u8,
-        lerp_f32(a[1] as f32, b[1] as f32, t).round().clamp(0.0, 255.0) as u8,
-        lerp_f32(a[2] as f32, b[2] as f32, t).round().clamp(0.0, 255.0) as u8,
+        lerp_f32(a[0] as f32, b[0] as f32, t)
+            .round()
+            .clamp(0.0, 255.0) as u8,
+        lerp_f32(a[1] as f32, b[1] as f32, t)
+            .round()
+            .clamp(0.0, 255.0) as u8,
+        lerp_f32(a[2] as f32, b[2] as f32, t)
+            .round()
+            .clamp(0.0, 255.0) as u8,
     ]
 }
 
@@ -707,8 +713,8 @@ fn part_blinks(part: &Part) -> bool {
 fn resolve_preset(preset: &FacePresetJson, stamps: &StampRegistry) -> Result<Expression> {
     let mut parts = Vec::with_capacity(preset.parts.len());
     for p in &preset.parts {
-        let layer = Layer::parse(p.layer.as_str())
-            .with_context(|| format!("unknown layer {}", p.layer))?;
+        let layer =
+            Layer::parse(p.layer.as_str()).with_context(|| format!("unknown layer {}", p.layer))?;
         let kind = match p.kind.as_str() {
             "ellipse" => {
                 let pos = p.pos.context("ellipse requires pos")?;
@@ -1019,7 +1025,8 @@ pub fn render(
                 1.0
             };
             let motion = part_motion_sample(part, mods.anim_time_secs);
-            let (mut fx, mut fy) = face_coords_with_breath(sample.x, sample.y, face_scale, face_offset_y);
+            let (mut fx, mut fy) =
+                face_coords_with_breath(sample.x, sample.y, face_scale, face_offset_y);
             fx -= motion.dx;
             fy -= motion.dy;
             let Some((cov0, col)) =
@@ -1390,7 +1397,11 @@ fn sphere_log_map(d0: [f32; 3], d: [f32; 3], face_up: [f32; 3]) -> (f32, f32) {
     let e_u = normalize3(cross3(e_v, d0));
     let dot0 = dot3(d, d0).clamp(-1.0, 1.0);
     let ang = dot0.acos();
-    let t = [d[0] - dot0 * d0[0], d[1] - dot0 * d0[1], d[2] - dot0 * d0[2]];
+    let t = [
+        d[0] - dot0 * d0[0],
+        d[1] - dot0 * d0[1],
+        d[2] - dot0 * d0[2],
+    ];
     let t_len = (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt();
     if t_len < 1e-9 {
         return (0.0, 0.0);
@@ -1450,7 +1461,10 @@ mod tests {
         let samples = build_face_samples(&uv, &frame);
         assert_eq!(samples.len(), uv.len());
         let front_count = samples.iter().filter(|s| s.front).count();
-        assert!(front_count > 100, "expected many front-facing LEDs, got {front_count}");
+        assert!(
+            front_count > 100,
+            "expected many front-facing LEDs, got {front_count}"
+        );
         let disk_count = samples.iter().filter(|s| s.in_face_disk).count();
         assert!(
             disk_count < front_count,
@@ -1486,7 +1500,10 @@ mod tests {
             .chunks(3)
             .filter(|px| (px[0] as u16) + (px[1] as u16) + (px[2] as u16) > 0)
             .count();
-        assert!(lit > 40, "neutral face should light multiple LEDs, got {lit}");
+        assert!(
+            lit > 40,
+            "neutral face should light multiple LEDs, got {lit}"
+        );
     }
 
     #[test]
@@ -1616,9 +1633,15 @@ mod tests {
         let love = registry.get("love").unwrap().clone();
         let mid = lerp_expression(&neutral, &love, 0.5);
         let eye = mid.parts.iter().find(|p| p.slot == "eye.l").unwrap();
-        assert!(eye.morph_to.is_some(), "ellipse→stamp should crossfade geometry");
+        assert!(
+            eye.morph_to.is_some(),
+            "ellipse→stamp should crossfade geometry"
+        );
         assert!((eye.morph_t - 0.5).abs() < 1e-4);
-        assert!(eye.color[0] >= 120 && eye.color[2] > 120, "color should blend");
+        assert!(
+            eye.color[0] >= 120 && eye.color[2] > 120,
+            "color should blend"
+        );
     }
 
     #[test]
@@ -1644,10 +1667,18 @@ mod tests {
         let frame = FaceFrame::from_params(FaceFrameParams::default());
         let uv = product_uv_table();
         let samples = build_face_samples(&uv, &frame);
+        let target = [-0.42f32, 0.26];
         let sample = samples
             .iter()
-            .find(|s| (s.x + 0.42).abs() < 0.04 && (s.y - 0.26).abs() < 0.04)
+            .filter(|s| s.front)
+            .min_by(|a, b| {
+                let da = (a.x - target[0]).powi(2) + (a.y - target[1]).powi(2);
+                let db = (b.x - target[0]).powi(2) + (b.y - target[1]).powi(2);
+                da.partial_cmp(&db).unwrap()
+            })
             .expect("eye-center sample");
+        let dist_sq = (sample.x - target[0]).powi(2) + (sample.y - target[1]).powi(2);
+        assert!(dist_sq < 0.05, "no LED near eye center, dist_sq={dist_sq}");
         let cov = part_coverage(sample.x, sample.y, eye, 1.0, &frame, 0.0);
         assert!(cov > 0.35, "morphed eye center should stay lit, got {cov}");
     }
@@ -1661,8 +1692,7 @@ mod tests {
         let uv = product_uv_table();
         let samples = build_face_samples(&uv, &frame);
         let hits = samples.iter().any(|sample| {
-            sample.front
-                && part_sample(sample.x, sample.y, anger, 1.0, &frame, 0.0).is_some()
+            sample.front && part_sample(sample.x, sample.y, anger, 1.0, &frame, 0.0).is_some()
         });
         assert!(hits, "anger stamp should light at least one front LED");
         let mut rgb = vec![0u8; samples.len() * 3];
@@ -1685,7 +1715,10 @@ mod tests {
         let expr = registry.get("angry").unwrap();
         let anger = expr.parts.iter().find(|p| p.slot == "anger").unwrap();
         assert!(matches!(&anger.kind, PartKind::Stamp { mask, .. } if mask.id == "anger"));
-        assert!(!part_follows_breathing(anger), "anger stamp should not follow breathing motion");
+        assert!(
+            !part_follows_breathing(anger),
+            "anger stamp should not follow breathing motion"
+        );
         assert!(
             anger
                 .motions
@@ -1713,7 +1746,10 @@ mod tests {
         let at_zero = part_sample(fx, fy, anger, 1.0, &frame, m0.d_rotation_deg);
         let at_peak = part_sample(fx, fy, anger, 1.0, &frame, m1.d_rotation_deg);
         assert!(at_zero.is_some(), "anger stamp edge should be visible");
-        assert!(at_peak.is_some(), "anger stamp should stay visible while wobbling");
+        assert!(
+            at_peak.is_some(),
+            "anger stamp should stay visible while wobbling"
+        );
     }
 
     #[test]
@@ -1757,9 +1793,7 @@ mod tests {
 
     #[test]
     fn breathing_wave_uses_fixed_subtle_motion() {
-        let breathing = BreathingParams {
-            enabled: true,
-        };
+        let breathing = BreathingParams { enabled: true };
         let origin = Instant::now();
         let wave = breathing.sample_wave(origin + Duration::from_millis(250), origin, 1000);
         assert!(
@@ -1869,7 +1903,10 @@ mod tests {
             min_r = min_r.min(r);
             max_r = max_r.max(r);
         }
-        assert!((min_r - rad).abs() < 1e-3, "radius should equal geodesic dist");
+        assert!(
+            (min_r - rad).abs() < 1e-3,
+            "radius should equal geodesic dist"
+        );
         assert!(
             max_r / min_r < 1.01,
             "log map must be isotropic, ratio {}",
@@ -1882,8 +1919,16 @@ mod tests {
         let open = blink_eye_radii([0.19, 0.23], 1.0);
         let closed = blink_eye_radii([0.19, 0.23], 0.04);
         assert_eq!(open, [0.19, 0.23]);
-        assert!(closed[0] < open[0] * 0.55, "width should narrow: {:?}", closed);
-        assert!(closed[1] < open[1] * 0.1, "height should squash: {:?}", closed);
+        assert!(
+            closed[0] < open[0] * 0.55,
+            "width should narrow: {:?}",
+            closed
+        );
+        assert!(
+            closed[1] < open[1] * 0.1,
+            "height should squash: {:?}",
+            closed
+        );
     }
 
     #[test]

@@ -95,7 +95,8 @@ pub fn write_stamp_json(path: &Path, asset: &StampJson) -> Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create dir {}", parent.display()))?;
     }
-    std::fs::write(path, format!("{raw}\n")).with_context(|| format!("write {}", path.display()))?;
+    std::fs::write(path, format!("{raw}\n"))
+        .with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }
 
@@ -151,7 +152,8 @@ mod tests {
 
     #[test]
     fn import_heart_corners_are_outside() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/mate/stamps/src/heart.png");
+        let root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/mate/stamps/src/heart.png");
         let stamp = import_stamp_from_png(&root, "heart").unwrap();
         assert_eq!(stamp.pixels[0], 0, "top-left corner should be outside");
         let on = stamp.pixels.iter().filter(|&&p| p != 0).count();

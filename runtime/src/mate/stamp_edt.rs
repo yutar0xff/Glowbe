@@ -57,11 +57,7 @@ pub fn sdf_from_mask(mask: &[bool], size: u32) -> Vec<f32> {
     for i in 0..n {
         let out_d = dist_out2[i].sqrt();
         let in_d = dist_in[i].sqrt();
-        sdf[i] = if mask[i] {
-            -in_d / half
-        } else {
-            out_d / half
-        };
+        sdf[i] = if mask[i] { -in_d / half } else { out_d / half };
     }
     sdf
 }
@@ -85,12 +81,12 @@ fn edt_1d(f: &[f32], d: &mut [f32], n: usize) {
         z[k + 1] = f32::INFINITY;
     }
     k = 0;
-    for q in 0..n {
+    for (q, dq) in d.iter_mut().enumerate().take(n) {
         while z[k + 1] < q as f32 {
             k += 1;
         }
         let dx = q as f32 - v[k] as f32;
-        d[q] = dx * dx + f[v[k] as usize];
+        *dq = dx * dx + f[v[k] as usize];
     }
 }
 

@@ -178,10 +178,10 @@ fn render_rainbow_sweep(uv: &[(f32, f32)], elapsed: Duration, out: &mut [u8]) {
 fn render_twinkle(uv: &[(f32, f32)], elapsed: Duration, out: &mut [u8]) {
     let t = elapsed.as_secs_f32();
     for (i, &(u, v)) in uv.iter().enumerate() {
-        let hash = ((u * 43758.5453 + v * 19643.21).fract() * 1000.0) as u32;
+        let hash = ((u * 43_758.547 + v * 19_643.21).fract() * 1000.0) as u32;
         let phase = (hash % 100) as f32 * 0.1;
         let blink = ((t * 2.5 + phase).sin() * 0.5 + 0.5).powi(3);
-        let base = if hash % 7 == 0 { 1.0 } else { 0.15 };
+        let base = if hash.is_multiple_of(7) { 1.0 } else { 0.15 };
         let v = (blink * base * 255.0) as u8;
         let o = i * 3;
         out[o] = v;
