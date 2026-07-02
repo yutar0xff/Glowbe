@@ -1,7 +1,7 @@
 # Glowbe — Mate モード 設計・実装計画
 
 > **役割:** 本書は **mate モード（球体 LED に「顔」を表示し、Web UI から表情を切り替え、将来は AI エージェント連携でリアルタイム表情・リップシンクする）** の設計と、実装を分割して進めるためのタスク計画。
-> **対象ブランチ:** `feature/mate-v3`
+> **対象ブランチ:** `feature/product-studio`
 > **前提読み物:** [`ARCHITECTURE.md`](ARCHITECTURE.md)（全体設計）・[`STATUS.md`](STATUS.md)（実装状況）・[`../protocol/control-api.md`](../protocol/control-api.md)。
 > **適用レイアウト:** `product-geodesic-2v-60`（1260 LED）。プロトタイプ `prototype-icosahedron-15`（225 LED）では mate モードを **提供しない**（解像度不足）。
 
