@@ -176,8 +176,14 @@ function ClipGridCard({
             <p className="truncate font-mono text-[10px] text-muted-foreground">id: {clip.id}</p>
           ) : null}
           <p className="font-mono text-[10px] leading-relaxed text-muted-foreground">
-            {clip.frameCount} fr · {clip.fps} fps
-            {clip.sourceWidth > 0 ? ` · ${clip.sourceWidth}×${clip.sourceHeight}` : ''}
+            {isDemo ? (
+              `~${(clip.frameCount / Math.max(clip.fps, 1)).toFixed(1)}s loop · device fps`
+            ) : (
+              <>
+                {clip.frameCount} fr · {clip.fps} fps
+                {clip.sourceWidth > 0 ? ` · ${clip.sourceWidth}×${clip.sourceHeight}` : ''}
+              </>
+            )}
           </p>
           <p className="font-mono text-[10px] text-muted-foreground">
             {clip.sourceKind ?? clip.kind}

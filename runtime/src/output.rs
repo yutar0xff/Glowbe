@@ -276,8 +276,9 @@ async fn device_output_loop(
                         if let Some(ref uv) = layout_uv {
                             match clip.sample_into(clip_elapsed, uv, &mut rgb) {
                                 Ok(()) => {
-                                    let idx = clip.frame_index_at(clip_elapsed);
-                                    slot.metrics.set_loop_source_frame(Some(idx));
+                                    slot.metrics.set_loop_source_frame(
+                                        clip.source_frame_index_at(clip_elapsed),
+                                    );
                                 }
                                 Err(e) => {
                                     slot.metrics.set_loop_source_frame(None);

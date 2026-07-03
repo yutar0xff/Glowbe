@@ -174,7 +174,9 @@ impl RuntimeState {
     }
 }
 
-/// Loop シーケンスのタイムライン（一時停止で `frozen_effective` を固定、再開で `skew` を補正）。
+/// Loop シーケンスのタイムライン。`skew` は再生開始時刻の基準（巻き直しやクリップ切替で
+/// 現在の raw に合わせ、`clip_elapsed = raw - skew` を 0 から進める）。一時停止で
+/// `frozen_effective` を固定し、再開で `skew` を補正する。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LoopPlaybackTiming {
     pub paused: bool,

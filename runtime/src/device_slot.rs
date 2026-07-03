@@ -175,9 +175,20 @@ impl DeviceSlot {
         self.reset_loop_playback_timing();
     }
 
+    /// ループ再生のタイムラインを現在時点から巻き直す。以降 `clip_elapsed_for_loop`
+    /// は 0 から進むため、クリップ選択やモード切替のたびにクリップは先頭から再生される。
     pub fn reset_loop_playback_timing(&self) {
+        let raw = self
+            .loop_raw_elapsed_tick
+            .read()
+            .map(|r| *r)
+            .unwrap_or_else(|e| *e.into_inner());
         if let Ok(mut g) = self.loop_playback_timing.write() {
-            *g = LoopPlaybackTiming::default();
+            *g = LoopPlaybackTiming {
+                paused: false,
+                skew: raw,
+                frozen_effective: Duration::ZERO,
+            };
         }
     }
 

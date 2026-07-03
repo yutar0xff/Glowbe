@@ -146,10 +146,12 @@ impl LoadedClip {
         }
     }
 
-    pub fn frame_index_at(&self, elapsed: Duration) -> u32 {
+    /// メディアクリップの現在ソースフレーム index。
+    /// デモは procedural（離散ソースフレームを持たず、常にデバイス fps で描画）のため `None`。
+    pub fn source_frame_index_at(&self, elapsed: Duration) -> Option<u32> {
         match &self.source {
-            ClipSource::Demo(d) => demos::frame_index_at(*d, elapsed),
-            ClipSource::Media(m) => m.frame_index_at(elapsed),
+            ClipSource::Demo(_) => None,
+            ClipSource::Media(m) => Some(m.frame_index_at(elapsed)),
         }
     }
 }

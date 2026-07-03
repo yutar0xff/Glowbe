@@ -1853,7 +1853,9 @@ mod tests {
             panic!("expected anger stamp");
         };
         let frame = FaceFrame::from_params(FaceFrameParams::default());
-        let fx = pos[0] + 0.06;
+        // 怒りマークは左右反転（pos.x と rotationDeg を反転）しているため、
+        // ローブを突くプローブも水平方向に反転させる。
+        let fx = pos[0] - 0.06;
         let fy = pos[1] + 0.02;
         let m0 = part_motion_sample(anger, 0.0);
         let m1 = part_motion_sample(anger, 0.5);
