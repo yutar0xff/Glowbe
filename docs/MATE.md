@@ -275,6 +275,7 @@ t = loop_start.elapsed()
 - `polyline.points` は**点数が一致する場合のみ**点ごとに補間。点数が違う/`kind` が違うスロットは「クロスフェード（両方を被覆率で混ぜる）」にフォールバック。
 - 既定 `transitionMs = 320`、イージング `easeInOutCubic`。遷移完了で `from` を破棄。
 - 遷移中に別の `to'` が来たら、**現在の合成結果を新しい `from` とみなして**再遷移（途切れさせない）。
+- 回転演出（任意・オン/オフ切替可）: 有効時は遷移進捗に合わせて顔全体を球の縦軸まわりに `0→360°`（`easeInOutBack`）で 1 回転させる。序盤で少し巻き戻し、終盤は 360° を少し越えてから戻る動き。360°≡0° で終わるため元の正面へ継ぎ目なく収まる。モーフと同時進行。`POST /api/v1/mate/transition { "rotate": bool }` で切替。
 
 ### 5.4 リップシンク（口の駆動）
 
@@ -298,6 +299,7 @@ t = loop_start.elapsed()
 | GET | `/api/v1/mate/presets` | プリセット一覧（`id`, `displayName`, パーツ数, 由来 builtin/user） |
 | POST | `/api/v1/mate/expression` | `{ "preset": "happy", "transitionMs": 320 }` で表情を遷移指定 |
 | POST | `/api/v1/mate/breathing` | `{ "enabled": true, "periodMs": 4200, "amplitude": 0.10 }` |
+| POST | `/api/v1/mate/transition` | `{ "rotate": true }` で遷移中に顔全体を球面上で 1 回転させる演出を切替 |
 | GET | `/api/v1/mate/frame` | 現在の Face Frame パラメータ取得（校正 UI 用） |
 | POST | `/api/v1/mate/frame` | Face Frame パラメータ更新（校正） |
 
@@ -312,6 +314,8 @@ t = loop_start.elapsed()
 { "type": "mate", "action": "blink" }
 // 呼吸パラメータ
 { "type": "mate", "action": "setBreathing", "enabled": true, "periodMs": 4000, "amplitude": 0.12 }
+// 遷移時の回転演出の切替
+{ "type": "mate", "action": "setTransitionRotate", "rotate": true }
 // リップシンク（毎フレーム/間引きで連続送出）
 { "type": "mate", "action": "viseme", "openness": 0.6, "width": 0.8 }
 // 低レベル・ライブ上書き（AI 表情の微調整）: 指定スロットのパラメータを一時上書き

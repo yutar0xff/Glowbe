@@ -40,7 +40,7 @@
       "color": [40, 120, 255],
       "motions": [
         { "type": "followBreathing" },
-        { "type": "tearFall", "travel": 0.55, "periodMs": 1800, "phaseFrac": 0.5 }
+        { "type": "tearFall", "travel": 1.2, "periodMs": 1800, "phaseFrac": 0.5 }
       ]
     },
     {
@@ -53,7 +53,7 @@
       "color": [40, 120, 255],
       "motions": [
         { "type": "followBreathing" },
-        { "type": "tearFall", "travel": 0.55, "periodMs": 1800, "phaseFrac": 0.0 }
+        { "type": "tearFall", "travel": 1.2, "periodMs": 1800, "phaseFrac": 0.0 }
       ]
     }
   ]

@@ -468,6 +468,15 @@ impl DeviceSlot {
         self.bump_output_send_epoch();
     }
 
+    pub fn mate_transition_rotate(&self) -> bool {
+        self.mate.transition_rotate()
+    }
+
+    pub fn set_mate_transition_rotate(&self, rotate: bool) {
+        self.mate.set_transition_rotate(rotate);
+        self.bump_output_send_epoch();
+    }
+
     pub fn trigger_mate_blink(&self) {
         self.mate.trigger_blink();
         self.bump_output_send_epoch();

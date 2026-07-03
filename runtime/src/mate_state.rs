@@ -16,6 +16,7 @@ pub struct MateRuntimeState {
     expression: StdRwLock<Option<Expression>>,
     preset_id: StdRwLock<Option<String>>,
     transition: StdRwLock<Option<MateTransition>>,
+    transition_rotate: StdRwLock<bool>,
     breathing: StdRwLock<BreathingParams>,
     breath_clock: StdRwLock<BreathClock>,
     blink: StdRwLock<BlinkState>,
@@ -37,6 +38,7 @@ impl MateRuntimeState {
             expression: StdRwLock::new(None),
             preset_id: StdRwLock::new(None),
             transition: StdRwLock::new(None),
+            transition_rotate: StdRwLock::new(false),
             breathing: StdRwLock::new(BreathingParams::default()),
             breath_clock: StdRwLock::new(BreathClock {
                 phase: 0.0,
@@ -64,6 +66,16 @@ impl MateRuntimeState {
     pub fn set_breathing(&self, params: BreathingParams) {
         if let Ok(mut g) = self.breathing.write() {
             *g = params;
+        }
+    }
+
+    pub fn transition_rotate(&self) -> bool {
+        self.transition_rotate.read().map(|g| *g).unwrap_or(false)
+    }
+
+    pub fn set_transition_rotate(&self, rotate: bool) {
+        if let Ok(mut g) = self.transition_rotate.write() {
+            *g = rotate;
         }
     }
 
@@ -100,7 +112,8 @@ impl MateRuntimeState {
                 }
             }
         }
-        let samples = mate::load_face_samples(compiled_dir, layout_id, &frame, front_yaw_deg)?;
+        let uv = mate::load_layout_uv_table(compiled_dir, layout_id)?;
+        let samples = mate::build_face_samples_yawed(&uv, &frame, front_yaw_deg);
         let mut cache = self
             .samples_cache
             .write()
@@ -109,7 +122,9 @@ impl MateRuntimeState {
             layout_id: layout_id.to_string(),
             frame_key,
             front_yaw_bits,
+            front_yaw_deg,
             frame,
+            uv,
             samples,
         });
         Ok(())
@@ -133,12 +148,14 @@ impl MateRuntimeState {
         } else {
             let from = self.expression_at(now);
             let duration = Duration::from_millis(transition_ms as u64);
+            let rotate = self.transition_rotate();
             if let Ok(mut g) = self.transition.write() {
                 *g = Some(MateTransition {
                     from,
                     to: to.clone(),
                     started: now,
                     duration,
+                    rotate,
                 });
             }
         }
@@ -178,6 +195,12 @@ impl MateRuntimeState {
         };
         let now = Instant::now();
         let expr = self.expression_at(now);
+        let yaw_deg = self
+            .transition
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().map(|t| t.yaw_deg_at(now)))
+            .unwrap_or(0.0);
         if let Ok(mut tr) = self.transition.write() {
             if let Some(ref transition) = *tr {
                 if transition.is_complete(now) {
@@ -203,7 +226,18 @@ impl MateRuntimeState {
             &mut blink_guard,
         );
         drop(blink_guard);
-        mate::render(&cache.samples, &cache.frame, &expr, &mods, rgb);
+        let rotated;
+        let samples: &[mate::FaceSample] = if yaw_deg.abs() > 1e-3 {
+            rotated = mate::build_face_samples_yawed(
+                &cache.uv,
+                &cache.frame,
+                cache.front_yaw_deg + yaw_deg,
+            );
+            &rotated
+        } else {
+            &cache.samples
+        };
+        mate::render(samples, &cache.frame, &expr, &mods, rgb);
     }
 
     /// 呼吸位相を経過時間ぶんだけ積分して返す。周期は瞬時値として使うため、

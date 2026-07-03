@@ -14,4 +14,5 @@ export type MatePresetsResponse = {
   presets: MatePresetSummary[]
   matePresetId?: string | null
   mateBreathing: MateBreathingParams
+  mateTransitionRotate: boolean
 }

@@ -116,6 +116,12 @@ fn default_breathing_enabled() -> bool {
     true
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MateTransitionRequest {
+    rotate: bool,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MatePresetsResponse {
@@ -123,6 +129,7 @@ struct MatePresetsResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     mate_preset_id: Option<String>,
     mate_breathing: crate::mate::BreathingParams,
+    mate_transition_rotate: bool,
 }
 
 #[derive(Serialize)]
@@ -692,6 +699,13 @@ pub fn router(app: SharedState) -> Router {
             }),
         )
         .route(
+            "/api/v1/mate/transition",
+            post({
+                let app = app.clone();
+                move |q, body| post_mate_transition(app.clone(), q, body)
+            }),
+        )
+        .route(
             "/api/v1/text/config",
             get({
                 let app = app.clone();
@@ -1201,6 +1215,20 @@ async fn handle_ws_text(
                         "enabled": params.enabled
                     })
                 }
+                "setTransitionRotate" => {
+                    let rotate = v
+                        .get("rotate")
+                        .and_then(|x| x.as_bool())
+                        .unwrap_or(slot.mate_transition_rotate());
+                    slot.set_mate_transition_rotate(rotate);
+                    json!({
+                        "type": "event_status",
+                        "event": "mate",
+                        "status": "ok",
+                        "action": "setTransitionRotate",
+                        "rotate": rotate
+                    })
+                }
                 "setExpression" => {
                     let preset = v
                         .get("preset")
@@ -1566,6 +1594,7 @@ async fn get_mate_presets(app: SharedState, Query(q): Query<DeviceIdQuery>) -> i
             presets,
             mate_preset_id: slot.mate_preset_id(),
             mate_breathing: slot.mate_breathing_params(),
+            mate_transition_rotate: slot.mate_transition_rotate(),
         }),
     )
         .into_response()
@@ -1640,6 +1669,24 @@ async fn post_mate_breathing(
     let mut params = slot.mate_breathing_params();
     params.enabled = req.enabled;
     slot.set_mate_breathing(params);
+    let s = slot.state.read().await;
+    (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
+}
+
+async fn post_mate_transition(
+    app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
+    Json(req): Json<MateTransitionRequest>,
+) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    let layout_id = slot.state.read().await.layout_id.clone();
+    if let Err(resp) = mate_api::guard_mate_layout(&layout_id) {
+        return resp.into_response();
+    }
+    slot.set_mate_transition_rotate(req.rotate);
     let s = slot.state.read().await;
     (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
 }

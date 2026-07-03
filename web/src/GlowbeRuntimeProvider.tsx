@@ -14,6 +14,7 @@ import {
   POLL_MS,
   postMateExpression,
   postMateBreathing,
+  postMateTransition,
   postTextConfig,
   readActiveDeviceFromUrl,
   writeActiveDeviceToUrl,
@@ -43,6 +44,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
   const [mediaConvertBusy, setMediaConvertBusy] = useState(false)
   const [mateExpressionBusy, setMateExpressionBusy] = useState<string | null>(null)
   const [mateBreathingBusy, setMateBreathingBusy] = useState(false)
+  const [mateTransitionRotateBusy, setMateTransitionRotateBusy] = useState(false)
   const [textConfigBusy, setTextConfigBusy] = useState(false)
 
   const syncDevices = useCallback(async (signal: AbortSignal) => {
@@ -279,6 +281,41 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       } finally {
         window.clearTimeout(timeout)
         setMateBreathingBusy(false)
+      }
+    },
+    [activeDeviceId],
+  )
+
+  const setMateTransitionRotate = useCallback(
+    async (rotate: boolean) => {
+      setMateTransitionRotateBusy(true)
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 3500)
+      try {
+        const newState = await postMateTransition(controller.signal, activeDeviceId, rotate)
+        setLoad((prev) => {
+          if (prev.kind === 'ready') {
+            return { ...prev, state: newState, fetchedAt: new Date() }
+          }
+          return {
+            kind: 'ready',
+            state: newState,
+            health: { ok: true, text: 'ok' },
+            clips: [],
+            fetchedAt: new Date(),
+          }
+        })
+      } catch (err) {
+        setLoad((prev) => ({
+          kind: 'error',
+          message: err instanceof Error ? err.message : String(err),
+          health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
+          fetchedAt: new Date(),
+        }))
+        throw err
+      } finally {
+        window.clearTimeout(timeout)
+        setMateTransitionRotateBusy(false)
       }
     },
     [activeDeviceId],
@@ -636,10 +673,12 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       mediaConvertBusy,
       mateExpressionBusy,
       mateBreathingBusy,
+      mateTransitionRotateBusy,
       textConfigBusy,
       setMode,
       setMateExpression,
       setMateBreathing,
+      setMateTransitionRotate,
       setTextConfig,
       selectClip,
       clearLoopSelection,
@@ -669,10 +708,12 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       mediaConvertBusy,
       mateExpressionBusy,
       mateBreathingBusy,
+      mateTransitionRotateBusy,
       textConfigBusy,
       setMode,
       setMateExpression,
       setMateBreathing,
+      setMateTransitionRotate,
       setTextConfig,
       selectClip,
       clearLoopSelection,

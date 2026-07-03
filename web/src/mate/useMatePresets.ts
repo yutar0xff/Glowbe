@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchMatePresets } from '@/api'
-import { DEFAULT_MATE_BREATHING } from './constants'
+import { DEFAULT_MATE_BREATHING, DEFAULT_MATE_TRANSITION_ROTATE } from './constants'
 import type { MateBreathingParams, MatePresetSummary } from './types'
 
 export function useMatePresets(activeDeviceId: string | null, mateSupported: boolean) {
@@ -9,6 +9,7 @@ export function useMatePresets(activeDeviceId: string | null, mateSupported: boo
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [breathing, setBreathing] = useState<MateBreathingParams>(DEFAULT_MATE_BREATHING)
+  const [transitionRotate, setTransitionRotate] = useState<boolean>(DEFAULT_MATE_TRANSITION_ROTATE)
 
   const reload = useCallback(async () => {
     if (!mateSupported) return
@@ -20,6 +21,7 @@ export function useMatePresets(activeDeviceId: string | null, mateSupported: boo
       setPresets(body.presets)
       setActivePresetId(body.matePresetId ?? null)
       setBreathing(body.mateBreathing ?? DEFAULT_MATE_BREATHING)
+      setTransitionRotate(body.mateTransitionRotate ?? DEFAULT_MATE_TRANSITION_ROTATE)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -39,5 +41,7 @@ export function useMatePresets(activeDeviceId: string | null, mateSupported: boo
     error,
     breathing,
     setBreathing,
+    transitionRotate,
+    setTransitionRotate,
   }
 }

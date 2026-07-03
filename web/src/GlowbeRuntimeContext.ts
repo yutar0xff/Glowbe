@@ -20,11 +20,14 @@ export type GlowbeRuntimeContextValue = {
   mediaConvertBusy: boolean
   mateExpressionBusy: string | null
   mateBreathingBusy: boolean
+  mateTransitionRotateBusy: boolean
   textConfigBusy: boolean
   setMode: (mode: OutputMode) => Promise<void>
   /** Switch to mate mode and apply a face preset (morph transition on device). */
   setMateExpression: (preset: string, transitionMs?: number) => Promise<void>
   setMateBreathing: (params: Partial<MateBreathingParams> & { enabled: boolean }) => Promise<void>
+  /** Toggle a full one-turn spin of the face during expression transitions. */
+  setMateTransitionRotate: (rotate: boolean) => Promise<void>
   /** Switch to text mode and update flow params (partial patch). */
   setTextConfig: (params: Partial<TextModeParams>) => Promise<void>
   selectClip: (clipId: string) => Promise<void>
