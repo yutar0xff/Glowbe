@@ -259,7 +259,6 @@ function SpherePointerRouter({
     const off = new THREE.Vector3().copy(camera.position).sub(target)
     if (off.lengthSq() < 1e-6) return
     spherical.current.setFromVector3(off)
-    spherical.current.phi = Math.PI - spherical.current.phi
     const eps = 0.06
     spherical.current.phi = Math.max(eps, Math.min(Math.PI - eps, spherical.current.phi))
     spherical.current.radius = clampOrbitRadius(orbitRadius)
@@ -500,10 +499,14 @@ export function LayoutUvSphereCanvas({
           className="absolute inset-0 block h-full w-full"
           camera={{
             position: (() => {
-              const y = 0.15
-              const z = 2.55
-              const s = DEFAULT_SPHERE_ORBIT_R / Math.hypot(0, y, z)
-              return [0, y * s, z * s] as [number, number, number]
+              // 正面から仰角 20° 上に構え、上から見下ろす初期アングル。
+              const elevationRad = (20 * Math.PI) / 180
+              const r = DEFAULT_SPHERE_ORBIT_R
+              return [0, Math.sin(elevationRad) * r, Math.cos(elevationRad) * r] as [
+                number,
+                number,
+                number,
+              ]
             })(),
             fov: 48,
             near: 0.1,

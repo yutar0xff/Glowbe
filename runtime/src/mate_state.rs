@@ -17,8 +17,16 @@ pub struct MateRuntimeState {
     preset_id: StdRwLock<Option<String>>,
     transition: StdRwLock<Option<MateTransition>>,
     breathing: StdRwLock<BreathingParams>,
+    breath_clock: StdRwLock<BreathClock>,
     blink: StdRwLock<BlinkState>,
     anim_origin: Instant,
+}
+
+/// 呼吸位相を毎フレーム積分するための状態。周期が表情遷移中に変化しても、
+/// 位相を連続に進めることで scale/上下位置が飛ぶ (バウンドする) のを防ぐ。
+struct BreathClock {
+    phase: f32,
+    last: Instant,
 }
 
 impl MateRuntimeState {
@@ -30,6 +38,10 @@ impl MateRuntimeState {
             preset_id: StdRwLock::new(None),
             transition: StdRwLock::new(None),
             breathing: StdRwLock::new(BreathingParams::default()),
+            breath_clock: StdRwLock::new(BreathClock {
+                phase: 0.0,
+                last: anim_origin,
+            }),
             blink: StdRwLock::new(BlinkState::new(anim_origin)),
             anim_origin,
         }
@@ -139,7 +151,7 @@ impl MateRuntimeState {
         Ok(())
     }
 
-    pub fn ensure_neutral(&self, registry: &PresetRegistry) -> anyhow::Result<()> {
+    pub fn ensure_default_expression(&self, registry: &PresetRegistry) -> anyhow::Result<()> {
         if self
             .expression
             .read()
@@ -174,6 +186,8 @@ impl MateRuntimeState {
             }
         }
         let breathing = self.breathing_params();
+        let breath_phase =
+            self.advance_breath_phase(now, expr.breathing_period_ms, breathing.enabled);
         let mut blink_guard = match self.blink.write() {
             Ok(g) => g,
             Err(_) => {
@@ -185,11 +199,31 @@ impl MateRuntimeState {
             now,
             self.anim_origin,
             &breathing,
-            expr.breathing_period_ms,
+            breath_phase,
             &mut blink_guard,
         );
         drop(blink_guard);
         mate::render(&cache.samples, &cache.frame, &expr, &mods, rgb);
+    }
+
+    /// 呼吸位相を経過時間ぶんだけ積分して返す。周期は瞬時値として使うため、
+    /// 表情遷移で周期が補間されても位相は連続に進む。長いギャップ (モード切替など)
+    /// で一気に飛ばないよう dt は上限を設ける。
+    fn advance_breath_phase(&self, now: Instant, period_ms: u32, enabled: bool) -> f32 {
+        let Ok(mut clock) = self.breath_clock.write() else {
+            return 0.0;
+        };
+        let dt = now
+            .saturating_duration_since(clock.last)
+            .as_secs_f32()
+            .min(0.1);
+        clock.last = now;
+        if enabled && period_ms > 0 {
+            let period = period_ms as f32 / 1000.0;
+            clock.phase += dt * std::f32::consts::TAU / period;
+            clock.phase = clock.phase.rem_euclid(std::f32::consts::TAU);
+        }
+        clock.phase
     }
 
     fn expression_at(&self, now: Instant) -> Expression {

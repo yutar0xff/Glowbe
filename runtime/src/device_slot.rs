@@ -473,8 +473,8 @@ impl DeviceSlot {
         self.bump_output_send_epoch();
     }
 
-    pub fn ensure_mate_neutral(&self, registry: &mate::PresetRegistry) -> anyhow::Result<()> {
-        self.mate.ensure_neutral(registry)
+    pub fn ensure_mate_default(&self, registry: &mate::PresetRegistry) -> anyhow::Result<()> {
+        self.mate.ensure_default_expression(registry)
     }
 
     pub fn render_mate(&self, rgb: &mut [u8]) {

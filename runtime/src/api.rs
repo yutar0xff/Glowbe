@@ -1748,7 +1748,7 @@ async fn post_mode(
                 Ok(g) => g,
                 Err(resp) => return resp.into_response(),
             };
-            slot.ensure_mate_neutral(&registry)
+            slot.ensure_mate_default(&registry)
                 .map_err(|e| format!("{e:#}"))
                 .and_then(|()| {
                     slot.ensure_mate_samples(&app.compiled_dir, &layout_id)
