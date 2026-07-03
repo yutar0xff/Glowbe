@@ -21,7 +21,7 @@ pub use stamp_import::{import_stamp_from_png, write_stamp_json};
 use stamps::{StampMask, StampRegistry};
 
 pub const PRODUCT_LAYOUT_ID: &str = "product-geodesic-2v-60";
-pub const DEFAULT_PRESET_ID: &str = "neutral";
+pub const DEFAULT_PRESET_ID: &str = "happy";
 pub const DEFAULT_TRANSITION_MS: u32 = 480;
 
 const BUILTIN_PRESETS: &[&str] = &[
@@ -801,13 +801,14 @@ impl Default for BreathingParams {
 
 impl BreathingParams {
     /// Perceptual breathing envelope for the current frame.
-    pub fn sample_wave(&self, now: Instant, origin: Instant, period_ms: u32) -> BreathingWave {
-        if !self.enabled || period_ms == 0 {
+    ///
+    /// `phase` は積分済みの呼吸位相 (ラジアン)。周期が表情遷移中に変わっても、
+    /// 呼び出し側が位相を毎フレーム積分することで連続性が保たれる。
+    pub fn sample_wave(&self, phase: f32) -> BreathingWave {
+        if !self.enabled {
             return BreathingWave::neutral();
         }
-        let t = now.saturating_duration_since(origin).as_secs_f32();
-        let period = period_ms.max(1) as f32 / 1000.0;
-        let s = ((t / period) * std::f32::consts::TAU).sin();
+        let s = phase.sin();
         let i = BREATH_INTENSITY;
         let brightness_gain = if s >= 0.0 {
             1.0 + s * i * BREATH_BRIGHTNESS_GAIN
@@ -924,11 +925,11 @@ pub fn compute_modulation(
     now: Instant,
     origin: Instant,
     breathing: &BreathingParams,
-    breathing_period_ms: u32,
+    breath_phase: f32,
     blink: &mut BlinkState,
 ) -> Modulation {
     blink.tick(now);
-    let wave = breathing.sample_wave(now, origin, breathing_period_ms);
+    let wave = breathing.sample_wave(breath_phase);
     Modulation {
         breathe_brightness: wave.brightness_gain,
         breathe_face_scale: wave.face_scale,
@@ -1244,7 +1245,7 @@ fn stamp_tangent_xy(
 
 fn blink_eye_radii(size: [f32; 2], openness: f32) -> [f32; 2] {
     let o = openness.clamp(0.04, 1.0);
-    const WIDTH_AT_CLOSED: f32 = 0.48;
+    const WIDTH_AT_CLOSED: f32 = 0.3;
     [
         size[0] * (WIDTH_AT_CLOSED + (1.0 - WIDTH_AT_CLOSED) * o),
         size[1] * o,
@@ -1796,8 +1797,8 @@ mod tests {
     #[test]
     fn breathing_wave_uses_fixed_subtle_motion() {
         let breathing = BreathingParams { enabled: true };
-        let origin = Instant::now();
-        let wave = breathing.sample_wave(origin + Duration::from_millis(250), origin, 1000);
+        // 位相 TAU/4 = 吸気ピーク。
+        let wave = breathing.sample_wave(std::f32::consts::FRAC_PI_2);
         assert!(
             wave.brightness_gain > 1.1 && wave.brightness_gain < 1.2,
             "fixed brightness swing, got {}",
