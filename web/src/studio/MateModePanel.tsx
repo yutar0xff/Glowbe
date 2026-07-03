@@ -17,8 +17,15 @@ import { useMatePresets } from '@/mate/useMatePresets'
 import type { RuntimeState } from '@/types'
 
 export function MateModePanel({ state }: { state: RuntimeState }) {
-  const { activeDeviceId, setMateExpression, setMateBreathing, mateExpressionBusy, mateBreathingBusy } =
-    useGlowbeRuntime()
+  const {
+    activeDeviceId,
+    setMateExpression,
+    setMateBreathing,
+    setMateTransitionRotate,
+    mateExpressionBusy,
+    mateBreathingBusy,
+    mateTransitionRotateBusy,
+  } = useGlowbeRuntime()
   const mateSupported = state.layoutId === MATE_LAYOUT_ID
 
   const [transitionMs, setTransitionMs] = useState(DEFAULT_MATE_TRANSITION_MS)
@@ -30,6 +37,8 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
     error: presetsErr,
     breathing,
     setBreathing,
+    transitionRotate,
+    setTransitionRotate,
   } = useMatePresets(activeDeviceId, mateSupported)
 
   const { uv, uvLoading, uvError } = useLayoutUv(state.layoutId, state.ledCount)
@@ -56,6 +65,17 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
     void (async () => {
       try {
         await setMateBreathing(next)
+      } catch {
+        /* surfaced via load error state in provider */
+      }
+    })()
+  }
+
+  const applyTransitionRotate = (rotate: boolean) => {
+    setTransitionRotate(rotate)
+    void (async () => {
+      try {
+        await setMateTransitionRotate(rotate)
       } catch {
         /* surfaced via load error state in provider */
       }
@@ -103,6 +123,23 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
               value={[transitionMs]}
               onValueChange={(v) => setTransitionMs(v[0]!)}
               disabled={mateExpressionBusy !== null}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="mate-transition-rotate" className="text-sm">
+                Spin during transition
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Send the whole face once around the sphere while morphing.
+              </p>
+            </div>
+            <Switch
+              id="mate-transition-rotate"
+              checked={transitionRotate}
+              disabled={mateTransitionRotateBusy}
+              onCheckedChange={applyTransitionRotate}
             />
           </div>
 

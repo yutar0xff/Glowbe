@@ -127,6 +127,31 @@ export async function postMateBreathing(
   return (await res.json()) as RuntimeState
 }
 
+export async function postMateTransition(
+  signal: AbortSignal,
+  deviceId: string | null,
+  rotate: boolean,
+): Promise<RuntimeState> {
+  const q = apiDeviceQuery(deviceId)
+  const res = await fetch(`${API_BASE}/api/v1/mate/transition${q}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ rotate }),
+    signal,
+  })
+  if (!res.ok) {
+    const msg = await res.text()
+    try {
+      const j = JSON.parse(msg) as { error?: string }
+      if (j.error) throw new Error(j.error)
+    } catch (e) {
+      if (e instanceof Error && e.message !== msg) throw e
+    }
+    throw new Error(msg || `Could not set mate transition (error ${res.status}).`)
+  }
+  return (await res.json()) as RuntimeState
+}
+
 export async function fetchTextConfig(
   signal: AbortSignal,
   deviceId: string | null,

@@ -114,12 +114,20 @@ pub struct FaceSample {
     pub in_face_disk: bool,
 }
 
-pub fn build_face_samples(ledmap_uv: &[(f32, f32)], frame: &FaceFrame) -> Vec<FaceSample> {
+/// 各 LED の経度 `u` を `yaw_deg` だけ回してから顔平面へ射影する。
+/// `yaw_deg` が 0 なら正面固定、非 0 なら顔全体を球の縦軸まわりに回した見え方になる
+/// （遷移中のスピン演出に使用）。
+pub fn build_face_samples_yawed(
+    ledmap_uv: &[(f32, f32)],
+    frame: &FaceFrame,
+    yaw_deg: f32,
+) -> Vec<FaceSample> {
     let sin_r = frame.ang_radius_rad.sin().max(1e-4);
     let cos_r = frame.ang_radius_rad.cos();
     ledmap_uv
         .iter()
         .map(|&(u, v)| {
+            let u = crate::sphere::apply_front_yaw_u(u, yaw_deg);
             let d = unit_dir_from_equirect_uv_y_up(u, v);
             let fwd = dot3(d, frame.forward);
             if fwd <= 0.0 {
@@ -230,6 +238,9 @@ pub struct Part {
     pub intensity: f32,
     pub edge_softness: f32,
     pub motions: Vec<PartMotion>,
+    /// 呼吸に合わせた明るさの脈動を掛けるか。`false` の場合、`followBreathing`
+    /// による拡縮は残しつつ色（明るさ）は一定に保つ。
+    pub breathe_brightness: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -291,6 +302,8 @@ struct FacePartJson {
     palette: Option<Vec<[u8; 3]>>,
     #[serde(default)]
     motions: Option<Vec<MotionJson>>,
+    #[serde(default = "default_true")]
+    breathe_brightness: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -317,6 +330,10 @@ enum MotionJson {
 
 fn default_tear_regen_frac() -> f32 {
     0.25
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_breath_period_ms() -> u32 {
@@ -421,6 +438,8 @@ pub struct MateTransition {
     pub to: Expression,
     pub started: Instant,
     pub duration: Duration,
+    /// 遷移中に顔全体を球面上で 1 回転させるか。
+    pub rotate: bool,
 }
 
 impl MateTransition {
@@ -436,6 +455,21 @@ impl MateTransition {
         lerp_expression(&self.from, &self.to, t)
     }
 
+    /// 遷移進捗に応じた顔のヨー角（度）。`rotate` 有効時のみ 0→360° を返す。
+    /// `easeInOutBack` により序盤で少し巻き戻し、終盤は 360° を少し越えてから
+    /// 戻る。完了時は 360°≡0° に収まるため継ぎ目なく元の正面へ戻る。
+    pub fn yaw_deg_at(&self, now: Instant) -> f32 {
+        if !self.rotate || self.duration.is_zero() {
+            return 0.0;
+        }
+        let elapsed = now.saturating_duration_since(self.started);
+        if elapsed >= self.duration {
+            return 0.0;
+        }
+        let t = elapsed.as_secs_f32() / self.duration.as_secs_f32();
+        360.0 * ease_in_out_back(t)
+    }
+
     pub fn is_complete(&self, now: Instant) -> bool {
         !self.duration.is_zero() && now.saturating_duration_since(self.started) >= self.duration
     }
@@ -447,6 +481,22 @@ pub fn ease_in_out_cubic(t: f32) -> f32 {
         4.0 * t * t * t
     } else {
         1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+    }
+}
+
+/// 行き過ぎ（オーバーシュート）を伴うイージング。端点は 0/1 だが、序盤は少し
+/// 手前へ、終盤は目標を少し越えてから戻る。回転演出の「巻き戻して回り、
+/// 行き過ぎて収まる」動きに使う。
+pub fn ease_in_out_back(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    const C1: f32 = 1.70158;
+    const C2: f32 = C1 * 1.525;
+    if t < 0.5 {
+        let x = 2.0 * t;
+        (x * x * ((C2 + 1.0) * x - C2)) / 2.0
+    } else {
+        let x = 2.0 * t - 2.0;
+        (x * x * ((C2 + 1.0) * x + C2) + 2.0) / 2.0
     }
 }
 
@@ -500,6 +550,11 @@ fn lerp_part(from: &Part, to: &Part, t: f32) -> Part {
         color: lerp_rgb(from.color, to.color, t),
         intensity: lerp_f32(from.intensity, to.intensity, t),
         edge_softness: lerp_f32(from.edge_softness, to.edge_softness, t),
+        breathe_brightness: if t < 0.5 {
+            from.breathe_brightness
+        } else {
+            to.breathe_brightness
+        },
         motions: if t < 0.5 {
             from.motions.clone()
         } else {
@@ -764,6 +819,7 @@ fn resolve_preset(preset: &FacePresetJson, stamps: &StampRegistry) -> Result<Exp
             intensity: p.intensity.clamp(0.0, 1.0),
             edge_softness: p.edge_softness.clamp(0.01, 0.25),
             motions: resolve_motions(p, layer)?,
+            breathe_brightness: p.breathe_brightness,
         });
     }
     parts.sort_by_key(|p| p.layer);
@@ -1015,7 +1071,7 @@ pub fn render(
             } else {
                 0.0
             };
-            let brightness_gain = if part_follows_breathing(part) {
+            let brightness_gain = if part_follows_breathing(part) && part.breathe_brightness {
                 mods.breathe_brightness.max(0.0)
             } else {
                 1.0
@@ -1415,24 +1471,26 @@ pub struct MateSamplesCache {
     pub layout_id: String,
     pub frame_key: u64,
     pub front_yaw_bits: u32,
+    pub front_yaw_deg: f32,
     pub frame: FaceFrame,
+    /// 正面ヨーのみ適用済みの LED 経度緯度（回転演出時に追加ヨーを重ねる元データ）。
+    pub uv: Vec<(f32, f32)>,
     pub samples: Vec<FaceSample>,
 }
 
-pub fn load_face_samples(
+/// レイアウトの LED を `(u, v)` 表に読み出す（正面ヨー未適用の生値）。
+pub fn load_layout_uv_table(
     compiled_dir: &std::path::Path,
     layout_id: &str,
-    frame: &FaceFrame,
-    front_yaw_deg: f32,
-) -> Result<Vec<FaceSample>> {
+) -> Result<Vec<(f32, f32)>> {
     let layout = media::load_layout_uv(compiled_dir, layout_id)?;
     let mut uv = vec![(0.5f32, 0.5f32); layout.led_count];
     for p in layout.leds {
         if p.i < uv.len() {
-            uv[p.i] = (crate::sphere::apply_front_yaw_u(p.u, front_yaw_deg), p.v);
+            uv[p.i] = (p.u, p.v);
         }
     }
-    Ok(build_face_samples(&uv, frame))
+    Ok(uv)
 }
 
 #[cfg(test)]
@@ -1457,11 +1515,66 @@ mod tests {
         PresetRegistry::load(Path::new("/nonexistent")).unwrap()
     }
 
+    fn empty_expr() -> Expression {
+        Expression {
+            background: [0, 0, 0],
+            parts: Vec::new(),
+            breathing_period_ms: DEFAULT_BREATH_PERIOD_MS,
+        }
+    }
+
+    #[test]
+    fn transition_yaw_spins_one_turn_when_enabled() {
+        let started = Instant::now();
+        let duration = Duration::from_millis(400);
+        let tr = MateTransition {
+            from: empty_expr(),
+            to: empty_expr(),
+            started,
+            duration,
+            rotate: true,
+        };
+        assert_eq!(tr.yaw_deg_at(started), 0.0);
+        let mid = tr.yaw_deg_at(started + Duration::from_millis(200));
+        assert!(
+            mid > 90.0 && mid < 270.0,
+            "mid yaw should be ~180, got {mid}"
+        );
+        // 完了時は 0（=360°）へ戻る。
+        assert_eq!(tr.yaw_deg_at(started + duration), 0.0);
+    }
+
+    #[test]
+    fn transition_yaw_is_zero_when_rotate_disabled() {
+        let started = Instant::now();
+        let tr = MateTransition {
+            from: empty_expr(),
+            to: empty_expr(),
+            started,
+            duration: Duration::from_millis(400),
+            rotate: false,
+        };
+        assert_eq!(tr.yaw_deg_at(started + Duration::from_millis(200)), 0.0);
+    }
+
+    #[test]
+    fn full_turn_yaw_matches_no_yaw() {
+        let frame = FaceFrame::from_params(FaceFrameParams::default());
+        let uv = product_uv_table();
+        let base = build_face_samples_yawed(&uv, &frame, 0.0);
+        let full = build_face_samples_yawed(&uv, &frame, 360.0);
+        for (a, b) in base.iter().zip(full.iter()) {
+            assert_eq!(a.front, b.front);
+            assert_eq!(a.in_face_disk, b.in_face_disk);
+            assert!((a.x - b.x).abs() < 1e-4 && (a.y - b.y).abs() < 1e-4);
+        }
+    }
+
     #[test]
     fn face_samples_front_have_weight_back_are_zero() {
         let frame = FaceFrame::from_params(FaceFrameParams::default());
         let uv = product_uv_table();
-        let samples = build_face_samples(&uv, &frame);
+        let samples = build_face_samples_yawed(&uv, &frame, 0.0);
         assert_eq!(samples.len(), uv.len());
         let front_count = samples.iter().filter(|s| s.front).count();
         assert!(
@@ -1496,7 +1609,7 @@ mod tests {
         let expr = registry.get(DEFAULT_PRESET_ID).unwrap();
         let frame = FaceFrame::from_params(FaceFrameParams::default());
         let uv = product_uv_table();
-        let samples = build_face_samples(&uv, &frame);
+        let samples = build_face_samples_yawed(&uv, &frame, 0.0);
         let mut rgb = vec![0u8; samples.len() * 3];
         render(&samples, &frame, expr, &Modulation::default(), &mut rgb);
         let lit = rgb
@@ -1669,7 +1782,7 @@ mod tests {
         let eye = mid.parts.iter().find(|p| p.slot == "eye.l").unwrap();
         let frame = FaceFrame::from_params(FaceFrameParams::default());
         let uv = product_uv_table();
-        let samples = build_face_samples(&uv, &frame);
+        let samples = build_face_samples_yawed(&uv, &frame, 0.0);
         let target = [-0.42f32, 0.26];
         let sample = samples
             .iter()
@@ -1693,7 +1806,7 @@ mod tests {
         let anger = expr.parts.iter().find(|p| p.slot == "anger").unwrap();
         let frame = FaceFrame::from_params(FaceFrameParams::default());
         let uv = product_uv_table();
-        let samples = build_face_samples(&uv, &frame);
+        let samples = build_face_samples_yawed(&uv, &frame, 0.0);
         let hits = samples.iter().any(|sample| {
             sample.front && part_sample(sample.x, sample.y, anger, 1.0, &frame, 0.0).is_some()
         });
@@ -1822,7 +1935,7 @@ mod tests {
         let expr = registry.get(DEFAULT_PRESET_ID).unwrap();
         let frame = FaceFrame::from_params(FaceFrameParams::default());
         let uv = product_uv_table();
-        let samples = build_face_samples(&uv, &frame);
+        let samples = build_face_samples_yawed(&uv, &frame, 0.0);
         let mut dim = vec![0u8; samples.len() * 3];
         let mut bright = vec![0u8; samples.len() * 3];
         render(
@@ -1940,7 +2053,7 @@ mod tests {
         let expr = registry.get(DEFAULT_PRESET_ID).unwrap();
         let frame = FaceFrame::from_params(FaceFrameParams::default());
         let uv = product_uv_table();
-        let samples = build_face_samples(&uv, &frame);
+        let samples = build_face_samples_yawed(&uv, &frame, 0.0);
         let mut open = vec![0u8; samples.len() * 3];
         let mut closed = vec![0u8; samples.len() * 3];
         render(

@@ -3,7 +3,7 @@
   "version": 1,
   "id": "sleepy",
   "displayName": "Sleepy",
-  "breathingPeriodMs": 5600,
+  "breathingPeriodMs": 9000,
   "background": [0, 0, 0],
   "parts": [
     {

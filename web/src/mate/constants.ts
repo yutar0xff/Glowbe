@@ -8,3 +8,5 @@ export const DEFAULT_MATE_TRANSITION_MS = 480
 export const DEFAULT_MATE_BREATHING: MateBreathingParams = {
   enabled: true,
 }
+
+export const DEFAULT_MATE_TRANSITION_ROTATE = false
