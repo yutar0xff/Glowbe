@@ -51,9 +51,9 @@
       "layer": "accessories",
       "kind": "stamp",
       "asset": "anger",
-      "pos": [0.70, 0.65],
+      "pos": [-0.70, 0.65],
       "size": [0.20, 0.20],
-      "rotationDeg": -18,
+      "rotationDeg": 18,
       "color": [200, 24, 24],
       "motions": [
         { "type": "rotateWobble", "amplitudeDeg": 3, "periodMs": 2000 }
