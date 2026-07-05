@@ -92,7 +92,7 @@ impl MateRuntimeState {
         layout_id: &str,
         front_yaw_deg: f32,
     ) -> anyhow::Result<()> {
-        if !mate::layout_supported(layout_id) {
+        if !mate::layout_supported(compiled_dir, layout_id) {
             anyhow::bail!("mate mode is not supported for layout {layout_id}");
         }
         let frame_params = *self

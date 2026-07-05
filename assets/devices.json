@@ -4,9 +4,9 @@
   "devices": [
     {
       "id": "019ef385-e1e2-7721-b76b-6e76dee2d308",
-      "displayName": "Proto-1",
-      "mdnsHostname": "glowbe-15faces",
-      "layoutId": "prototype-icosahedron-15",
+      "displayName": "15 panels",
+      "mdnsHostname": "glowbe-15panels",
+      "layoutId": "icosahedron-15",
       "outputFps": 60,
       "masterBrightness": 0.1,
       "masterGamma": 1.0,
@@ -14,13 +14,13 @@
     },
     {
       "id": "019ef385-e1e2-7721-b76b-6e8511ef406f",
-      "displayName": "Product-1",
-      "mdnsHostname": "glowbe-60faces",
-      "layoutId": "product-geodesic-2v-60",
+      "displayName": "60 panels",
+      "mdnsHostname": "glowbe-60panels",
+      "layoutId": "geodesic-2v-60",
       "outputFps": 120,
       "masterBrightness": 0.18,
       "masterGamma": 1.0,
-      "frontYawDeg": -144.0
+      "frontYawDeg": 0.0
     }
   ]
 }

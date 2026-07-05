@@ -11,6 +11,7 @@ use serde::Deserialize;
 use tracing::warn;
 
 use crate::media;
+use crate::layouts;
 use crate::sphere::unit_dir_from_equirect_uv_y_up;
 
 pub mod stamp_edt;
@@ -20,7 +21,9 @@ mod stamps;
 pub use stamp_import::{import_stamp_from_png, write_stamp_json};
 use stamps::{StampMask, StampRegistry};
 
-pub const PRODUCT_LAYOUT_ID: &str = "product-geodesic-2v-60";
+pub const MATE_LAYOUT_ID: &str = "geodesic-2v-60";
+/// Minimum LEDs for mate face rendering (icosahedron-15 has 225).
+pub const MATE_MIN_LED_COUNT: u16 = 225;
 pub const DEFAULT_PRESET_ID: &str = "happy";
 pub const DEFAULT_TRANSITION_MS: u32 = 480;
 
@@ -150,8 +153,10 @@ pub fn build_face_samples_yawed(
         .collect()
 }
 
-pub fn layout_supported(layout_id: &str) -> bool {
-    layout_id == PRODUCT_LAYOUT_ID
+pub fn layout_supported(compiled_dir: &Path, layout_id: &str) -> bool {
+    layouts::read_led_count(compiled_dir, layout_id)
+        .map(|n| n >= MATE_MIN_LED_COUNT)
+        .unwrap_or(false)
 }
 
 // --- Preset / parts ---
@@ -1501,7 +1506,7 @@ mod tests {
     fn product_uv_table() -> Vec<(f32, f32)> {
         let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let compiled = repo.join("assets/compiled");
-        let layout = media::load_layout_uv(&compiled, PRODUCT_LAYOUT_ID).expect("product ledmap");
+        let layout = media::load_layout_uv(&compiled, MATE_LAYOUT_ID).expect("product ledmap");
         let mut uv = vec![(0.5f32, 0.5f32); layout.led_count];
         for p in layout.leds {
             if p.i < uv.len() {

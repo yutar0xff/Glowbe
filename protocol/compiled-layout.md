@@ -8,14 +8,14 @@
 assets/compiled/<layout-id>.meta.json
 assets/compiled/<layout-id>.ledmap.json   # サーバ用 UV テーブル
 assets/compiled/<layout-id>.bin             # ファーム用（配線メタ）
-firmware/esp32s3/include/generated/<layout-id>/glowbe_layout.h    # ファーム用 C ヘッダ（自動生成）
+firmware/esp32/include/generated/<layout-id>/glowbe_layout.h    # ファーム用 C ヘッダ（自動生成）
 ```
 
 ## `.meta.json`
 
 ```json
 {
-  "layoutId": "prototype-icosahedron-15",
+  "layoutId": "icosahedron-15",
   "layoutHash": 2085622039,
   "ledCount": 225,
   "dataLineCount": 5,

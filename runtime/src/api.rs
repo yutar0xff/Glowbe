@@ -5,7 +5,7 @@ use axum::http::header;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use tokio::time;
 use uuid::Uuid;
 
+use crate::layouts;
 use crate::clip;
 use crate::device_slot::DeviceSlot;
 use crate::devices::DeviceRecord;
@@ -26,6 +27,7 @@ use crate::state::{
     InteractiveEffectKind, InteractivePulse, MediaUploadEntry, MediaUploadPhase, OutputMode,
     RuntimeState, SharedState,
 };
+use crate::wire;
 
 /// WebSocket バイナリ LED プレビュー（ビッグエンディアン）。ASCII `GBP1`。
 const PREVIEW_FRAME_MAGIC: u32 = 0x4742_5031;
@@ -49,6 +51,10 @@ struct StateResponse {
     uptime_sec: u64,
     frame_loop_stale_ms: u64,
     layout_mismatch: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected_layout_hash: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    esp_layout_hash: Option<u32>,
     frames_sent: u64,
     master_brightness: f64,
     master_gamma: f64,
@@ -276,6 +282,8 @@ struct DeviceListResponse {
     devices: Vec<DeviceRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     created_device_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<StateResponse>,
 }
 
 #[derive(Deserialize)]
@@ -794,6 +802,42 @@ pub fn router(app: SharedState) -> Router {
             get({
                 let app = app.clone();
                 move || get_layout_catalog(app.clone())
+            })
+            .post({
+                let app = app.clone();
+                move |body| post_layout_create(app.clone(), body)
+            }),
+        )
+        .route(
+            "/api/v1/layouts/import",
+            post({
+                let app = app.clone();
+                move |body| post_layout_import(app.clone(), body)
+            }),
+        )
+        .route(
+            "/api/v1/layouts/{layout_id}/source",
+            get({
+                let app = app.clone();
+                move |path| get_layout_source(app.clone(), path)
+            })
+            .put({
+                let app = app.clone();
+                move |path, body| put_layout_source(app.clone(), path, body)
+            }),
+        )
+        .route(
+            "/api/v1/layouts/{layout_id}",
+            delete({
+                let app = app.clone();
+                move |path| delete_layout(app.clone(), path)
+            }),
+        )
+        .route(
+            "/api/v1/layouts/{layout_id}/duplicate",
+            post({
+                let app = app.clone();
+                move |path, body| post_layout_duplicate(app.clone(), path, body)
             }),
         )
         .route(
@@ -1505,12 +1549,212 @@ async fn get_clips(app: SharedState) -> impl IntoResponse {
 }
 
 async fn get_layout_catalog(app: SharedState) -> impl IntoResponse {
-    match media::list_compiled_layouts(&app.compiled_dir) {
+    let device_usage = match app.registry_snapshot() {
+        Ok(reg) => reg
+            .devices()
+            .iter()
+            .map(|d| (d.id.clone(), d.layout_id.clone()))
+            .collect::<Vec<_>>(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("registry: {e}"),
+                }),
+            )
+                .into_response();
+        }
+    };
+    match layouts::list_layout_catalog(&app.repo_root, &app.compiled_dir, &device_usage) {
         Ok(layouts) => (StatusCode::OK, Json(layouts)).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
                 error: format!("list layouts failed: {e:#}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LayoutDuplicateRequest {
+    new_id: Option<String>,
+    display_name: Option<String>,
+}
+
+async fn get_layout_source(
+    app: SharedState,
+    Path(layout_id): Path<String>,
+) -> impl IntoResponse {
+    match layouts::get_layout_source(&app.repo_root, &layout_id) {
+        Ok(source) => (StatusCode::OK, Json(source)).into_response(),
+        Err(e) => (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn post_layout_create(
+    app: SharedState,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    match layouts::create_layout(&app.repo_root, &app.compiled_dir, body) {
+        Ok(result) => {
+            app.refresh_expected_layout_hash(&result.layout_id);
+            (
+                StatusCode::CREATED,
+                Json(json!({
+                    "layoutId": result.layout_id,
+                    "layoutHash": result.layout_hash,
+                    "ledCount": result.led_count,
+                    "dataLineCount": result.data_line_count,
+                    "gpios": result.gpios,
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn put_layout_source(
+    app: SharedState,
+    Path(layout_id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    match layouts::update_layout_source(&app.repo_root, &app.compiled_dir, &layout_id, body) {
+        Ok(result) => {
+            app.refresh_expected_layout_hash(&result.layout_id);
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "layoutId": result.layout_id,
+                    "layoutHash": result.layout_hash,
+                    "ledCount": result.led_count,
+                    "dataLineCount": result.data_line_count,
+                    "gpios": result.gpios,
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_layout(app: SharedState, Path(layout_id): Path<String>) -> impl IntoResponse {
+    let device_usage = match app.registry_snapshot() {
+        Ok(reg) => reg
+            .devices()
+            .iter()
+            .map(|d| (d.id.clone(), d.layout_id.clone()))
+            .collect::<Vec<_>>(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("registry: {e}"),
+                }),
+            )
+                .into_response();
+        }
+    };
+    match layouts::delete_user_layout(&app.repo_root, &app.compiled_dir, &layout_id, &device_usage) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LayoutImportRequest {
+    studio_layout: serde_json::Value,
+    variant: String,
+}
+
+async fn post_layout_import(
+    app: SharedState,
+    Json(req): Json<LayoutImportRequest>,
+) -> impl IntoResponse {
+    match layouts::import_studio_layout(
+        &app.repo_root,
+        &app.compiled_dir,
+        &req.studio_layout,
+        &req.variant,
+    ) {
+        Ok((layout, result)) => (
+            StatusCode::CREATED,
+            Json(json!({
+                "layout": layout,
+                "layoutId": result.layout_id,
+                "layoutHash": result.layout_hash,
+                "ledCount": result.led_count,
+                "dataLineCount": result.data_line_count,
+                "gpios": result.gpios,
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn post_layout_duplicate(
+    app: SharedState,
+    Path(layout_id): Path<String>,
+    Json(req): Json<LayoutDuplicateRequest>,
+) -> impl IntoResponse {
+    match layouts::duplicate_preset_to_user(
+        &app.repo_root,
+        &app.compiled_dir,
+        &layout_id,
+        req.new_id.as_deref(),
+        req.display_name.as_deref(),
+    ) {
+        Ok((layout, result)) => (
+            StatusCode::CREATED,
+            Json(json!({
+                "layout": layout,
+                "layoutId": result.layout_id,
+                "layoutHash": result.layout_hash,
+                "ledCount": result.led_count,
+                "dataLineCount": result.data_line_count,
+                "gpios": result.gpios,
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
             }),
         )
             .into_response(),
@@ -1581,7 +1825,7 @@ async fn get_mate_presets(app: SharedState, Query(q): Query<DeviceIdQuery>) -> i
         Err(e) => return e.into_response(),
     };
     let layout_id = slot.state.read().await.layout_id.clone();
-    if let Err(resp) = mate_api::guard_mate_layout(&layout_id) {
+    if let Err(resp) = mate_api::guard_mate_layout(&app.compiled_dir, &layout_id) {
         return resp.into_response();
     }
     let presets = match mate_api::read_mate_registry(&app) {
@@ -1610,7 +1854,7 @@ async fn post_mate_expression(
         Err(e) => return e.into_response(),
     };
     let layout_id = slot.state.read().await.layout_id.clone();
-    if let Err(resp) = mate_api::guard_mate_layout(&layout_id) {
+    if let Err(resp) = mate_api::guard_mate_layout(&app.compiled_dir, &layout_id) {
         return resp.into_response();
     }
     let preset_id = req.preset.trim();
@@ -1663,7 +1907,7 @@ async fn post_mate_breathing(
         Err(e) => return e.into_response(),
     };
     let layout_id = slot.state.read().await.layout_id.clone();
-    if let Err(resp) = mate_api::guard_mate_layout(&layout_id) {
+    if let Err(resp) = mate_api::guard_mate_layout(&app.compiled_dir, &layout_id) {
         return resp.into_response();
     }
     let mut params = slot.mate_breathing_params();
@@ -1683,7 +1927,7 @@ async fn post_mate_transition(
         Err(e) => return e.into_response(),
     };
     let layout_id = slot.state.read().await.layout_id.clone();
-    if let Err(resp) = mate_api::guard_mate_layout(&layout_id) {
+    if let Err(resp) = mate_api::guard_mate_layout(&app.compiled_dir, &layout_id) {
         return resp.into_response();
     }
     slot.set_mate_transition_rotate(req.rotate);
@@ -1787,7 +2031,7 @@ async fn post_mode(
     }
     if mode == OutputMode::Mate {
         let layout_id = slot.state.read().await.layout_id.clone();
-        if let Err(resp) = mate_api::guard_mate_layout(&layout_id) {
+        if let Err(resp) = mate_api::guard_mate_layout(&app.compiled_dir, &layout_id) {
             return resp.into_response();
         }
         let mate_setup_err = {
@@ -1817,6 +2061,9 @@ async fn post_mode(
 
 fn state_response(slot: &DeviceSlot, s: &RuntimeState) -> StateResponse {
     let rec = slot.record_snapshot();
+    let expected_layout_hash = slot.expected_layout_hash.read().ok().and_then(|g| *g);
+    let esp_layout_hash = s.esp_layout_hash;
+    let layout_mismatch = wire::layout_hash_mismatch(expected_layout_hash, esp_layout_hash);
     StateResponse {
         device_id: slot.id(),
         layout_id: s.layout_id.clone(),
@@ -1833,7 +2080,9 @@ fn state_response(slot: &DeviceSlot, s: &RuntimeState) -> StateResponse {
         loop_clip_id: s.loop_clip_id.clone(),
         uptime_sec: s.uptime_sec(),
         frame_loop_stale_ms: slot.metrics.frame_loop_stale_ms(),
-        layout_mismatch: s.layout_mismatch,
+        layout_mismatch,
+        expected_layout_hash,
+        esp_layout_hash,
         frames_sent: slot.metrics.frames_sent(),
         master_brightness: f64::from(slot.master_brightness()),
         master_gamma: f64::from(slot.master_gamma()),
@@ -1932,6 +2181,7 @@ async fn get_devices(app: SharedState) -> impl IntoResponse {
                 default_device_id: app.default_device_id.clone(),
                 devices: reg.devices().to_vec(),
                 created_device_id: None,
+                state: None,
             }),
         )
             .into_response(),
@@ -2000,6 +2250,7 @@ async fn post_device(app: SharedState, Json(req): Json<DeviceCreateRequest>) -> 
                 default_device_id: app.default_device_id.clone(),
                 devices: reg.devices().to_vec(),
                 created_device_id: Some(created_id),
+                state: None,
             }),
         )
             .into_response(),
@@ -2031,7 +2282,6 @@ async fn patch_device(
             return (StatusCode::NOT_FOUND, Json(ErrorResponse { error: e })).into_response();
         }
     };
-    let old_layout = slot.state.read().await.layout_id.clone();
     let rec = DeviceRecord {
         id: device_id,
         display_name: req.display_name,
@@ -2049,19 +2299,22 @@ async fn patch_device(
     }) {
         return (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })).into_response();
     }
+    if let Err(e) = slot
+        .apply_device_layout(&app.compiled_dir, &rec.layout_id)
+        .await
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response();
+    }
     slot.update_record(rec.clone());
     slot.bump_output_send_epoch();
-    if old_layout != rec.layout_id {
-        if let Err(e) = slot.switch_layout(&app.compiled_dir, rec.layout_id).await {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: format!("{e:#}"),
-                }),
-            )
-                .into_response();
-        }
-    }
+    let runtime_state = slot.state.read().await;
+    let state = state_response(&slot, &runtime_state);
     match app.registry_snapshot() {
         Ok(reg) => (
             StatusCode::OK,
@@ -2069,6 +2322,7 @@ async fn patch_device(
                 default_device_id: app.default_device_id.clone(),
                 devices: reg.devices().to_vec(),
                 created_device_id: None,
+                state: Some(state),
             }),
         )
             .into_response(),

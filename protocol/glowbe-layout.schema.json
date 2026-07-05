@@ -10,7 +10,7 @@
     "version": { "const": 1 },
     "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
     "displayName": { "type": "string" },
-    "variant": { "enum": ["product", "prototype"] },
+    "variant": { "enum": ["geodesic-2v-60", "icosahedron-15", "custom"] },
     "geometry": {
       "type": "object",
       "required": ["preset", "radiusMm", "units", "disabledFaceIds"],

@@ -47,8 +47,11 @@ pub fn apply_mate_expression(
     Ok(())
 }
 
-pub fn guard_mate_layout(layout_id: &str) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
-    if mate::layout_supported(layout_id) {
+pub fn guard_mate_layout(
+    compiled_dir: &Path,
+    layout_id: &str,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if mate::layout_supported(compiled_dir, layout_id) {
         Ok(())
     } else {
         Err(unsupported_layout_response(layout_id))

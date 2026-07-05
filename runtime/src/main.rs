@@ -1,3 +1,4 @@
+mod layouts;
 mod api;
 mod clip;
 mod config;
@@ -54,6 +55,8 @@ async fn main() -> Result<()> {
     let config = config::load(Path::new(&config_path)).context("load config")?;
 
     let compiled_dir = compiled_dir(&config)?;
+    let repo_root = find_repo_root()?;
+    layouts::ensure_preset_compiled(&repo_root, &compiled_dir).context("preset layouts")?;
     let clips_dir = clips_dir(&config)?;
     std::fs::create_dir_all(&clips_dir)
         .with_context(|| format!("create clips dir {}", clips_dir.display()))?;
@@ -72,6 +75,7 @@ async fn main() -> Result<()> {
     let app = new_shared(
         registry,
         &config.modes.default,
+        repo_root,
         compiled_dir.clone(),
         clips_dir,
         uploads_dir,

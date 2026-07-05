@@ -262,6 +262,7 @@ impl DeviceSlot {
         s.esp_rssi = Some(st.rssi);
         s.esp_drops = Some(st.drops);
         s.esp_status_addr = Some(from);
+        s.esp_layout_hash = st.layout_hash;
         s.layout_mismatch = mismatch;
     }
 
@@ -446,6 +447,46 @@ impl DeviceSlot {
         }
         self.bump_output_send_epoch();
         Ok(())
+    }
+
+    pub fn set_expected_layout_hash(&self, hash: Option<u32>) {
+        if let Ok(mut g) = self.expected_layout_hash.write() {
+            *g = hash;
+        }
+    }
+
+    pub fn sync_expected_layout_hash_from_meta(
+        &self,
+        compiled_dir: &std::path::Path,
+        layout_id: &str,
+    ) {
+        let meta_path = compiled_dir.join(format!("{}.meta.json", layout_id));
+        let hash = std::fs::read_to_string(&meta_path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+            .and_then(|meta| {
+                meta.get("layoutHash")
+                    .and_then(|v| v.as_u64())
+                    .map(|x| x as u32)
+            });
+        self.set_expected_layout_hash(hash);
+    }
+
+    /// Apply compiled layout profile to the live slot (state, LED count, expected hash).
+    /// Call before updating connection fields (mDNS / IP) so STATUS mismatch uses the new hash
+    /// even when UDP output cannot reconnect yet.
+    pub async fn apply_device_layout(
+        &self,
+        compiled_dir: &std::path::Path,
+        layout_id: &str,
+    ) -> anyhow::Result<()> {
+        let current = self.state.read().await.layout_id.clone();
+        if current != layout_id {
+            self.switch_layout(compiled_dir, layout_id.to_string()).await
+        } else {
+            self.sync_expected_layout_hash_from_meta(compiled_dir, layout_id);
+            Ok(())
+        }
     }
 
     pub fn mate_preset_id(&self) -> Option<String> {

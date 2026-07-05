@@ -1,8 +1,8 @@
 {
-  "layoutId": "product-geodesic-2v-60-s3-dev",
-  "layoutHash": 1355247875,
-  "displayName": "Glowbe Product — S3 dev bench GPIOs",
-  "variant": "product",
+  "layoutId": "geodesic-2v-60",
+  "layoutHash": 2680824753,
+  "displayName": "Geodesic 2V (60 panels)",
+  "variant": "geodesic-2v-60",
   "ledCount": 1260,
   "dataLineCount": 10,
   "gpios": [
@@ -11,11 +11,11 @@
     16,
     17,
     18,
-    4,
-    5,
-    6,
-    7,
-    8
+    25,
+    23,
+    22,
+    21,
+    19
   ],
   "ledsPerLine": [
     105,

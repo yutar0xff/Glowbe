@@ -33,7 +33,7 @@ cargo run --manifest-path runtime/Cargo.toml -- \
 
 ## デモ: ランダム配置の expanding ring（合成シーケンス）
 
-`prototype-icosahedron-15` の ledmap を前提に、Interactive と同じ **expanding ring** 数式で複数パルスを重ねた `frames.bin` を生成する（約 12.5 秒・30fps）。
+`icosahedron-15` の ledmap を前提に、Interactive と同じ **expanding ring** 数式で複数パルスを重ねた `frames.bin` を生成する（約 12.5 秒・30fps）。
 
 ```bash
 # リポジトリルートから（第1引数省略時は id = demo-expanding-rings）

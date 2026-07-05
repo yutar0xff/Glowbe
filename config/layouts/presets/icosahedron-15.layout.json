@@ -1,9 +1,9 @@
 {
   "format": "glowbe-layout",
   "version": 1,
-  "id": "prototype-icosahedron-15",
-  "displayName": "Glowbe default — Icosahedron (15 panels)",
-  "variant": "prototype",
+  "id": "icosahedron-15",
+  "displayName": "Icosahedron (15 panels)",
+  "variant": "icosahedron-15",
   "geometry": {
     "preset": "icosahedron",
     "radiusMm": 28.531695488854613,

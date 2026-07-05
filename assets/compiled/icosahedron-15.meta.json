@@ -1,8 +1,8 @@
 {
-  "layoutId": "prototype-icosahedron-15",
-  "layoutHash": 2085622039,
-  "displayName": "Glowbe default — Icosahedron (15 panels)",
-  "variant": "prototype",
+  "layoutId": "icosahedron-15",
+  "layoutHash": 2489929828,
+  "displayName": "Icosahedron (15 panels)",
+  "variant": "icosahedron-15",
   "ledCount": 225,
   "dataLineCount": 5,
   "gpios": [
