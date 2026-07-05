@@ -1,63 +1,27 @@
-# LED 出力方式（ESP32 無印 vs ESP32-S3）
+# LED 出力方式（ESP32）
 
-Glowbe ファームは **チップ世代で LED 駆動方式を分ける**。無印向けの定石を S3 にそのまま適用しない。
+Glowbe ファームウェアは **ESP32（無印）** 上で、NeoPixelBus の **I2S0 並列**転送により複数の WS2812 系データ線を同時駆動する。
 
-## 正確な表現（他者への説明用）
+## 方式
 
-**ESP32-S3 では I2S ではなく、LCD ペリフェラル（Intel 8080 バス互換 / I8080）を利用した DMA パラレル転送によって、複数データ線への同時出力を行う。**
+| PlatformIO env | Layout | Method | ソース |
+|----------------|--------|--------|--------|
+| `15panels` | `icosahedron-15` (5 lines) | `NeoEsp32I2s0X8Ws2812xMethod` | `src/led_driver.cpp` |
+| `60panels` | `geodesic-2v-60` (10 lines) | `NeoEsp32I2s0X16Ws2812xMethod` | 同上 |
 
-**ESP32 無印では I2S ペリフェラルを用いた DMA パラレル転送**（NeoPixelBus の `NeoEsp32I2s0X8Ws2812xMethod` 系）で複数データ線を同期送出する。
+I2S0 ペリフェラル + DMA で、8〜16 本規模の GPIO から同時にビットストリームを出力する。CPU 負荷を抑えつつマルチライン出力を実現する定番構成。
 
-実装は **Makuna/NeoPixelBus**（`makuna/NeoPixelBus`）。S3 は `NeoEsp32LcdX8Ws2812xMethod` / `NeoEsp32LcdX16Ws2812xMethod`、無印は `NeoEsp32I2s0X8Ws2812xMethod` / `NeoEsp32I2s0X16Ws2812xMethod`（**I2S0 を明示**）。データ線が 8 本を超えるレイアウトでは自動的に X16 側の型を選ぶ（`GLOWBE_DATA_LINES > 8`）。
+## 色順
 
-## 1. 古い認識の否定
+ランタイム → UDP のペイロードは **論理 RGB**（R, G, B）。ファームは `NeoGrbFeature` でストリップ RAM に書き込む（SK6805 等 GRB 系）。
 
-従来の **ESP32（無印）** では、I2S ペリフェラルを転用して LED のパラレル出力を実現する手法（archived-Glowbe の I2SClocklessLedDriver 等）が広く使われた。
-
-**ESP32-S3 にそのまま同じ考え方を適用するのは誤り。** 内部バス構成が異なり、S3 では LCD ペリフェラル + DMA が並列出力の正攻法である。
-
-## 2. ハードウェアの真実（S3）
-
-ESP32-S3 で多ピンを低 CPU 負荷で駆動するには、内蔵 **LCD ペリフェラル（8080 系）** を使う。DMA がメモリ上のバッファから LCD ペリフェラルへ転送し、**8〜16 本規模の GPIO から同時にビットストリームを出力**できる。
-
-## 3. ソフトウェア（本リポジトリ）
-
-| ターゲット | PlatformIO env | 実装 | ソース |
-|------------|----------------|------|--------|
-| **ESP32-S3** | `prototype` | NeoPixelBus **LCD** 並列（`NeoEsp32LcdX8/X16Ws2812xMethod`） | `src/led_driver_s3.cpp` |
-| **ESP32 無印** | `prototype-esp32` | NeoPixelBus **I2S0** 並列（`NeoEsp32I2s0X8/X16Ws2812xMethod`） | `src/led_driver_esp32.cpp` |
-
-### データ線とバッファ
-
-- レイアウトの各データ線ごとに `NeoPixelBus<NeoGrbFeature, Method>(count, pin)` を生成する。並列 LCD / I2S では **全線のビット長を揃える**必要があるため、`count` は `GLOWBE_MAX_LINE_LEDS`（線ごとの最大 LED 数）とし、実 LED 数が少ない線は末尾を黒でパディングする（`include/led_driver_parallel.h`）。
-- UDP フレームの **論理 RGB** は `GLOWBE_LINE_LED_COUNTS` の順に各ストリップへ割り当てる（一次元インデックスと一致）。
-- `Show()` 後は DMA 完了と WS2812 ラッチ待ちを行う（`glowbe_led_wait_ready()`）。
-- **UDP / LED 分離:** `glowbe_stream_workers.cpp` が UDP 受信（Core 0）と LED 表示（Core 1）を担当。完全フレームは `glowbe_frame_queue.h`（静的バッファ）経由。`main.cpp` の `loop()` は診断・STATUS のみ。起動は `bringUp()` で UDP とワーカーを一度だけ初期化する。
-
-### ESP32 無印でチラつきが出る場合
-
-- **UDP**: `main.cpp` で受信キューをドレインし、**完全フレームが揃ったときだけ** LED を更新する。欠落・遅延時は **前フレームを保持**（受信途絶で消灯しない）。
-- **プレイアウト遅延（ジッタバッファ）**: `include/glowbe_playout.h` の `GLOWBE_PLAYOUT_LAG_FRAMES`（既定 `2`）で、表示を数フレーム遅らせてバースト吸収する。`0` で無効。`GLOWBE_PLAYOUT_RING_CAP` はバースト用のリング深さ（既定 `8`）。ビルド上書きは `platformio.ini` の `build_flags` に `-D GLOWBE_PLAYOUT_LAG_FRAMES=0` 等。
-- **I2S 占有**: I2S0 を LED 用に使うため、同一ペリフェラルを使う I2S オーディオ等とは併用できない。
-
-### ESP32-S3 での併用注意
-
-- **LCD ペリフェラル**を使うため、内蔵 LCD 等と競合しないよう配線・ソフト構成を確認する。
-
-共通: UDP 受信・フレーム組み立ては `main.cpp` + `glowbe_wire.h`。
-ピンと本数は `tools/layout-compile.ts` が `include/generated/<layout-id>/glowbe_layout.h` に生成する。
-
-## ビルド
+## ビルド例
 
 ```bash
-# S3（届いたらこちらを本番）
-uv run pio run -e prototype -t upload
-
-# 手元の ESP32 無印（プロトタイプ検証）
-uv run pio run -e prototype-esp32 -t upload
+cd firmware/esp32
+uv sync
+uv run pio run -e 15panels -t upload
+uv run pio run -e 60panels -t upload
 ```
 
-## 参照
-
-- NeoPixelBus 例: `NeoPixel_ESP32_LcdParallel`（S3）
-- NeoPixelBus ESP32 I2S 並列: `NeoEsp32I2s0X8Ws2812xMethod` 等（`src/internal/methods/NeoEsp32I2sXMethod.h`）
+レイアウトヘッダは `include/generated/<layout-id>/glowbe_layout.h`。各 env の `-I include/generated/...` で選択する。

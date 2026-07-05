@@ -16,7 +16,7 @@ import {
   DEFAULT_MATE_PRESET_ID,
   DEFAULT_MATE_TRANSITION_MS,
   DEFAULT_MATE_TRANSITION_ROTATE,
-  MATE_LAYOUT_ID,
+  mateSupportedForLedCount,
 } from '@/mate/constants'
 import type { MateBreathingParams } from '@/mate/types'
 import { useMatePresets } from '@/mate/useMatePresets'
@@ -33,7 +33,7 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
     mateBreathingBusy,
     mateTransitionRotateBusy,
   } = useGlowbeRuntime()
-  const mateSupported = state.layoutId === MATE_LAYOUT_ID
+  const mateSupported = mateSupportedForLedCount(state.ledCount)
 
   const [transitionMs, setTransitionMs] = useState(DEFAULT_MATE_TRANSITION_MS)
   const [resetBusy, setResetBusy] = useState(false)
@@ -117,10 +117,11 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
     return (
       <Alert>
         <Smile className="size-4" aria-hidden />
-        <AlertTitle>Mate mode needs the product layout</AlertTitle>
+        <AlertTitle>Mate mode needs at least 225 LEDs</AlertTitle>
         <AlertDescription>
-          Switch this device to <span className="font-mono">{MATE_LAYOUT_ID}</span> in Device settings. The
-          prototype layout does not have enough LEDs for face rendering.
+          The active chain profile has {state.ledCount} LEDs. Switch to{' '}
+          <span className="font-mono">icosahedron-15</span> or{' '}
+          <span className="font-mono">geodesic-2v-60</span> in Device settings.
         </AlertDescription>
       </Alert>
     )

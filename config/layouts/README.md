@@ -1,57 +1,66 @@
-# LED レイアウト（`glowbe-layout` v1）
+# LED layouts (`glowbe-layout` v1)
 
-ランタイム・ファームウェアが参照する **配線と幾何プリセット** の定義。変更・追加があり得る。
+Canonical wiring and geometry definitions for runtime and firmware.
 
-## ファイル
+## Storage
 
-| 用途 | パス | `id` |
-|------|------|------|
-| 製品版 | [`product.layout.json`](product.layout.json) | `product-geodesic-2v-60` |
-| 製品版（S3 検証 GPIO） | [`product-s3-dev.layout.json`](product-s3-dev.layout.json) | `product-geodesic-2v-60-s3-dev` |
-| プロトタイプ | [`prototype.layout.json`](prototype.layout.json) | `prototype-icosahedron-15` |
+| Kind | Source JSON | Compiled output | Git |
+|------|-------------|-----------------|-----|
+| Preset | `config/layouts/presets/<id>.layout.json` | `assets/compiled/<id>.*` + `firmware/esp32/include/generated/<id>/` | Yes (source + preset compiled) |
+| User (custom chain profile) | `assets/layouts/user/<id>.layout.json` | Same paths as presets | No (`assets/layouts/user/` is gitignored) |
 
-スキーマ: [`protocol/glowbe-layout.schema.json`](../protocol/glowbe-layout.schema.json)
+Schema: [`protocol/glowbe-layout.schema.json`](../../protocol/glowbe-layout.schema.json)
 
-## 形式概要
+## Presets (git)
+
+| File | `id` |
+|------|------|
+| [`presets/geodesic-2v-60.layout.json`](presets/geodesic-2v-60.layout.json) | `geodesic-2v-60` |
+| [`presets/icosahedron-15.layout.json`](presets/icosahedron-15.layout.json) | `icosahedron-15` |
+
+Custom profiles are created in Studio via **Chain profile → Create new** and saved on first **Save**.
+
+## Format (summary)
 
 ```json
 {
   "format": "glowbe-layout",
   "version": 1,
-  "id": "product-geodesic-2v-60",
-  "variant": "product",
+  "id": "geodesic-2v-60",
+  "variant": "geodesic-2v-60",
   "geometry": { "preset": "geodesic-ico-2v", "radiusMm": 50, "disabledFaceIds": [] },
   "face": { "ledCount": 21, "pattern": "zigzag", "paddingMm": 2.1 },
   "wiring": {
     "chip": "SK6805",
     "colorOrder": "GRB",
-    "dataLines": [{ "gpio": 13, "faceChain": ["face-24", "..."], "faceRotations": {}, "reversedFaces": [] }]
+    "dataLines": [{ "gpio": 13, "faceChain": ["face-24"], "faceRotations": {}, "reversedFaces": [] }]
   }
 }
 ```
 
-- **面の頂点座標は含めない** — `geometry.preset` と `disabledFaceIds` から `tools/layout-compile` が展開する（archived-glowbe のプリセット定義を移植予定）。
-- ランタイム用の **LED インデックス ↔ UV** テーブルはコンパイル成果物（`assets/compiled/<layout-id>.bin`）として別出力する。
+Face vertex coordinates are derived at compile time from `geometry.preset` and `disabledFaceIds`.
 
-## 旧形式からの移行
+## Compile / save
 
-`glowbe-studio-layout` からの変換:
+**Studio save** writes source JSON and compiled artifacts in one step (no separate compile action for operators).
+
+Developer / CI:
 
 ```bash
-node tools/migrate-studio-layout.mjs <旧.json> <新.layout.json> product|prototype
+npx tsx tools/layout-compile.ts config/layouts/presets/icosahedron-15.layout.json
+npx tsx tools/layout-compile.ts config/layouts/presets/geodesic-2v-60.layout.json
 ```
 
-## 変更手順
+Runtime uses `npx tsx tools/layout-build.mjs` (stdin IPC) on `PUT /api/v1/layouts/{id}/source`.
 
-1. `product.layout.json` または `prototype.layout.json` を編集（`id` は変えないか、変える場合はファーム設定も更新）。
-2. コンパイル（`assets/compiled/<id>.*` と `firmware/esp32s3/include/generated/<id>/glowbe_layout.h` を出力）:
+## Import from archived studio format
 
-   ```bash
-   npx tsx tools/layout-compile.ts config/layouts/prototype.layout.json
-   npx tsx tools/layout-compile.ts config/layouts/product.layout.json
-   npx tsx tools/layout-compile.ts config/layouts/product-s3-dev.layout.json
-   ```
+```bash
+node tools/migrate-studio-layout.mjs <studio.json> <out.layout.json> geodesic-2v-60|icosahedron-15
+```
 
-3. ファーム: `platformio.ini` の各 `env` で `-I include/generated/<layout-id>` を **`include` より前**に置き、その ID の `glowbe_layout.h` が選ばれるようにする。
+Or `POST /api/v1/layouts/import` from Studio.
 
-4. `docs/ARCHITECTURE.md` のレイアウト表を必要に応じて更新。
+## Firmware
+
+Each PlatformIO env prepends `-I include/generated/<layout-id>` so `#include "glowbe_layout.h"` resolves to the matching profile. Reflash after changing a device’s chain profile.

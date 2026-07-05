@@ -12,7 +12,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 
 ```json
 {
-  "layoutId": "prototype-icosahedron-15",
+  "layoutId": "icosahedron-15",
   "mode": "loop",
   "fpsOut": 60.1,
   "fpsRx": 59.8,
@@ -142,7 +142,7 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 
 ```json
 {
-  "layoutId": "prototype-icosahedron-15",
+  "layoutId": "icosahedron-15",
   "ledCount": 225,
   "leds": [
     { "i": 0, "u": 0.574469, "v": 0.630754, "channel": 0, "chainIndex": 0 }
@@ -154,25 +154,75 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 
 ### `GET /api/v1/layouts`
 
-`assets/compiled` にある `*.meta.json` を列挙し、利用可能なレイアウトの要約を返す。
+Preset + user chain profile catalog. Each entry includes compiled metadata and editability.
 
 ```json
 [
   {
-    "layoutId": "prototype-icosahedron-15",
-    "displayName": "Prototype icosahedron (15 faces)",
-    "ledCount": 225,
-    "variant": "prototype"
+    "layoutId": "geodesic-2v-60",
+    "displayName": "Glowbe Product (Geodesic 2V, 60 panels)",
+    "ledCount": 1260,
+    "variant": "product",
+    "sourceKind": "preset",
+    "dataLineCount": 10,
+    "gpios": [13, 14, 16, 17, 18, 25, 23, 22, 21, 19],
+    "layoutHash": 1234567890,
+    "editable": false,
+    "inUseByDevices": ["default"]
   }
 ]
 ```
 
-→ 実装済み。ディレクトリ読み取り失敗時は `500` + `{ "error": "..." }`。
+- `sourceKind`: `preset` (git under `config/layouts/presets/`) or `user` (`assets/layouts/user/`, gitignored).
+- `editable`: `false` for presets; custom profiles are editable in Studio.
+- Saving a user profile compiles artifacts in the same request (no separate compile endpoint).
+
+### `GET /api/v1/layouts/{layoutId}/source`
+
+Returns the canonical `glowbe-layout` v1 JSON for editing or export. `404` if missing.
+
+### `POST /api/v1/layouts`
+
+Create a user chain profile. Body: full `glowbe-layout` v1 object. Compiles `assets/compiled/*` and `firmware/esp32/include/generated/{id}/` in the same request.
+
+Response `201`:
+
+```json
+{ "layoutId": "custom-a1b2c3d4", "layoutHash": 123, "ledCount": 225, "dataLineCount": 5, "gpios": [16, 17, 18, 19, 21] }
+```
+
+### `PUT /api/v1/layouts/{layoutId}/source`
+
+Update a **user** profile (presets are read-only). Body: `glowbe-layout` v1. Rolls back source file if compile fails.
+
+### `DELETE /api/v1/layouts/{layoutId}`
+
+Delete a user profile when not referenced by any device. `204` on success.
+
+### `POST /api/v1/layouts/import`
+
+Import archived `glowbe-studio-layout` JSON.
+
+```json
+{ "studioLayout": { "kind": "glowbe-studio-layout", "...": "..." }, "variant": "product" }
+```
+
+Creates a user profile, migrates to v1, and compiles. Response `201` includes `layout` + compile summary (same fields as `POST /api/v1/layouts`).
+
+### `POST /api/v1/layouts/{layoutId}/duplicate`
+
+Duplicate a **preset** (or any existing source) into a new user profile.
+
+```json
+{ "newId": "optional-id", "displayName": "My dev board GPIO" }
+```
+
+Response `201` with `layout` + compile summary.
 
 ### `POST /api/v1/device/layout`
 
 ```json
-{ "layoutId": "product-geodesic-2v-60" }
+{ "layoutId": "geodesic-2v-60" }
 ```
 
 → 実装済み: ランタイムの **`layoutId` / `ledCount` / `layoutHash` 期待値**を切り替え、プレビューバッファと UV キャッシュを再確保する。**クリップ選択は維持**（レイアウト非依存のため再変換不要）。`config.toml` は書き換えない。`400` + `{ "error": "..." }`（メタ JSON が無い等）。成功時は `200` + 更新後 `state`。
@@ -308,8 +358,8 @@ UV プレビュー用。ランタイムの現在の `layoutId` に対応する `
 ### サーバ → クライアント
 
 ```json
-{ "type": "state", "layoutId": "prototype-icosahedron-15", "mode": "loop", "fpsOut": 60.0 }
-{ "type": "layoutUv", "layoutId": "prototype-icosahedron-15", "ledCount": 225, "leds": [ { "i": 0, "u": 0.5, "v": 0.5 } ] }
+{ "type": "state", "layoutId": "icosahedron-15", "mode": "loop", "fpsOut": 60.0 }
+{ "type": "layoutUv", "layoutId": "icosahedron-15", "ledCount": 225, "leds": [ { "i": 0, "u": 0.5, "v": 0.5 } ] }
 { "type": "pong" }
 { "type": "event_status", "event": "interactive", "status": "ok", "action": "setSolid", "enabled": true, "colorRgb": [16, 16, 24] }
 { "type": "event_status", "event": "interactive", "status": "ok", "effect": "sphereGaussian" }
@@ -346,7 +396,12 @@ WebSocket の **Binary** メッセージ。ビッグエンディアン。
 | `POST /api/v1/loop/clear-selection` | 2 | ✅ 実装済 |
 | `POST /api/v1/loop/pause` | 2 | ✅ 実装済 |
 | `GET /api/v1/layout/uv` | 1–2 | ✅ 実装済 |
-| `GET /api/v1/layouts` | 2 | ✅ 実装済 |
+| `GET /api/v1/layouts` | 2 | ✅ catalog (preset + user) |
+| `GET/PUT /api/v1/layouts/{id}/source` | 2 | ✅ |
+| `POST /api/v1/layouts` | 2 | ✅ create user + compile |
+| `DELETE /api/v1/layouts/{id}` | 2 | ✅ user only |
+| `POST /api/v1/layouts/import` | 2 | ✅ studio-layout → v1 |
+| `POST /api/v1/layouts/{id}/duplicate` | 2 | ✅ preset → user |
 | `POST /api/v1/device/layout` | 2 | ✅ 実装済 |
 | `GET /api/v1/ws`（state 配信） | 1–2 | ✅ 実装済 |
 | `GET /api/v1/ws`（interactive） | 1–2 | ✅ interactive UV 合成・複数エフェクト |

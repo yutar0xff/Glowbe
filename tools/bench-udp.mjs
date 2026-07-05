@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const meta = JSON.parse(
-  readFileSync(join(REPO, "assets/compiled/prototype-icosahedron-15.meta.json"), "utf8"),
+  readFileSync(join(REPO, "assets/compiled/icosahedron-15.meta.json"), "utf8"),
 );
 
 const hostArg = process.argv[2];

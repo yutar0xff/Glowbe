@@ -33,6 +33,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(rootDir, './src'),
+        '@glowbe/core': path.resolve(rootDir, '../packages/core/src/index.ts'),
         'shadcn/tailwind.css': path.resolve(
           rootDir,
           'node_modules/shadcn/dist/tailwind.css',

@@ -1,0 +1,113 @@
+{
+  "format": "glowbe-layout",
+  "version": 1,
+  "id": "icosahedron-15",
+  "displayName": "Icosahedron (15 panels)",
+  "variant": "icosahedron-15",
+  "geometry": {
+    "preset": "icosahedron",
+    "radiusMm": 28.531695488854613,
+    "units": "mm",
+    "disabledFaceIds": [
+      "face-15",
+      "face-16",
+      "face-17",
+      "face-18",
+      "face-19"
+    ]
+  },
+  "face": {
+    "ledCount": 15,
+    "pattern": "zigzag",
+    "paddingMm": 2.5,
+    "chainMirrorLR": true,
+    "rowSizes": [
+      5,
+      4,
+      3,
+      2,
+      1
+    ]
+  },
+  "wiring": {
+    "chip": "SK6805",
+    "colorOrder": "GRB",
+    "dataLines": [
+      {
+        "gpio": 16,
+        "faceChain": [
+          "face-14",
+          "face-5",
+          "face-0"
+        ],
+        "faceRotations": {
+          "face-14": 2,
+          "face-5": 1,
+          "face-0": 1
+        },
+        "reversedFaces": []
+      },
+      {
+        "gpio": 17,
+        "faceChain": [
+          "face-6",
+          "face-7",
+          "face-1"
+        ],
+        "faceRotations": {
+          "face-6": 2,
+          "face-7": 1,
+          "face-1": 1
+        },
+        "reversedFaces": []
+      },
+      {
+        "gpio": 18,
+        "faceChain": [
+          "face-8",
+          "face-9",
+          "face-2"
+        ],
+        "faceRotations": {
+          "face-8": 2,
+          "face-9": 1,
+          "face-2": 1
+        },
+        "reversedFaces": []
+      },
+      {
+        "gpio": 19,
+        "faceChain": [
+          "face-10",
+          "face-11",
+          "face-3"
+        ],
+        "faceRotations": {
+          "face-10": 2,
+          "face-11": 1,
+          "face-3": 1
+        },
+        "reversedFaces": []
+      },
+      {
+        "gpio": 21,
+        "faceChain": [
+          "face-12",
+          "face-13",
+          "face-4"
+        ],
+        "faceRotations": {
+          "face-12": 2,
+          "face-13": 1,
+          "face-4": 1
+        },
+        "reversedFaces": []
+      }
+    ]
+  },
+  "meta": {
+    "migratedAt": "2026-06-12T23:43:19.584Z",
+    "migratedFrom": "glowbe-studio-layout/2",
+    "sourceMetaId": "glowbe-default-icosahedron"
+  }
+}

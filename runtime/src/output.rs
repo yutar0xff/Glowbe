@@ -140,6 +140,15 @@ async fn device_output_loop(
     let mut layout_uv_yaw_cache: f32 = f32::NAN;
 
     loop {
+        {
+            let s = slot.state.read().await;
+            if s.led_count != led_count {
+                led_count = s.led_count;
+                rgb.resize(led_count as usize * 3, 0);
+                layout_uv_layout_cache = None;
+                layout_uv_yaw_cache = f32::NAN;
+            }
+        }
         let record = slot.record_snapshot();
         let target_fps = record.output_fps;
         let frame_interval = Duration::from_secs_f64(1.0 / target_fps as f64);
@@ -427,35 +436,18 @@ async fn status_listener(port: u16, app: SharedState) {
                     let from_ip = from.ip().to_string();
                     if let Some(slot) = app.find_device_by_status_ip(&from_ip) {
                         let expected = slot.expected_layout_hash.read().ok().and_then(|g| *g);
-                        let mismatch = match (expected, st.layout_hash) {
-                            (Some(exp), Some(esp_h)) if exp != esp_h => {
+                        let mismatch =
+                            wire::layout_hash_mismatch(expected, st.layout_hash);
+                        if mismatch {
+                            if let (Some(exp), Some(esp_h)) = (expected, st.layout_hash) {
                                 warn!(
                                     device = %slot.id(),
                                     esp_layout_hash = format!("0x{esp_h:08x}"),
                                     expected_layout_hash = format!("0x{exp:08x}"),
                                     "STATUS layout hash mismatch (flash firmware for this layout)"
                                 );
-                                true
                             }
-                            (Some(exp), None) => {
-                                warn!(
-                                    device = %slot.id(),
-                                    expected_layout_hash = format!("0x{exp:08x}"),
-                                    "STATUS has no layout hash; cannot verify firmware layout"
-                                );
-                                false
-                            }
-                            (Some(_), Some(_)) => false,
-                            (None, Some(esp_h)) => {
-                                debug!(
-                                    device = %slot.id(),
-                                    esp_layout_hash = format!("0x{esp_h:08x}"),
-                                    "runtime meta has no layoutHash; skipping mismatch check"
-                                );
-                                false
-                            }
-                            _ => false,
-                        };
+                        }
                         slot.apply_status(from.to_string(), &st, mismatch).await;
                     } else {
                         debug!(from = %from, "STATUS from unregistered ESP");

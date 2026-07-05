@@ -8,6 +8,7 @@ use tokio::sync::RwLock;
 
 use crate::device_slot::DeviceSlot;
 use crate::devices::{DeviceRecord, DeviceRegistry};
+use crate::layouts;
 
 /// インタラクティブ（消灯＋ WS 合成）で選べるエフェクト種別。
 #[repr(u8)]
@@ -147,6 +148,7 @@ pub struct RuntimeState {
     pub esp_status_addr: Option<String>,
     pub output_target_addr: Option<String>,
     pub layout_mismatch: bool,
+    pub esp_layout_hash: Option<u32>,
     pub loop_clip_id: Option<String>,
     pub started_at: Instant,
 }
@@ -164,6 +166,7 @@ impl RuntimeState {
             esp_status_addr: None,
             output_target_addr: None,
             layout_mismatch: false,
+            esp_layout_hash: None,
             loop_clip_id: None,
             started_at: Instant::now(),
         }
@@ -215,6 +218,7 @@ pub struct SharedApp {
     pub default_device_id: String,
     pub default_mode: String,
     pub compiled_dir: std::path::PathBuf,
+    pub repo_root: std::path::PathBuf,
     pub clips_dir: std::path::PathBuf,
     pub uploads_dir: std::path::PathBuf,
     pub media_uploads: RwLock<HashMap<String, MediaUploadEntry>>,
@@ -228,6 +232,7 @@ pub type SharedState = Arc<SharedApp>;
 pub fn new_shared(
     registry: DeviceRegistry,
     default_mode: &str,
+    repo_root: std::path::PathBuf,
     compiled_dir: std::path::PathBuf,
     clips_dir: std::path::PathBuf,
     uploads_dir: std::path::PathBuf,
@@ -254,6 +259,7 @@ pub fn new_shared(
         device_order: StdRwLock::new(order),
         default_device_id,
         default_mode: default_mode.to_string(),
+        repo_root,
         compiled_dir,
         clips_dir,
         uploads_dir,
@@ -380,6 +386,19 @@ impl SharedApp {
             }
         }
         None
+    }
+    pub fn refresh_expected_layout_hash(&self, layout_id: &str) {
+        let hash = layouts::read_layout_hash(&self.compiled_dir, layout_id);
+        for slot in self.devices_ordered() {
+            let matches = slot
+                .state
+                .try_read()
+                .map(|s| s.layout_id == layout_id)
+                .unwrap_or(false);
+            if matches {
+                slot.set_expected_layout_hash(hash);
+            }
+        }
     }
 }
 

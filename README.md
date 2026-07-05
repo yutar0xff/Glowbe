@@ -11,7 +11,7 @@
 Glowbe は **同一 LAN 内の信頼できるネットワーク**向けです。
 
 - **HTTP API・WebSocket・UDP（FRAME / STATUS / LINK）に認証はありません。** ランタイムを `0.0.0.0` で公開したり、インターネットに晒さないでください。
-- Wi-Fi 認証情報は `firmware/esp32s3/include/wifi_config.h`（gitignore）にのみ置きます。
+- Wi-Fi 認証情報は `firmware/esp32/include/wifi_config.h`（gitignore）にのみ置きます。
 - 機密設定は `config.toml` および `web/.env.*.local`（いずれも gitignore）に置きます。
 
 ## リポジトリ構成
@@ -20,7 +20,7 @@ Glowbe は **同一 LAN 内の信頼できるネットワーク**向けです。
 |------|------|
 | `runtime/` | Rust 常駐サーバ（Phase 1: ループ出力 + HTTP API） |
 | `web/` | Vite + React（`/` ステータス、`/mode` で Idle トグル + 各モード、`/mode/loop`・`/mode/interactive`、英語 UI） |
-| `firmware/esp32s3/` | ESP32-S3 ファーム |
+| `firmware/esp32/` | ESP32 ファーム |
 | `config/layouts/` | LED レイアウト（`glowbe-layout` v1） |
 | `docs/DEV.md` | 開発時の注意（ランタイム+Web、ESP、ポート） |
 | `docs/ENV.md` | 環境変数（Web / systemd） |
@@ -29,26 +29,26 @@ Glowbe は **同一 LAN 内の信頼できるネットワーク**向けです。
 
 旧版: [archived-glowbe](https://github.com/yutar0xff/archived-glowbe)
 
-## クイックスタート（プロトタイプ）
+## クイックスタート（15panels）
 
 ### 1. レイアウトコンパイル
 
-`tools/layout-compile.ts` は、現時点では幾何プリセット展開のため **隣接クローンの [archived-glowbe](https://github.com/yutar0xff/archived-glowbe)**（`../archived-Glowbe/packages/core`）を参照します。リポジトリに同梱済みの `assets/compiled/` と `firmware/esp32s3/include/generated/` があれば、再コンパイルなしでもランタイム・ファームのビルドは可能です。**レイアウトコンパイルは将来的に本リポジトリ内で自己完結する予定**です。
+`tools/layout-compile.ts` は、現時点では幾何プリセット展開のため **隣接クローンの [archived-glowbe](https://github.com/yutar0xff/archived-glowbe)**（`../archived-Glowbe/packages/core`）を参照します。リポジトリに同梱済みの `assets/compiled/` と `firmware/esp32/include/generated/` があれば、再コンパイルなしでもランタイム・ファームのビルドは可能です。**レイアウトコンパイルは将来的に本リポジトリ内で自己完結する予定**です。
 
 ```bash
-npx tsx tools/layout-compile.ts config/layouts/prototype.layout.json
-npx tsx tools/layout-compile.ts config/layouts/product.layout.json
+npx tsx tools/layout-compile.ts config/layouts/presets/icosahedron-15.layout.json
+npx tsx tools/layout-compile.ts config/layouts/presets/geodesic-2v-60.layout.json
 ```
 
-→ `assets/compiled/<layout-id>.*` と `firmware/esp32s3/include/generated/<layout-id>/glowbe_layout.h`（各 PlatformIO `env` の `-I` でどちらを使うか指定）
+→ `assets/compiled/<layout-id>.*` と `firmware/esp32/include/generated/<layout-id>/glowbe_layout.h`（各 PlatformIO `env` の `-I` でどちらを使うか指定）
 
 ### 2. ファーム（スパイク）
 
 ```bash
-cd firmware/esp32s3 && uv sync
+cd firmware/esp32 && uv sync
 cp include/wifi_config.h.example include/wifi_config.h
 # wifi_config.h を編集
-uv run pio run -e prototype -t upload
+uv run pio run -e 15panels -t upload
 ```
 
 ### 3. ランタイム（Phase 1）
@@ -88,7 +88,7 @@ cargo run --manifest-path runtime/Cargo.toml -- \
 
 ### 6. ベンチ
 
-[`docs/BENCHMARK.md`](docs/BENCHMARK.md) 参照。最低 **60 fps × 5 分**（プロトタイプ・2.4 GHz）。
+[`docs/BENCHMARK.md`](docs/BENCHMARK.md) 参照。最低 **60 fps × 5 分**（15panels・2.4 GHz）。
 
 ## 次の開発ステップ
 

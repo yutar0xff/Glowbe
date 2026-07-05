@@ -1,0 +1,8 @@
+#pragma once
+
+// Copy to wifi_config.h and fill in (gitignored).
+#define GLOWBE_WIFI_SSID "your-ssid"
+#define GLOWBE_WIFI_PASSWORD "your-password"
+
+// mDNS host label (access as "<name>.local"). Set "" to disable.
+#define GLOWBE_MDNS_HOSTNAME "glowbe-60panels"

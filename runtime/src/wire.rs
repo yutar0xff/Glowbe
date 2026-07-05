@@ -1,3 +1,7 @@
+pub fn layout_hash_mismatch(expected: Option<u32>, esp: Option<u32>) -> bool {
+    matches!((expected, esp), (Some(exp), Some(esp_h)) if exp != esp_h)
+}
+
 pub const MAGIC0: u8 = 0x47;
 pub const MAGIC1: u8 = 0x42;
 pub const VERSION: u8 = 1;
@@ -110,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_single_chunk_prototype() {
+    fn encode_single_chunk_icosahedron_15() {
         let led_count = 225u16;
         let rgb: Vec<u8> = (0..led_count as usize * 3).map(|i| i as u8).collect();
         let pkts = encode_frame(led_count, 42, &rgb);
@@ -155,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_product_layout_uses_three_chunks() {
+    fn encode_geodesic_2v_60_uses_three_chunks() {
         let led_count = 1260u16;
         let rgb: Vec<u8> = vec![7; led_count as usize * 3];
         let pkts = encode_frame(led_count, 99, &rgb);
@@ -164,5 +168,13 @@ mod tests {
         assert_eq!(u16::from_le_bytes(pkts[2][10..12].try_into().unwrap()), 2);
         let total_payload: usize = pkts.iter().map(|p| p.len() - HEADER_SIZE).sum();
         assert_eq!(total_payload, rgb.len());
+    }
+
+    #[test]
+    fn layout_hash_mismatch_only_when_both_known_and_differ() {
+        assert!(!super::layout_hash_mismatch(None, Some(1)));
+        assert!(!super::layout_hash_mismatch(Some(1), None));
+        assert!(!super::layout_hash_mismatch(Some(1), Some(1)));
+        assert!(super::layout_hash_mismatch(Some(1), Some(2)));
     }
 }

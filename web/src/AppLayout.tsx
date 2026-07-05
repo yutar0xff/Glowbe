@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Loader2, OctagonAlert } from 'lucide-react'
+import { Loader2, OctagonAlert } from 'lucide-react'
 import { StatusPill } from '@/components/StatusPill'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { StudioPage } from '@/studio/StudioPage'
+import { LayoutMismatchAlert } from '@/studio/LayoutMismatchAlert'
+import { isLayoutMismatch } from '@/layout-ids'
 import { formatNumber } from '@/format'
 import { effectiveFpsOut } from '@/lib/metrics'
 import { cn } from '@/lib/utils'
@@ -30,7 +32,7 @@ export function AppLayout() {
     if (load.kind === 'error') return 'bad'
     if (!state) return 'muted'
     if (state.frameLoopStaleMs > 1000) return 'bad'
-    if (state.layoutMismatch) return 'warn'
+    if (state && isLayoutMismatch(state)) return 'warn'
     return 'ok'
   }, [load.kind, state])
 
@@ -109,15 +111,14 @@ export function AppLayout() {
           </Alert>
         ) : null}
 
-        {state?.layoutMismatch ? (
-          <Alert className="mb-6 border-amber-500/40 bg-amber-500/10 text-amber-50">
-            <AlertTriangle className="size-4 text-amber-400" />
-            <AlertTitle>Layout mismatch</AlertTitle>
-            <AlertDescription className="text-amber-100/90">
-              ESP <code className="font-mono text-xs">layout_hash</code> does not match the compiled layout. Re-run{' '}
-              <code className="font-mono text-xs">tools/layout-compile.ts</code> and reflash the firmware.
-            </AlertDescription>
-          </Alert>
+        {state && isLayoutMismatch(state) ? (
+          <div className="mb-6">
+            <LayoutMismatchAlert
+              layoutId={state.layoutId}
+              expectedLayoutHash={state.expectedLayoutHash}
+              espLayoutHash={state.espLayoutHash}
+            />
+          </div>
         ) : null}
 
         {load.kind === 'ready' ? <StudioPage /> : null}

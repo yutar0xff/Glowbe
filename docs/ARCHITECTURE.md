@@ -19,7 +19,7 @@
 8. [通信プロトコル（自前 UDP）](#8-通信プロトコル自前-udp)
 9. [サーバーモード（拡張可能）](#9-サーバーモード拡張可能)
 10. [Web クライアント（Vite + React）](#10-web-クライアントvite--react)
-11. [ESP32-S3 ファームウェア](#11-esp32-s3-ファームウェア)
+11. [ESP32 ファームウェア](#11-esp32-ファームウェア)
 12. [ハードウェア / PCB](#12-ハードウェア--pcb)
 13. [LED レイアウト](#13-led-レイアウト)
 14. [プレビュー経路](#14-プレビュー経路)
@@ -34,7 +34,7 @@
 
 ## 1. 概要
 
-Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラットフォーム**である。アニメーションフレームは **常駐ランタイム**（自宅 Ubuntu Server、展示用 Windows など）で合成され、**自前 UDP プロトコル**で **ESP32-S3** へ送られる。スマホ・PC のブラウザは **設定・操作・プレビュー**に使い、タブを閉じても再生は止まらない。
+Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラットフォーム**である。アニメーションフレームは **常駐ランタイム**（自宅 Ubuntu Server、展示用 Windows など）で合成され、**自前 UDP プロトコル**で **ESP32** へ送られる。スマホ・PC のブラウザは **設定・操作・プレビュー**に使い、タブを閉じても再生は止まらない。
 
 ```
 ┌──────────────┐  制御・アップロード・タップ   ┌─────────────────────┐
@@ -46,7 +46,7 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
                                                           │ 自前 UDP
                                                           ▼
                                                ┌─────────────────────┐
-                                               │ ESP32-S3 + LED リグ │
+                                               │ ESP32 + LED リグ │
                                                │ Wi-Fi 2.4 GHz のみ   │
                                                └─────────────────────┘
 ```
@@ -60,7 +60,7 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
 
 | 項目 | 決定内容 |
 |------|----------|
-| LED レイアウト | **`glowbe-layout` v1** — [`config/layouts/product.layout.json`](../config/layouts/product.layout.json)（製品）、[`prototype.layout.json`](../config/layouts/prototype.layout.json)（プロトタイプ）。今後変更あり得る |
+| LED レイアウト | **`glowbe-layout` v1** — [`config/layouts/presets/geodesic-2v-60.layout.json`](../config/layouts/presets/geodesic-2v-60.layout.json)（60panels）、[`icosahedron-15.layout.json`](../config/layouts/presets/icosahedron-15.layout.json)（15panels）。今後変更あり得る |
 | ピクセル転送 | **完全自前 UDP**（Art-Net・TouchDesigner 連携は採用しない） |
 | メディア | **正距円筒図法（equirectangular）** の画像・動画・コマ送りをアップロード → **サーバで LED フレーム列へ変換・保存** → ループ再生等で利用（TouchDesigner 連携なし） |
 | Wi-Fi | **2.4 GHz のみ**（ESP 側）。**最低 60 fps** |
@@ -103,7 +103,7 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
 2. **3 プレーン分離:** 制御 / ピクセル / プレビュー。
 3. **メディアはサーバで前処理:** ブラウザはアップロードとパラメータのみ。重い変換は常駐プロセス。
 4. **レイアウトはデータ駆動:** `glowbe-layout` v1 → コンパイル済みテーブル。
-5. **LED 出力はチップ世代で分ける:** ESP32-S3 は **NeoPixelBus + LCD（I8080）並列**、ESP32 無印プロトは **NeoPixelBus + I2S0 並列**（§11、[`firmware/LED-OUTPUT.md`](firmware/LED-OUTPUT.md)）。
+5. **LED 出力:** **NeoPixelBus + I2S0 並列**（§11、[`firmware/LED-OUTPUT.md`](firmware/LED-OUTPUT.md)）。
 
 ---
 
@@ -115,7 +115,7 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
 |------|------|
 | **glowbe-runtime** | マスタークロック、モード合成、メディア変換ジョブ、資産保存、UDP 送信、プレビュー |
 | **Web クライアント** | 操作 UI、メディアアップロード、UV タップ、プレビュー表示 |
-| **ESP32-S3** | UDP 受信、フレーム再構成、マルチライン LED 駆動 |
+| **ESP32** | UDP 受信、フレーム再構成、マルチライン LED 駆動 |
 | **オペレータ** | ランタイム起動、USB フラッシュ、展示ネットワーク |
 
 ### 4.2 典型構成（自宅）
@@ -130,7 +130,7 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
                                    │
               ┌────────────────────┴────────────────────┐
               ▼                                         ▼
-        [スマホ / PC ブラウザ]                    [ESP32-S3 球体]
+        [スマホ / PC ブラウザ]                    [ESP32 球体]
 ```
 
 ### 4.3 論理レイヤ
@@ -147,7 +147,7 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
 ├─────────────────────────────────────────────────────────────┤
 │ UDP 符号化・送信                                              │
 ├─────────────────────────────────────────────────────────────┤
-│ ESP32-S3 — 受信・マルチライン出力                              │
+│ ESP32 — 受信・マルチライン出力                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -172,7 +172,7 @@ Glowbe/
 │   └── compiled-layout.md
 ├── runtime/                     # Rust（Phase 1: loop 出力 + 状態 API）
 ├── web/                         # Vite + React（Phase 1.5: 状態表示 + idle/loop 切替）
-├── firmware/esp32s3/
+├── firmware/esp32/
 ├── hardware/pcb/                # 未追加
 ├── tools/
 │   ├── migrate-studio-layout.mjs
@@ -229,7 +229,7 @@ Glowbe/
 [device]
 # esp_ip を省略（または空）→ 同一 LAN で mDNS `_glowbe._udp` を探索
 esp_ip = "192.168.1.10"
-layout_id = "prototype-icosahedron-15"
+layout_id = "icosahedron-15"
 
 [assets]
 # 省略時: リポジトリルートの `assets/compiled` / `assets/sequences`
@@ -429,45 +429,42 @@ POST /api/v1/mode
 
 ---
 
-## 11. ESP32-S3 ファームウェア
+## 11. ESP32 ファームウェア
 
-### 11.1 マルチピン駆動（チップ世代で方式を分ける）
+### 11.1 マルチピン駆動
 
 詳細: [`firmware/LED-OUTPUT.md`](firmware/LED-OUTPUT.md)
 
-**ESP32-S3（製品・本番）:** I2S ペリフェラルのハック（無印時代の定石）ではなく、**LCD ペリフェラル（Intel 8080 / I8080）+ DMA** によるパラレル転送で複数データ線を同時出力する。実装は **NeoPixelBus** の `NeoEsp32LcdX8/X16Ws2812xMethod`。
+**ESP32:** **NeoPixelBus の I2S0 並列**（`NeoEsp32I2s0X8/X16Ws2812xMethod`）で複数データ線を同一タイミングで送出。DMA 寄りの並列ビットストリームで Wi-Fi 下の安定性を優先する。
 
-**ESP32 無印（手元プロトタイプ）:** **NeoPixelBus の I2S0 並列**（`NeoEsp32I2s0X8/X16Ws2812xMethod`）で複数データ線を同一タイミングで送出。S3 の LCD 並列とは別実装だが、いずれも「DMA 寄りの並列ビットストリーム」という意味で Wi-Fi 下の安定性を優先する。
-
-| ターゲット | PlatformIO env | 方式 |
-|------------|----------------|------|
-| ESP32-S3 | `prototype` | NeoPixelBus LCD 並列 |
-| ESP32 無印 | `prototype-esp32` | NeoPixelBus I2S0 並列 |
+| リグ | PlatformIO env | Layout ID | 方式 |
+|------|----------------|-----------|------|
+| 15panels | `15panels` | `icosahedron-15` | NeoPixelBus I2S0 X8 |
+| 60panels | `60panels` | `geodesic-2v-60` | NeoPixelBus I2S0 X16 |
 
 **設計方針:**
 
 - `glowbe-layout` の `wiring.dataLines[]` 1 エントリ = 1 本のデータ線。
-- 製品: **10 GPIO**（13,14,16,17,18,19,21,22,23,25）。プロトタイプ: **5 本**。
+- 60panels: **10 GPIO**（13,14,16,17,18,19,21,22,23,25）。15panels: **5 本**。
 - チップ **SK6805**、**GRB**（レイアウト JSON で固定）。
 - フレーム完了後、**全ラインを可能な限り同時にラッチ**して体感のちらつきを抑える。
 
 ### 11.2 モジュール構成
 
-スパイク: [`firmware/esp32s3/`](../firmware/esp32s3/)（`src/main.cpp` — NeoPixelBus + UDP）。
+[`firmware/esp32/`](../firmware/esp32/)（`src/main.cpp` — NeoPixelBus + UDP）。
 
 ```
 main
 ├── glowbe_wire.h         # FRAME パーサ・再構成
 ├── include/generated/<layout-id>/glowbe_layout.h   # layout-compile 自動生成（env の -I で選択）
-├── led_driver_s3.cpp     # S3: NeoPixelBus LCD 並列
-├── led_driver_esp32.cpp  # 無印: NeoPixelBus I2S0 並列
+├── led_driver.cpp          # NeoPixelBus I2S0 並列
 ├── main.cpp              # Wi-Fi + UDP + LED ドライバ
 └── http_status.cpp       # 将来
 ```
 
 ### 11.3 その他
 
-- **Wi-Fi 2.4 GHz STA のみ**、PSRAM 推奨。
+- **Wi-Fi 2.4 GHz STA のみ**。
 - プロビジョニングはホスト USB ツール（Web からは行わない）。
 
 ---
@@ -480,8 +477,8 @@ hardware/pcb/glowbe-revA/
 
 | PCB rev | レイアウト id |
 |---------|----------------|
-| A（製品） | `product-geodesic-2v-60` |
-| —（プロト） | `prototype-icosahedron-15` |
+| Rev A（60panels） | `geodesic-2v-60` |
+| —（15panels） | `icosahedron-15` |
 
 データ線は **GPIO 直結 + レベルシフタ**（PCB 設計に従う）。I2S 専用ピンに依存しない配線を推奨。
 
@@ -493,8 +490,8 @@ hardware/pcb/glowbe-revA/
 
 | 用途 | ファイル | `id` |
 |------|----------|------|
-| 製品 | `config/layouts/product.layout.json` | `product-geodesic-2v-60` |
-| プロトタイプ | `config/layouts/prototype.layout.json` | `prototype-icosahedron-15` |
+| 60panels | [`config/layouts/presets/geodesic-2v-60.layout.json`](../config/layouts/presets/geodesic-2v-60.layout.json) | `geodesic-2v-60` |
+| 15panels | [`config/layouts/presets/icosahedron-15.layout.json`](../config/layouts/presets/icosahedron-15.layout.json) | `icosahedron-15` |
 
 ### 形式 `glowbe-layout` v1
 
@@ -502,14 +499,14 @@ hardware/pcb/glowbe-revA/
 - **配線・面テンプレート・幾何プリセット ID** を保持。頂点列は含めない（コンパイル時に展開）。
 - スキーマ: `protocol/glowbe-layout.schema.json`
 
-### 製品版概要
+### 60panels 概要
 
 - プリセット `geodesic-ico-2v`、半径 50 mm、**10 データ線**、面あたり 21 LED（zigzag）。
 
-### プロトタイプ概要
+### 15panels 概要
 
 - プリセット `icosahedron`、**5 データ線**、面あたり 15 LED（`rowSizes` あり）。
-- **コンパイル済み:** 225 LED（各線 45）。`npx tsx tools/layout-compile.ts config/layouts/prototype.layout.json`
+- **コンパイル済み:** 225 LED（各線 45）。`npx tsx tools/layout-compile.ts config/layouts/presets/icosahedron-15.layout.json`
 
 ### プロトコル文書
 
@@ -609,7 +606,7 @@ LAN 到達者が制御・UDP 送信可能。展示は閉じた AP を運用で�
 | glowbe-layout | LED 配線・幾何プリセットの JSON 形式 v1 |
 | シーケンス | メディア変換後の LED フレーム列（`assets/sequences/`） |
 | RMT | ESP32 のリモートコントロール周辺機器。WS2812 系のビットバンギングに利用可能。本リポジトリの **無印プロト**では NeoPixelBus **I2S0 並列**を既定とし、RMT per line はフォールバック検討用 |
-| LCD / I8080 | ESP32-S3 内蔵の LCD ペリフェラル（Intel 8080 バス互換）。DMA で複数 GPIO へ同時ビットストリーム出力し、S3 本番の LED 並列駆動に使う（詳細は `docs/firmware/LED-OUTPUT.md`） |
+| I2S0 並列 | NeoPixelBus `NeoEsp32I2s0X8/X16Ws2812xMethod` による ESP32 マルチライン LED 駆動（詳細は `docs/firmware/LED-OUTPUT.md`） |
 | DMA パラレル | DMA がメモリ上のバッファを LCD ペリフェラルへ転送し、複数データ線を低 CPU 負荷で同時駆動する方式 |
 
 ---

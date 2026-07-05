@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Pencil, Plus, RefreshCw } from 'lucide-react'
 import type { DeviceCreateInput } from '@/types'
 import { fetchDiscoveredEsps } from '@/api'
@@ -14,12 +14,15 @@ import {
   applyDiscoveredToDraft,
   editDraftFromRecord,
   emptyCreateDraft,
+  formatMdnsHostnameForInput,
   listDisplayName,
   normalizeMdnsHostname,
   toRecord,
   type DeviceDraft,
 } from './device-draft'
 import { validateOutputFps } from './device-output-settings'
+import { DEFAULT_LAYOUT_ID, isLayoutMismatch } from '@/layout-ids'
+import { LayoutMismatchAlert } from './LayoutMismatchAlert'
 import { useLayoutCatalog } from './useLayoutCatalog'
 
 function liveToneFromLoad(load: ReturnType<typeof useGlowbeRuntime>['load']) {
@@ -40,22 +43,29 @@ export function DeviceManagerSection() {
     setMasterTone,
     masterToneBusy,
   } = useGlowbeRuntime()
-  const layoutId = load.kind === 'ready' ? load.state.layoutId : 'prototype-icosahedron-15'
+  const layoutId = load.kind === 'ready' ? load.state.layoutId : DEFAULT_LAYOUT_ID
   const defaultFps = load.kind === 'ready' ? load.state.targetFps : DEFAULT_OUTPUT_FPS
   const liveTone = liveToneFromLoad(load)
   const liveFrontYaw = load.kind === 'ready' ? load.state.frontYawDeg : undefined
+  const layoutMismatch = load.kind === 'ready' && isLayoutMismatch(load.state)
+  const runtimeState = load.kind === 'ready' ? load.state : null
   const { catalog, layoutLabel } = useLayoutCatalog()
+
+  const preferredLayoutId =
+    catalog?.find((c) => c.layoutId === DEFAULT_LAYOUT_ID)?.layoutId ??
+    catalog?.[0]?.layoutId ??
+    layoutId
 
   const [editMode, setEditMode] = useState(false)
   const [addingDevice, setAddingDevice] = useState(false)
   const [editDraft, setEditDraft] = useState<DeviceDraft | null>(null)
-  const [createDraft, setCreateDraft] = useState<DeviceDraft>(() => emptyCreateDraft(layoutId, defaultFps))
+  const [createDraft, setCreateDraft] = useState<DeviceDraft>(() => emptyCreateDraft(preferredLayoutId, defaultFps))
   const [discovered, setDiscovered] = useState<Awaited<ReturnType<typeof fetchDiscoveredEsps>>>([])
   const [scanBusy, setScanBusy] = useState(false)
   const [saveBusy, setSaveBusy] = useState(false)
   const [quickSettingsBusy, setQuickSettingsBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const editCardRef = useRef<HTMLDivElement>(null)
+  const [saveNotice, setSaveNotice] = useState<string | null>(null)
 
   const selectedDevice = activeDeviceId ? devices.find((d) => d.id === activeDeviceId) : undefined
   const quickSettingsBusyOrTone = quickSettingsBusy || masterToneBusy
@@ -63,18 +73,21 @@ export function DeviceManagerSection() {
   useEffect(() => {
     setCreateDraft((d) => ({
       ...d,
-      layoutId: layoutId || d.layoutId,
+      layoutId: preferredLayoutId || layoutId || d.layoutId,
       outputFps: String(defaultFps || Number.parseInt(d.outputFps, 10) || DEFAULT_OUTPUT_FPS),
     }))
-  }, [layoutId, defaultFps])
+  }, [layoutId, defaultFps, preferredLayoutId])
 
   useEffect(() => {
     if (!editMode || !selectedDevice) {
       setEditDraft(null)
       return
     }
-    const tone = liveToneFromLoad(load) ?? undefined
-    setEditDraft((prev) => prev ?? editDraftFromRecord(selectedDevice, tone))
+    setEditDraft((prev) => {
+      if (prev) return prev
+      const tone = liveToneFromLoad(load) ?? undefined
+      return editDraftFromRecord(selectedDevice, tone)
+    })
   }, [editMode, selectedDevice, load])
 
   const exitEditMode = useCallback(() => {
@@ -82,21 +95,15 @@ export function DeviceManagerSection() {
     setAddingDevice(false)
     setEditDraft(null)
     setDiscovered([])
-    setCreateDraft(emptyCreateDraft(layoutId, defaultFps))
+    setCreateDraft(emptyCreateDraft(preferredLayoutId, defaultFps))
     setError(null)
-  }, [layoutId, defaultFps])
+  }, [preferredLayoutId, defaultFps])
 
   useEffect(() => {
-    if (!editMode) return
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Node
-      if (editCardRef.current?.contains(target)) return
-      if ((target as Element).closest?.('[data-device-toolbar]')) return
-      exitEditMode()
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    return () => document.removeEventListener('pointerdown', onPointerDown)
-  }, [editMode, exitEditMode])
+    if (!saveNotice) return
+    const timer = window.setTimeout(() => setSaveNotice(null), 4000)
+    return () => window.clearTimeout(timer)
+  }, [saveNotice])
 
   const scanLan = useCallback(async () => {
     setScanBusy(true)
@@ -140,7 +147,7 @@ export function DeviceManagerSection() {
     setAddingDevice(true)
     setDiscovered([])
     setError(null)
-    setCreateDraft(emptyCreateDraft(layoutId, defaultFps))
+    setCreateDraft(emptyCreateDraft(preferredLayoutId, defaultFps))
   }
 
   const saveEdit = async () => {
@@ -158,6 +165,7 @@ export function DeviceManagerSection() {
         return
       }
       await updateDevice(rec)
+      setSaveNotice('Device settings saved and applied to runtime.')
       exitEditMode()
       await refreshDevices()
     } catch (e) {
@@ -193,6 +201,7 @@ export function DeviceManagerSection() {
         return
       }
       const createdId = await upsertDevice(input)
+      setSaveNotice('Device created.')
       exitEditMode()
       if (createdId) setActiveDevice(createdId)
       await refreshDevices()
@@ -304,6 +313,37 @@ export function DeviceManagerSection() {
       </Tabs>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {saveNotice ? (
+        <p className="text-sm text-emerald-700 dark:text-emerald-300" role="status">
+          {saveNotice}
+        </p>
+      ) : null}
+
+      {!editMode && selectedDevice ? (
+        <dl className="grid gap-1 rounded-md border border-border/60 bg-muted/10 px-3 py-2 text-xs text-muted-foreground sm:grid-cols-2">
+          <div>
+            <dt className="font-medium text-foreground/80">Chain profile</dt>
+            <dd className="font-mono">{layoutLabel(selectedDevice.layoutId)}</dd>
+          </div>
+          <div>
+            <dt className="font-medium text-foreground/80">mDNS</dt>
+            <dd className="font-mono">
+              {selectedDevice.mdnsHostname
+                ? formatMdnsHostnameForInput(selectedDevice.mdnsHostname)
+                : selectedDevice.espIp?.trim() || '—'}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+
+      {layoutMismatch && runtimeState ? (
+        <LayoutMismatchAlert
+          layoutId={runtimeState.layoutId}
+          expectedLayoutHash={runtimeState.expectedLayoutHash}
+          espLayoutHash={runtimeState.espLayoutHash}
+          compact
+        />
+      ) : null}
 
       {!editMode && liveTone && selectedDevice ? (
         <div className="rounded-lg border border-border/80 bg-muted/15 p-4">
@@ -326,7 +366,7 @@ export function DeviceManagerSection() {
       ) : null}
 
       {editMode ? (
-        <div ref={editCardRef} className="rounded-lg border border-border/80 bg-muted/15 p-4">
+        <div className="rounded-lg border border-border/80 bg-muted/15 p-4" data-device-edit-form>
           {addingDevice ? (
             <>
               <p className="mb-3 text-sm font-medium text-muted-foreground">New device</p>
@@ -340,6 +380,9 @@ export function DeviceManagerSection() {
                 showScan
                 scanBusy={scanBusy}
                 discovered={discovered}
+                layoutMismatch={layoutMismatch}
+                expectedLayoutHash={runtimeState?.expectedLayoutHash}
+                espLayoutHash={runtimeState?.espLayoutHash}
                 onScanLan={() => void scanLan()}
                 onPickDiscovered={(esp) => setCreateDraft((d) => applyDiscoveredToDraft(d, esp))}
                 onChange={(patch) => setCreateDraft((d) => ({ ...d, ...patch }))}
@@ -363,6 +406,9 @@ export function DeviceManagerSection() {
               showScan={false}
               scanBusy={scanBusy}
               discovered={discovered}
+              layoutMismatch={layoutMismatch}
+              expectedLayoutHash={runtimeState?.expectedLayoutHash}
+              espLayoutHash={runtimeState?.espLayoutHash}
               onScanLan={() => void scanLan()}
               onPickDiscovered={() => {}}
               onChange={(patch) => setEditDraft((d) => (d ? { ...d, ...patch } : d))}

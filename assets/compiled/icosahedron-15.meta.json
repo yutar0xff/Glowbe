@@ -1,0 +1,31 @@
+{
+  "layoutId": "icosahedron-15",
+  "layoutHash": 2489929828,
+  "displayName": "Icosahedron (15 panels)",
+  "variant": "icosahedron-15",
+  "ledCount": 225,
+  "dataLineCount": 5,
+  "gpios": [
+    16,
+    17,
+    18,
+    19,
+    21
+  ],
+  "ledsPerLine": [
+    45,
+    45,
+    45,
+    45,
+    45
+  ],
+  "lineGlobalOffset": [
+    0,
+    45,
+    90,
+    135,
+    180
+  ],
+  "chip": "SK6805",
+  "colorOrder": "GRB"
+}

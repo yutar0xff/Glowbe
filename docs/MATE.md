@@ -3,7 +3,7 @@
 > **役割:** 本書は **mate モード（球体 LED に「顔」を表示し、Web UI から表情を切り替え、将来は AI エージェント連携でリアルタイム表情・リップシンクする）** の設計と、実装を分割して進めるためのタスク計画。
 > **対象ブランチ:** `feature/product-studio`
 > **前提読み物:** [`ARCHITECTURE.md`](ARCHITECTURE.md)（全体設計）・[`STATUS.md`](STATUS.md)（実装状況）・[`../protocol/control-api.md`](../protocol/control-api.md)。
-> **適用レイアウト:** `product-geodesic-2v-60`（1260 LED）。プロトタイプ `prototype-icosahedron-15`（225 LED）では mate モードを **提供しない**（解像度不足）。
+> **適用レイアウト:** `geodesic-2v-60`（1260 LED / 60panels）。`icosahedron-15`（225 LED / 15panels）では mate モードを **提供しない**（解像度不足）。
 
 ---
 
@@ -25,7 +25,7 @@
 
 | ID | 内容 |
 |----|------|
-| NM1 | プロトタイプ 15 面での mate 対応 |
+| NM1 | 15panels（225 LED）での mate 対応 |
 | NM2 | AI エージェント本体・音声認識・TTS（口開閉を**受ける口**だけ用意し、駆動元は別途） |
 | NM3 | Web 上での GUI 表情エディタ（プリセットは JSON 編集で足りる。GUI は将来の任意拡張） |
 | NM4 | ファーム変更（mate はランタイムが RGB を生成するだけ。**単一ライター原則**を崩さない） |
@@ -45,9 +45,9 @@ mate モードは既存のモード機構（`Idle`/`Loop`/`Interactive`）と同
 - **REST 作法:** `runtime/src/api.rs::router` にルート追加。`post_mode` がモード切替の手本。
 - **Web 型/呼び出し:** `web/src/types.ts`（`OutputMode` 文字列ユニオン）・`web/src/api.ts`・`web/src/studio/StudioPage.tsx`（モードタブ）・`web/src/studio/InteractiveModePanel.tsx`（パネル手本）。
 
-### LED 配置の実測（product-geodesic-2v-60）
+### LED 配置の実測（geodesic-2v-60）
 
-`assets/compiled/product-geodesic-2v-60.ledmap.json` を解析した結果（設計の根拠）:
+`assets/compiled/geodesic-2v-60.ledmap.json` を解析した結果（設計の根拠）:
 
 | 指標 | 値 |
 |------|----|
