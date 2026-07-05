@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 const [inputPath, outputPath, variant] = process.argv.slice(2);
 if (!inputPath || !outputPath || !variant) {
-  console.error("Usage: node migrate-studio-layout.mjs <in> <out> <product|prototype>");
+  console.error("Usage: node migrate-studio-layout.mjs <in> <out> <geodesic-2v-60|icosahedron-15|60panels|15panels|custom>");
   process.exit(2);
 }
 
@@ -26,10 +26,10 @@ const rotations = wiring.wireFaceRotations ?? {};
 const reversed = new Set(wiring.wireReversed ?? []);
 
 const slug =
-  variant === "product"
-    ? "product-geodesic-2v-60"
-    : variant === "prototype"
-      ? "prototype-icosahedron-15"
+  variant === "geodesic-2v-60" || variant === "60panels"
+    ? "geodesic-2v-60"
+    : variant === "icosahedron-15" || variant === "15panels"
+      ? "icosahedron-15"
       : variant;
 
 const dataLines = chains.map((faceChain, i) => {
