@@ -1,7 +1,6 @@
 import type { MateBreathingParams } from './types'
 
-/** Product geodesic layout required for mate mode (see docs/MATE.md). */
-export const MATE_LAYOUT_ID = 'product-geodesic-2v-60'
+export { MATE_MIN_LED_COUNT, mateSupportedForLedCount } from '@/layout-ids'
 
 export const DEFAULT_MATE_PRESET_ID = 'happy'
 

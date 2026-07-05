@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '@/AppLayout'
+import { ChainProfileEditorPage } from '@/chain-editor/ChainProfileEditorPage'
+import { ChainProfileManagementPage } from '@/chain-editor/ChainProfileManagementPage'
 import { GlowbeRuntimeProvider } from '@/GlowbeRuntimeProvider'
 
 export default function App() {
@@ -7,6 +9,9 @@ export default function App() {
     <GlowbeRuntimeProvider>
       <Routes>
         <Route path="/" element={<AppLayout />} />
+        <Route path="/chain-profiles" element={<ChainProfileManagementPage />} />
+        <Route path="/chain-profiles/new" element={<Navigate to="/chain-profiles/new/edit" replace />} />
+        <Route path="/chain-profiles/:id/edit" element={<ChainProfileEditorPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </GlowbeRuntimeProvider>

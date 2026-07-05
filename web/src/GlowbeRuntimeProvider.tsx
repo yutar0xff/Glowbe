@@ -531,8 +531,21 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       }),
     })
     if (!res.ok) throw new Error(await readApiError(res))
-    const list = (await res.json()) as { devices: DeviceRecord[] }
+    const list = (await res.json()) as { devices: DeviceRecord[]; state?: RuntimeState }
     setDevices(list.devices)
+    if (list.state) {
+      setLoad((prev) => ({
+        kind: 'ready',
+        state: list.state as RuntimeState,
+        health:
+          prev.kind === 'ready' || prev.kind === 'error'
+            ? (prev.health ?? { ok: true, text: 'ok' })
+            : { ok: true, text: 'ok' },
+        clips: prev.kind === 'ready' ? prev.clips : [],
+        fetchedAt: new Date(),
+      }))
+      return
+    }
     await refreshLoad()
   }, [refreshLoad])
 

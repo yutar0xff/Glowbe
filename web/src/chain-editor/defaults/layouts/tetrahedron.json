@@ -1,0 +1,224 @@
+{
+  "kind": "glowbe-studio-layout",
+  "fileVersion": 2,
+  "exportedAt": "2026-05-31T22:34:50.114Z",
+  "rig": {
+    "meta": {
+      "id": "glowbe-default-tetrahedron",
+      "name": "Glowbe default — Tetrahedron (4 panels)",
+      "schemaVersion": 1,
+      "units": "mm"
+    },
+    "solid": {
+      "preset": "tetrahedron",
+      "radius": 120,
+      "faces": [
+        {
+          "id": "face-0",
+          "type": "equilateral",
+          "vertices": [
+            {
+              "x": 69.2820323027551,
+              "y": 69.2820323027551,
+              "z": 69.2820323027551
+            },
+            {
+              "x": 69.2820323027551,
+              "y": -69.2820323027551,
+              "z": -69.2820323027551
+            },
+            {
+              "x": -69.2820323027551,
+              "y": 69.2820323027551,
+              "z": -69.2820323027551
+            }
+          ],
+          "normal": {
+            "x": 0.5773502691896257,
+            "y": 0.5773502691896257,
+            "z": -0.5773502691896257
+          },
+          "orientation": 0,
+          "region": "middle"
+        },
+        {
+          "id": "face-1",
+          "type": "equilateral",
+          "vertices": [
+            {
+              "x": 69.2820323027551,
+              "y": 69.2820323027551,
+              "z": 69.2820323027551
+            },
+            {
+              "x": -69.2820323027551,
+              "y": 69.2820323027551,
+              "z": -69.2820323027551
+            },
+            {
+              "x": -69.2820323027551,
+              "y": -69.2820323027551,
+              "z": 69.2820323027551
+            }
+          ],
+          "normal": {
+            "x": -0.5773502691896257,
+            "y": 0.5773502691896257,
+            "z": 0.5773502691896257
+          },
+          "orientation": 0,
+          "region": "middle"
+        },
+        {
+          "id": "face-2",
+          "type": "equilateral",
+          "vertices": [
+            {
+              "x": 69.2820323027551,
+              "y": 69.2820323027551,
+              "z": 69.2820323027551
+            },
+            {
+              "x": -69.2820323027551,
+              "y": -69.2820323027551,
+              "z": 69.2820323027551
+            },
+            {
+              "x": 69.2820323027551,
+              "y": -69.2820323027551,
+              "z": -69.2820323027551
+            }
+          ],
+          "normal": {
+            "x": 0.5773502691896257,
+            "y": -0.5773502691896257,
+            "z": 0.5773502691896257
+          },
+          "orientation": 0,
+          "region": "middle"
+        },
+        {
+          "id": "face-3",
+          "type": "equilateral",
+          "vertices": [
+            {
+              "x": 69.2820323027551,
+              "y": -69.2820323027551,
+              "z": -69.2820323027551
+            },
+            {
+              "x": -69.2820323027551,
+              "y": -69.2820323027551,
+              "z": 69.2820323027551
+            },
+            {
+              "x": -69.2820323027551,
+              "y": 69.2820323027551,
+              "z": -69.2820323027551
+            }
+          ],
+          "normal": {
+            "x": -0.5773502691896257,
+            "y": -0.5773502691896257,
+            "z": -0.5773502691896257
+          },
+          "orientation": 0,
+          "region": "middle"
+        }
+      ],
+      "disabledFaceIds": []
+    },
+    "faceLayouts": [
+      {
+        "faceType": "triangle",
+        "ledCount": 15,
+        "pattern": "triangular-rows",
+        "rowSizes": [
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "padding": 0,
+        "chainEntry": 0,
+        "chainMirrorLR": false,
+        "paddingMm": 19.8
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-unwired-preview",
+        "faceIds": [
+          "face-0",
+          "face-1",
+          "face-2",
+          "face-3"
+        ],
+        "faceConnections": [
+          {
+            "faceId": "face-0",
+            "reversed": false,
+            "rotation": 0
+          },
+          {
+            "faceId": "face-1",
+            "reversed": false,
+            "rotation": 0
+          },
+          {
+            "faceId": "face-2",
+            "reversed": false,
+            "rotation": 0
+          },
+          {
+            "faceId": "face-3",
+            "reversed": false,
+            "rotation": 0
+          }
+        ]
+      }
+    ],
+    "channels": [
+      {
+        "index": 0,
+        "pin": 13,
+        "partIds": [
+          "part-unwired-preview"
+        ]
+      }
+    ]
+  },
+  "wiring": {
+    "wirePinChains": [
+      []
+    ],
+    "wirePinGpio": [],
+    "wireConfigured": false,
+    "wireReversed": [],
+    "wireFaceRotations": {},
+    "wiringCheckedPinIndices": []
+  },
+  "editor": {
+    "ledPreviewDiameterMm": 3,
+    "showViewerAxes": true,
+    "showSolidOutline": true,
+    "hideBackfaceDiscrete": true,
+    "hideBackfaceDeviceRig": true,
+    "color": {
+      "brightness": 0.05,
+      "gamma": 2.2,
+      "whiteBalance": {
+        "r": 1,
+        "g": 1,
+        "b": 1
+      }
+    },
+    "paintColor": [
+      255,
+      80,
+      0
+    ],
+    "ledOverrides": []
+  }
+}

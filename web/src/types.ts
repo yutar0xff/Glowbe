@@ -3,6 +3,12 @@ export type CompiledLayoutSummary = {
   displayName?: string
   ledCount: number
   variant?: string
+  sourceKind?: 'preset' | 'user'
+  dataLineCount?: number
+  gpios?: number[]
+  layoutHash?: number
+  editable?: boolean
+  inUseByDevices?: string[]
 }
 
 export type RuntimeState = {
@@ -26,6 +32,8 @@ export type RuntimeState = {
   uptimeSec: number
   frameLoopStaleMs: number
   layoutMismatch: boolean
+  expectedLayoutHash?: number | null
+  espLayoutHash?: number | null
   framesSent: number
   masterBrightness: number
   masterGamma: number
@@ -83,7 +91,7 @@ export type LoadState =
 
 export type OutputMode = 'idle' | 'loop' | 'interactive' | 'mate' | 'text'
 
-export { MATE_LAYOUT_ID } from '@/mate/constants'
+export { MATE_MIN_LED_COUNT, mateSupportedForLedCount } from '@/layout-ids'
 export type {
   MateBreathingParams,
   MatePresetSummary,
@@ -116,6 +124,7 @@ export type DeviceListResponse = {
   defaultDeviceId: string
   devices: DeviceRecord[]
   createdDeviceId?: string | null
+  state?: RuntimeState | null
 }
 
 export type DeviceCreateInput = {

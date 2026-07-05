@@ -1,0 +1,360 @@
+{
+  "kind": "glowbe-studio-layout",
+  "fileVersion": 2,
+  "exportedAt": "2026-05-31T22:34:50.113Z",
+  "rig": {
+    "meta": {
+      "id": "glowbe-default-octahedron",
+      "name": "Glowbe default — Octahedron (8 panels)",
+      "schemaVersion": 1,
+      "units": "mm"
+    },
+    "solid": {
+      "preset": "octahedron",
+      "radius": 120,
+      "faces": [
+        {
+          "id": "face-0",
+          "type": "equilateral",
+          "vertices": [
+            {
+              "x": 0,
+              "y": 120,
+              "z": 0
+            },
+            {
+              "x": 120,
+              "y": 0,
+              "z": 0
+            },
+            {
+              "x": 7.34788079488412e-15,
+              "y": 0,
+              "z": 120
+            }
+          ],
+          "normal": {
+            "x": 0.5773502691896258,
+            "y": 0.5773502691896258,
+            "z": 0.5773502691896258
+          },
+          "orientation": 0,
+          "region": "middle"
+        },
+        {
+          "id": "face-1",
+          "type": "equilateral",
+          "vertices": [
+            {
+              "x": 0,
+              "y": -120,
+              "z": 0
+            },
+            {
+              "x": 7.34788079488412e-15,
+              "y": 0,
+              "z": 120
+            },
+            {
+              "x": 120,
+              "y": 0,
+              "z": 0
+            }
+          ],
+          "normal": {
+            "x": 0.5773502691896258,
+            "y": -0.5773502691896258,
+            "z": 0.5773502691896258
+          },
+          "orientation": 0,
+          "region": "middle"
+        },
+        {
+          "id": "face-2",
+          "type": "equilateral",
+          "vertices": [
+            {
+              "x": 0,
+              "y": 120,
+              "z": 0
+            },
+            {
+              "x": 7.34788079488412e-15,
+              "y": 0,
+              "z": 120
+            },
+            {
+              "x": -120,
+              "y": 0,
+              "z": 1.469576158976824e-14
+            }
+          ],
+          "normal": {
+            "x": -0.5773502691896257,
+            "y": 0.5773502691896258,
+            "z": 0.5773502691896258
+          },
+          "orientation": 0,
+          "region": "middle"
+        },
+        {
+          "id": "face-3",
+          "type": "equilateral",
+          "vertices": [
+            {
+              "x": 0,
+              "y": -120,
+              "z": 0
+            },
+            {
+              "x": -120,
+              "y": 0,
+              "z": 1.469576158976824e-14
+            },
+            {
+              "x": 7.34788079488412e-15,
+              "y": 0,
+              "z": 120
+            }
+          ],
+          "normal": {
+            "x": -0.5773502691896257,
+            "y": -0.5773502691896258,
+            "z": 0.5773502691896258
+          },
+          "orientation": 0,
+          "region": "middle"
+        },
+        {
+          "id": "face-4",
+          "type": "equilateral",
+          "vertices": [
+            {
+              "x": 0,
+              "y": 120,
+              "z": 0
+            },
+            {
+              "x": -120,
+              "y": 0,
+              "z": 1.469576158976824e-14
+            },
+            {
+              "x": -2.2043642384652355e-14,
+              "y": 0,
+              "z": -120
+            }
+          ],
+          "normal": {
+            "x": -0.5773502691896258,
+            "y": 0.5773502691896258,
+            "z": -0.5773502691896257
+          },
+          "orientation": 0,
+          "region": "middle"
+        },
+        {
+          "id": "face-5",
+          "type": "equilateral",
+          "vertices": [
+            {
+              "x": 0,
+              "y": -120,
+              "z": 0
+            },
+            {
+              "x": -2.2043642384652355e-14,
+              "y": 0,
+              "z": -120
+            },
+            {
+              "x": -120,
+              "y": 0,
+              "z": 1.469576158976824e-14
+            }
+          ],
+          "normal": {
+            "x": -0.5773502691896258,
+            "y": -0.5773502691896258,
+            "z": -0.5773502691896257
+          },
+          "orientation": 0,
+          "region": "middle"
+        },
+        {
+          "id": "face-6",
+          "type": "equilateral",
+          "vertices": [
+            {
+              "x": 0,
+              "y": 120,
+              "z": 0
+            },
+            {
+              "x": -2.2043642384652355e-14,
+              "y": 0,
+              "z": -120
+            },
+            {
+              "x": 120,
+              "y": 0,
+              "z": 0
+            }
+          ],
+          "normal": {
+            "x": 0.5773502691896258,
+            "y": 0.5773502691896258,
+            "z": -0.5773502691896258
+          },
+          "orientation": 0,
+          "region": "middle"
+        },
+        {
+          "id": "face-7",
+          "type": "equilateral",
+          "vertices": [
+            {
+              "x": 0,
+              "y": -120,
+              "z": 0
+            },
+            {
+              "x": 120,
+              "y": 0,
+              "z": 0
+            },
+            {
+              "x": -2.2043642384652355e-14,
+              "y": 0,
+              "z": -120
+            }
+          ],
+          "normal": {
+            "x": 0.5773502691896258,
+            "y": -0.5773502691896258,
+            "z": -0.5773502691896258
+          },
+          "orientation": 0,
+          "region": "middle"
+        }
+      ],
+      "disabledFaceIds": []
+    },
+    "faceLayouts": [
+      {
+        "faceType": "triangle",
+        "ledCount": 15,
+        "pattern": "triangular-rows",
+        "rowSizes": [
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "padding": 0,
+        "chainEntry": 0,
+        "chainMirrorLR": false,
+        "paddingMm": 17.1
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-unwired-preview",
+        "faceIds": [
+          "face-0",
+          "face-1",
+          "face-2",
+          "face-3",
+          "face-4",
+          "face-5",
+          "face-6",
+          "face-7"
+        ],
+        "faceConnections": [
+          {
+            "faceId": "face-0",
+            "reversed": false,
+            "rotation": 0
+          },
+          {
+            "faceId": "face-1",
+            "reversed": false,
+            "rotation": 0
+          },
+          {
+            "faceId": "face-2",
+            "reversed": false,
+            "rotation": 0
+          },
+          {
+            "faceId": "face-3",
+            "reversed": false,
+            "rotation": 0
+          },
+          {
+            "faceId": "face-4",
+            "reversed": false,
+            "rotation": 0
+          },
+          {
+            "faceId": "face-5",
+            "reversed": false,
+            "rotation": 0
+          },
+          {
+            "faceId": "face-6",
+            "reversed": false,
+            "rotation": 0
+          },
+          {
+            "faceId": "face-7",
+            "reversed": false,
+            "rotation": 0
+          }
+        ]
+      }
+    ],
+    "channels": [
+      {
+        "index": 0,
+        "pin": 13,
+        "partIds": [
+          "part-unwired-preview"
+        ]
+      }
+    ]
+  },
+  "wiring": {
+    "wirePinChains": [
+      []
+    ],
+    "wirePinGpio": [],
+    "wireConfigured": false,
+    "wireReversed": [],
+    "wireFaceRotations": {},
+    "wiringCheckedPinIndices": []
+  },
+  "editor": {
+    "ledPreviewDiameterMm": 3,
+    "showViewerAxes": true,
+    "showSolidOutline": true,
+    "hideBackfaceDiscrete": true,
+    "hideBackfaceDeviceRig": true,
+    "color": {
+      "brightness": 0.05,
+      "gamma": 2.2,
+      "whiteBalance": {
+        "r": 1,
+        "g": 1,
+        "b": 1
+      }
+    },
+    "paintColor": [
+      255,
+      80,
+      0
+    ],
+    "ledOverrides": []
+  }
+}

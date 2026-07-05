@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Moon, MousePointer2, Repeat, Smile, Type } from 'lucide-react'
 import type { OutputMode } from '@/types'
-import { MATE_LAYOUT_ID } from '@/types'
+import { mateSupportedForLedCount } from '@/types'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -67,7 +67,7 @@ export function StudioPage() {
   if (load.kind !== 'ready') return null
   const { state, clips } = load
 
-  const mateSupported = state.layoutId === MATE_LAYOUT_ID
+  const mateSupported = mateSupportedForLedCount(state.ledCount)
   const serverModeKey = panelMode(state.mode)
   const modeKey = studioTab ?? serverModeKey
 
