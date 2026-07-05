@@ -5,4 +5,4 @@
 #define GLOWBE_WIFI_PASSWORD "your-password"
 
 // mDNS host label (access as "<name>.local"). Set "" to disable.
-#define GLOWBE_MDNS_HOSTNAME "glowbe-proto"
+#define GLOWBE_MDNS_HOSTNAME "glowbe-60panels"

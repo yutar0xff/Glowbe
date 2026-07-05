@@ -1,8 +1,9 @@
 /**
  * Wi-Fi なし虹色テスト（論理インデックス順に色相をずらす）。
  *
- *   uv run pio run -e product-s3-dev-rainbow -t upload
- *   uv run pio device monitor -e product-s3-dev-rainbow
+ *   uv run pio run -e 15panels-rainbow -t upload
+ *   uv run pio run -e 60panels-rainbow -t upload
+ *   uv run pio device monitor -e 60panels-rainbow
  */
 #include <Arduino.h>
 
@@ -14,7 +15,7 @@
 namespace {
 
 constexpr uint32_t kFrameDelayMs = 40;
-constexpr unsigned kExtraBrightnessPercent = 3;
+constexpr unsigned kExtraBrightnessPercent = 15;
 alignas(4) uint8_t g_rgb[static_cast<size_t>(GLOWBE_LED_COUNT) * 3u];
 
 }  // namespace

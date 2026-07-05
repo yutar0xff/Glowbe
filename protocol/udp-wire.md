@@ -1,6 +1,6 @@
 # Glowbe Wire Protocol v1（UDP）
 
-ランタイム → ESP32-S3 のピクセル転送。ポート既定 **49152/udp**（`config.toml` の `output.udp_port` で変更可）。
+ランタイム → ESP32 のピクセル転送。ポート既定 **49152/udp**（`config.toml` の `output.udp_port` で変更可）。
 
 ## 共通
 
@@ -74,7 +74,7 @@ v1 の FRAME ペイロードには**アプリ層のチェックサムを付け�
 
 | オフセット | 型 | 名前 | 値 |
 |-----------|-----|------|-----|
-| 16 | u32 | layout_hash | `tools/layout-compile.ts` が `.meta.json` と **`firmware/esp32s3/include/generated/<layout-id>/glowbe_layout.h`** に書く **FNV-1a 32bit**（配線・GPIO・chip 等の正規化 JSON から算出）。ランタイムが `meta.layoutHash` と照合し不一致を警告する。 |
+| 16 | u32 | layout_hash | `tools/layout-compile.ts` が `.meta.json` と **`firmware/esp32/include/generated/<layout-id>/glowbe_layout.h`** に書く **FNV-1a 32bit**（配線・GPIO・chip 等の正規化 JSON から算出）。ランタイムが `meta.layoutHash` と照合し不一致を警告する。 |
 
 - 16 バイト STATUS も有効。`layout_hash` は省略扱い（照合スキップ）。
 - **推奨:** 新規ファームは **20 バイト**を送信する。
