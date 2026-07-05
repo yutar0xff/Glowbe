@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ModeResetBar } from './ModeResetBar'
 
 function clipThumbUrl(clip: ClipSummary): string | null {
   if (clip.isDemo) return null
@@ -311,6 +312,8 @@ export function LoopModePanel({
     mediaConvertBusy,
     clipBusy,
     activeDeviceId,
+    clearLoopSelection,
+    setLoopPlaybackPaused,
   } = useGlowbeRuntime()
   const playingClipId = state.mode === 'loop' ? state.loopClipId : null
   const { uv, uvError, uvLoading } = useLayoutUv(state.layoutId, state.ledCount)
@@ -331,6 +334,23 @@ export function LoopModePanel({
   const [lastUploadId, setLastUploadId] = useState<string | null>(null)
   const [convertFps, setConvertFps] = useState('30')
   const [convertDisplayName, setConvertDisplayName] = useState('')
+  const [resetBusy, setResetBusy] = useState(false)
+
+  const resetToDefaults = async () => {
+    setResetBusy(true)
+    try {
+      if (state.loopPlaybackPaused) {
+        await setLoopPlaybackPaused(false)
+      }
+      await clearLoopSelection()
+    } catch {
+      /* surfaced via load error state in provider */
+    } finally {
+      setResetBusy(false)
+    }
+  }
+
+  const loopBusy = resetBusy || clipBusy !== null
 
   const onPickFile = () => {
     setUploadErr(null)
@@ -381,6 +401,7 @@ export function LoopModePanel({
 
   return (
     <div className="space-y-6">
+      <ModeResetBar onReset={resetToDefaults} busy={resetBusy} disabled={loopBusy && !resetBusy} />
       {showSourcePreview ? (
         <Card>
           <CardHeader>
