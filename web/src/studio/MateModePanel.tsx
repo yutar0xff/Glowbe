@@ -11,10 +11,17 @@ import { Switch } from '@/components/ui/switch'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { useGlowbeStandaloneLedPreview } from '@/hooks/use-glowbe-standalone-led-preview'
 import { useLayoutUv } from '@/hooks/use-layout-uv'
-import { DEFAULT_MATE_TRANSITION_MS, MATE_LAYOUT_ID } from '@/mate/constants'
+import {
+  DEFAULT_MATE_BREATHING,
+  DEFAULT_MATE_PRESET_ID,
+  DEFAULT_MATE_TRANSITION_MS,
+  DEFAULT_MATE_TRANSITION_ROTATE,
+  MATE_LAYOUT_ID,
+} from '@/mate/constants'
 import type { MateBreathingParams } from '@/mate/types'
 import { useMatePresets } from '@/mate/useMatePresets'
 import type { RuntimeState } from '@/types'
+import { ModeResetBar } from './ModeResetBar'
 
 export function MateModePanel({ state }: { state: RuntimeState }) {
   const {
@@ -29,6 +36,7 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
   const mateSupported = state.layoutId === MATE_LAYOUT_ID
 
   const [transitionMs, setTransitionMs] = useState(DEFAULT_MATE_TRANSITION_MS)
+  const [resetBusy, setResetBusy] = useState(false)
   const {
     presets,
     activePresetId,
@@ -82,6 +90,29 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
     })()
   }
 
+  const resetToDefaults = async () => {
+    setResetBusy(true)
+    setTransitionMs(DEFAULT_MATE_TRANSITION_MS)
+    setActivePresetId(DEFAULT_MATE_PRESET_ID)
+    setBreathing(DEFAULT_MATE_BREATHING)
+    setTransitionRotate(DEFAULT_MATE_TRANSITION_ROTATE)
+    try {
+      await setMateExpression(DEFAULT_MATE_PRESET_ID, DEFAULT_MATE_TRANSITION_MS)
+      await setMateBreathing(DEFAULT_MATE_BREATHING)
+      await setMateTransitionRotate(DEFAULT_MATE_TRANSITION_ROTATE)
+    } catch {
+      /* surfaced via load error state in provider */
+    } finally {
+      setResetBusy(false)
+    }
+  }
+
+  const mateBusy =
+    resetBusy ||
+    mateExpressionBusy !== null ||
+    mateBreathingBusy ||
+    mateTransitionRotateBusy
+
   if (!mateSupported) {
     return (
       <Alert>
@@ -97,6 +128,7 @@ export function MateModePanel({ state }: { state: RuntimeState }) {
 
   return (
     <div className="space-y-6">
+      <ModeResetBar onReset={resetToDefaults} busy={resetBusy} disabled={mateBusy && !resetBusy} />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">

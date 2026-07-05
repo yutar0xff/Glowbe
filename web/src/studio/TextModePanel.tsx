@@ -12,6 +12,7 @@ import { useLayoutUv } from '@/hooks/use-layout-uv'
 import {
   CENTER_LAT_DEG_MAX,
   CENTER_LAT_DEG_MIN,
+  DEFAULT_TEXT_PARAMS,
   FADE_ANGLE_DEG_MAX,
   FADE_ANGLE_DEG_MIN,
   LOOP_INTERVAL_SEC_MAX,
@@ -31,6 +32,7 @@ import {
 import type { TextModeParams } from '@/text/types'
 import { useTextConfig } from '@/text/useTextConfig'
 import type { RuntimeState } from '@/types'
+import { ModeResetBar } from './ModeResetBar'
 
 function commitOnEnter(e: KeyboardEvent<HTMLInputElement>) {
   if (e.key === 'Enter') {
@@ -170,6 +172,7 @@ export function TextModePanel({ state }: { state: RuntimeState }) {
   const { activeDeviceId, setTextConfig, textConfigBusy } = useGlowbeRuntime()
   const { params, setParams, loading, error } = useTextConfig(activeDeviceId)
   const [contentText, setContentText] = useState(params.content)
+  const [resetBusy, setResetBusy] = useState(false)
 
   useEffect(() => {
     setContentText(params.content)
@@ -199,8 +202,26 @@ export function TextModePanel({ state }: { state: RuntimeState }) {
     if (next !== params.content) commit({ content: next })
   }
 
+  const resetToDefaults = async () => {
+    setResetBusy(true)
+    setParams(DEFAULT_TEXT_PARAMS)
+    setContentText(DEFAULT_TEXT_PARAMS.content)
+    try {
+      await setTextConfig(DEFAULT_TEXT_PARAMS)
+    } catch {
+      /* surfaced via load error state in provider */
+    } finally {
+      setResetBusy(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
+      <ModeResetBar
+        onReset={resetToDefaults}
+        busy={resetBusy}
+        disabled={(textConfigBusy && !resetBusy) || loading}
+      />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">

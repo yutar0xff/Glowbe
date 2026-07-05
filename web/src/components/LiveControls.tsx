@@ -13,6 +13,7 @@ import { useLayoutUv } from '@/hooks/use-layout-uv'
 import { LayoutUvSheet, type TapUvHighlight } from '@/components/LayoutUvMap'
 import { LayoutUvSphereCanvas } from '@/components/LayoutUvSphereCanvas'
 import { TAP_HIGHLIGHT_DECAY_MS } from '@/lib/layout-uv-geometry'
+import { DEFAULT_INTERACTIVE_SETTINGS } from '@/interactive/constants'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import {
@@ -46,24 +47,35 @@ export function LiveControls({
   layoutId,
   ledCount,
   outputMode,
+  resetSignal = 0,
 }: {
   layoutId: string
   ledCount: number
   outputMode: string
+  /** Increment to restore pulse / effect UI defaults and push them to the device. */
+  resetSignal?: number
 }) {
   const { activeDeviceId } = useGlowbeRuntime()
   const { uv, uvError, uvLoading } = useLayoutUv(layoutId, ledCount)
   const [wsPhase, setWsPhase] = useState<'idle' | 'connecting' | 'open' | 'closed'>('idle')
   const [lastWsNote, setLastWsNote] = useState<string | null>(null)
-  const [pulseDurationMs, setPulseDurationMs] = useState(450)
-  const [pulseSigmaDeg, setPulseSigmaDeg] = useState(8)
-  const [interactiveEffect, setInteractiveEffect] = useState<InteractiveEffectKind>('expandingRingDiagonal')
-  const [colorRandom, setColorRandom] = useState(true)
-  const [colorHex, setColorHex] = useState('#c8f0ff')
-  const [ringSpeed, setRingSpeed] = useState(1)
-  const [ringThicknessDeg, setRingThicknessDeg] = useState(0)
-  const [solidBaseEnabled, setSolidBaseEnabled] = useState(false)
-  const [solidBaseHex, setSolidBaseHex] = useState('#101018')
+  const [pulseDurationMs, setPulseDurationMs] = useState(
+    DEFAULT_INTERACTIVE_SETTINGS.pulseDurationMs,
+  )
+  const [pulseSigmaDeg, setPulseSigmaDeg] = useState(DEFAULT_INTERACTIVE_SETTINGS.pulseSigmaDeg)
+  const [interactiveEffect, setInteractiveEffect] = useState<InteractiveEffectKind>(
+    DEFAULT_INTERACTIVE_SETTINGS.interactiveEffect,
+  )
+  const [colorRandom, setColorRandom] = useState(DEFAULT_INTERACTIVE_SETTINGS.colorRandom)
+  const [colorHex, setColorHex] = useState(DEFAULT_INTERACTIVE_SETTINGS.colorHex)
+  const [ringSpeed, setRingSpeed] = useState(DEFAULT_INTERACTIVE_SETTINGS.ringSpeed)
+  const [ringThicknessDeg, setRingThicknessDeg] = useState(
+    DEFAULT_INTERACTIVE_SETTINGS.ringThicknessDeg,
+  )
+  const [solidBaseEnabled, setSolidBaseEnabled] = useState(
+    DEFAULT_INTERACTIVE_SETTINGS.solidBaseEnabled,
+  )
+  const [solidBaseHex, setSolidBaseHex] = useState(DEFAULT_INTERACTIVE_SETTINGS.solidBaseHex)
   const [pulseHighlights, setPulseHighlights] = useState<TapUvHighlight[]>([])
   const liveRgbBufRef = useRef<Uint8Array | null>(null)
   const [liveRgbRevision, setLiveRgbRevision] = useState(0)
@@ -153,6 +165,20 @@ export function LiveControls({
       setLiveRgbRevision(0)
     }
   }, [connectWs, layoutId, ledCount])
+
+  useEffect(() => {
+    if (resetSignal <= 0) return
+    const d = DEFAULT_INTERACTIVE_SETTINGS
+    setPulseDurationMs(d.pulseDurationMs)
+    setPulseSigmaDeg(d.pulseSigmaDeg)
+    setInteractiveEffect(d.interactiveEffect)
+    setColorRandom(d.colorRandom)
+    setColorHex(d.colorHex)
+    setRingSpeed(d.ringSpeed)
+    setRingThicknessDeg(d.ringThicknessDeg)
+    setSolidBaseEnabled(d.solidBaseEnabled)
+    setSolidBaseHex(d.solidBaseHex)
+  }, [resetSignal])
 
   useEffect(() => {
     if (wsPhase !== 'open') return
