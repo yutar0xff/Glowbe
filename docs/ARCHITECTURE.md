@@ -1,9 +1,6 @@
-# Glowbe v2 — システムアーキテクチャ
+# Glowbe — システムアーキテクチャ
 
-> **ステータス:** レビュー用ドラフト（2026-06-13）  
-> **範囲:** 設計のみ（本ドキュメントは「あるべき姿」を記述し、実装の進捗は追わない）  
-> **実装状況の正本:** [`STATUS.md`](STATUS.md)（Phase / API / モードごとの 設計・実装・検証）  
-> **旧版:** `archived-glowbe` を置き換える
+> **範囲:** システム設計（本ドキュメントは設計を記述する。機能一覧は [`STATUS.md`](STATUS.md)）  
 
 ---
 
@@ -27,14 +24,12 @@
 16. [パフォーマンスモデル（2.4 GHz・60 fps 以上）](#16-パフォーマンスモデル24-ghz60-fps-以上)
 17. [セキュリティ（完全オープン）](#17-セキュリティ完全オープン)
 18. [観測・運用](#18-観測運用)
-19. [段階的ロードマップ](#19-段階的ロードマップ)
-20. [archived-glowbe との関係](#20-archived-glowbe-との関係)
 
 ---
 
 ## 1. 概要
 
-Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラットフォーム**である。アニメーションフレームは **常駐ランタイム**（自宅 Ubuntu Server、展示用 Windows など）で合成され、**自前 UDP プロトコル**で **ESP32** へ送られる。スマホ・PC のブラウザは **設定・操作・プレビュー**に使い、タブを閉じても再生は止まらない。
+Glowbe は **サーバ権威型のリアルタイム LED 球体プラットフォーム**である。アニメーションフレームは **常駐ランタイム**（自宅 Ubuntu Server、展示用 Windows など）で合成され、**自前 UDP プロトコル**で **ESP32** へ送られる。スマホ・PC のブラウザは **設定・操作・プレビュー**に使い、タブを閉じても再生は止まらない。
 
 ```
 ┌──────────────┐  制御・アップロード・タップ   ┌─────────────────────┐
@@ -51,8 +46,8 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
                                                └─────────────────────┘
 ```
 
-**リポジトリ:** GitHub `Glowbe`（新規）。旧版は `archived-glowbe`。  
-**モノレポに含めるもの:** ランタイム、Web、**ESP ファーム**、**PCB**。
+**リポジトリ:** GitHub `Glowbe`。  
+**モノレポに含めるもの:** ランタイム、Web、**ESP ファーム**、**PCB**、**3D プリントデータ**。
 
 ---
 
@@ -60,14 +55,13 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
 
 | 項目 | 決定内容 |
 |------|----------|
-| LED レイアウト | **`glowbe-layout` v1** — [`config/layouts/presets/geodesic-2v-60.layout.json`](../config/layouts/presets/geodesic-2v-60.layout.json)（60panels）、[`icosahedron-15.layout.json`](../config/layouts/presets/icosahedron-15.layout.json)（15panels）。今後変更あり得る |
+| LED レイアウト | **`glowbe-layout` v1** — [`geodesic-2v-60`](../config/layouts/presets/geodesic-2v-60.layout.json)（60panels）、[`icosahedron-15`](../config/layouts/presets/icosahedron-15.layout.json)（15panels） |
 | ピクセル転送 | **完全自前 UDP**（Art-Net・TouchDesigner 連携は採用しない） |
 | メディア | **正距円筒図法（equirectangular）** の画像・動画・コマ送りをアップロード → **サーバで LED フレーム列へ変換・保存** → ループ再生等で利用（TouchDesigner 連携なし） |
 | Wi-Fi | **2.4 GHz のみ**（ESP 側）。**最低 60 fps** |
 | ランタイム | **Rust** |
 | Web | **Vite + React** |
-| 認証 | **完全オープン** |
-| クライアントマイク | **後回し** |
+| 認証 | **完全オープン**（LAN 内信頼前提） |
 | リポジトリ名 | **Glowbe** |
 
 ---
@@ -82,7 +76,7 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
 | G2 | Ubuntu Server と展示用 Windows の両方でランタイムが動く |
 | G3 | ファーム・PCB を同一リポジトリで版管理する |
 | G4 | 自前 UDP で最大パフォーマンス（60 fps 以上を維持） |
-| G5 | モード: ループ再生、インタラクティブ（リップル）、サーバマイク、**デジタル時計**（`clock_digital`）、**アナログ時計**（`clock_analog`） |
+| G5 | モード: ループ再生、インタラクティブ、**mate**、**text**、idle |
 | G6 | 正距円筒メディアのアップロードとサーバ側アニメーション資産化 |
 | G7 | Web：UV プレビュー、タブ型統合ボード、プレビュー配信 |
 
@@ -90,10 +84,10 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
 
 | ID | 内容 |
 |----|------|
-| NG1 | archived-glowbe とのプロトコル・ファーム互換 |
+| NG1 | 外部ピクセルプロトコル（Art-Net 等）との互換 |
 | NG2 | 外部ツール（TouchDesigner 等）からのライブ取り込み |
 | NG3 | クラウドピクセル中継 |
-| NG4 | ブラウザ内タイムラインオーサリング（旧 Studio 相当） |
+| NG4 | ブラウザ内タイムラインオーサリング（chain profile エディタ以外） |
 | NG5 | 認証 |
 | NG6 | クライアント（端末）マイク |
 
@@ -159,7 +153,8 @@ Glowbe v2 は **サーバ権威型のリアルタイム LED 球体プラット�
 Glowbe/
 ├── docs/
 │   ├── ARCHITECTURE.md          # 本書（設計の正本）
-│   ├── STATUS.md                # 実装状況・引き継ぎの正本
+│   ├── STATUS.md                # リリース機能一覧
+│   ├── GETTING_STARTED.md
 │   ├── BENCHMARK.md
 │   └── firmware/LED-OUTPUT.md
 ├── config/
@@ -170,10 +165,13 @@ Glowbe/
 │   ├── control-api.md
 │   ├── glowseq.md
 │   └── compiled-layout.md
-├── runtime/                     # Rust（Phase 1: loop 出力 + 状態 API）
-├── web/                         # Vite + React（Phase 1.5: 状態表示 + idle/loop 切替）
+├── runtime/                     # Rust 常駐サーバ
+├── web/                         # Vite + React（Glowbe Studio）
 ├── firmware/esp32/
-├── hardware/pcb/                # 未追加
+├── hardware/                    # PCB・3D プリント（[`hardware/README.md`](../hardware/README.md)）
+│   ├── pcb/
+│   └── mechanical/
+├── packages/core/               # @glowbe/core（幾何・レイアウト）
 ├── tools/
 │   ├── migrate-studio-layout.mjs
 │   ├── layout-compile.ts        # レイアウト → コンパイル成果物 + ファームヘッダ
@@ -217,13 +215,13 @@ Glowbe/
 ```
 優先度（高 → 低）:
   1. 手動オーバーライド（ブラックアウト / テストパターン）
-  2. アクティブモード（loop / interactive / mic / clock_digital / clock_analog）
+  2. アクティブモード（loop / interactive / mate / text）
   3. IDLE（フェードアウトまたは最終フレーム保持）
 ```
 
 ### 6.4 設定（`config.toml`）
 
-**現在の実装が読むキー**（Phase 1。正本は [`config.example.toml`](../config.example.toml) / `runtime/src/config.rs`）:
+**`config.toml` の主要キー**（正本: [`config.example.toml`](../config.example.toml) / `runtime/src/config.rs`）:
 
 ```toml
 [device]
@@ -250,30 +248,8 @@ bind = "0.0.0.0:8748"
 
 ### 6.5 電力・輝度・ガンマ
 
-- **ファーム:** `kGlowbeLedBrightness` でグローバル輝度を抑える。全白時のブラウンアウトは電源・配線で確保（NeoPixelBus 側の電流上限 API は未使用。必要なら将来追加）。
-- **ランタイム（将来）:** 送出直前にガンマ／輝度を一括適用する場合はモードに依存しない最終段に置く。API 草案: `POST /api/v1/brightness`（[`protocol/control-api.md`](../protocol/control-api.md)）。
-- **判断待ち:** レイアウトは `SK6805` だが NeoPixelBus の `Ws2812x` タイミングで十分か／`SK6812` 等へ切り替えるか（[`STATUS.md`](STATUS.md)）。
-
-**将来構成（未実装キー）** — Phase 2 以降で `config.rs` に追加予定:
-
-```toml
-[device]
-board_rev = "A"                 # 未実装
-
-[assets]
-uploads = "assets/uploads"       # メディア（Phase 2）
-sequences = "assets/sequences"
-
-[preview]                       # 未実装（プレビュー）
-enabled = true
-fps = 12
-width = 480
-
-[clock]                         # 未実装（Phase 4 時計モード）
-timezone = "Asia/Tokyo"
-```
-
-> 注: `runtime/src/config.rs` は未知キーを無視するため、将来構成キーを書いても起動は通るが効果は無い。実装状況は [`STATUS.md`](../docs/STATUS.md) を参照。
+- **ファーム:** `kGlowbeLedBrightness` でグローバル輝度を抑える。全白時のブラウンアウトは電源・配線で確保。
+- **ランタイム:** `POST /api/v1/master-tone` で全モード共通の輝度・ガンマ（[`protocol/control-api.md`](../protocol/control-api.md)）。
 
 ---
 
@@ -307,7 +283,7 @@ timezone = "Asia/Tokyo"
 ### 7.3 サンプリング
 
 - コンパイル済みレイアウトの **各 LED の UV 座標**（正距円筒上の u,v）から双線形補間で RGB を取得。
-- archived-glowbe の球面→UV マッピング思想を Rust に移植（コードコピーではなく再実装）。
+- UV マッピングは `@glowbe/core` とランタイム側で実装。
 
 ### 7.4 API（例）
 
@@ -377,51 +353,34 @@ trait Mode {
 
 - 球面 UV 上のリップル。ブラウザタップ → WebSocket → サーバ上で減衰しながら継続。
 
-### 9.3 サーバマイク（`mic`）
+### 9.3 Mate（`mate`）
 
-- サーバ接続マイクのエネルギー・帯域で視覚化。
+- 60panels（`geodesic-2v-60`）向け SDF 顔レンダラ。詳細 [`MATE.md`](MATE.md)。
 
-### 9.4 デジタル時計（`clock_digital`）
+### 9.4 Text（`text`）
 
-- サーバのローカル時刻（`config.toml` の `timezone`）を **7 セグ / ドットマトリクス風** または **UV 上の数字描画**で表示。
-- 常時表示用。ループと排他切替。
+- 球面 UV 上をテキストが流れるモード。
 
-### 9.5 アナログ時計（`clock_analog`）
-
-- 時・分（任意で秒）針を球面 UV 上に描画。
-- 針はベクトル描画または事前定義スプライトで毎 tick 更新。
-
-### 9.6 将来モード
-
-| モード | 概要 |
-|--------|------|
-| `mic_client` | 端末マイク（後回し） |
-| `schedule` | 時刻でモード・シーケンス切替 |
-| `ai_voice` | 外部 AI API 連携 |
-
-### 9.7 モード切替 API
+### 9.5 モード切替 API
 
 ```json
 POST /api/v1/mode
-{ "mode": "loop" | "interactive" | "mic" | "clock_digital" | "clock_analog" | "idle" }
+{ "mode": "loop" | "interactive" | "mate" | "text" | "idle" }
 ```
 
 ---
 
 ## 10. Web クライアント（Vite + React）
 
-### 10.1 タブ構成
+### 10.1 Studio タブ（Glowbe Studio）
 
 | タブ | 内容 |
 |------|------|
-| **ダッシュボード** | モード、fps、ESP、レイアウト id |
-| **メディア** | 正距円筒画像・動画・コマ送りアップロード、変換進捗、シーケンス一覧 |
-| **ループ** | 変換済みシーケンスの選択・再生 |
-| **インタラクティブ** | UV マップ、タップでリップル |
-| **時計** | デジタル/アナログ切替、タイムゾーン表示 |
-| **オーディオ** | サーバマイクモード |
-| **デバイス** | ESP ステータス |
-| **設定** | サーバ URL |
+| **Loop** | クリップ選択・再生・アップロード |
+| **Interactive** | UV マップ・タップでリップル |
+| **Mate** | 表情プリセット・呼吸 |
+| **Text** | 球面テキスト |
+| **Devices** | ESP・レイアウト・Chain profile |
 
 ### 10.2 プレビュー
 
@@ -459,7 +418,6 @@ main
 ├── include/generated/<layout-id>/glowbe_layout.h   # layout-compile 自動生成（env の -I で選択）
 ├── led_driver.cpp          # NeoPixelBus I2S0 並列
 ├── main.cpp              # Wi-Fi + UDP + LED ドライバ
-└── http_status.cpp       # 将来
 ```
 
 ### 11.3 その他
@@ -469,16 +427,28 @@ main
 
 ---
 
-## 12. ハードウェア / PCB
+## 12. ハードウェア
+
+詳細: [`hardware/README.md`](../hardware/README.md)
 
 ```
-hardware/pcb/glowbe-revA/
+hardware/
+├── pcb/
+│   ├── geodesic-2v-60-revA/     # 60panels — EasyEDA `.eprj`（v2.2.47）
+│   └── icosahedron-15-revA/     # 15panels — EasyEDA `.eprj`（v2.2.47）
+└── mechanical/
+    ├── geodesic-2v-60/          # 60panels 用 3D プリント（1 ファイル）
+    └── icosahedron-15/          # 15panels 用 3D プリント（1 ファイル）
 ```
 
-| PCB rev | レイアウト id |
-|---------|----------------|
-| Rev A（60panels） | `geodesic-2v-60` |
-| —（15panels） | `icosahedron-15` |
+| 種別 | 15panels | 60panels |
+|------|----------|----------|
+| Layout id | `icosahedron-15` | `geodesic-2v-60` |
+| PCB rev | `icosahedron-15-revA` | `geodesic-2v-60-revA` |
+| PCB ソース（Git） | `Glowbe-15panels.eprj` | `Glowbe-60panels.eprj` |
+| 3D プリント | `mechanical/icosahedron-15/` に **1 ファイル** | `mechanical/geodesic-2v-60/` に **1 ファイル** |
+
+基板の Gerber / BOM は現時点では Git 管理外。`.eprj` から EasyEDA でエクスポートする。ライセンス: [`LICENSE.hardware`](../LICENSE.hardware)（CERN-OHL-P-2.0）。
 
 データ線は **GPIO 直結 + レベルシフタ**（PCB 設計に従う）。I2S 専用ピンに依存しない配線を推奨。
 
@@ -569,35 +539,6 @@ LAN 到達者が制御・UDP 送信可能。展示は閉じた AP を運用で�
 
 ---
 
-## 19. 段階的ロードマップ
-
-| Phase | 内容 | 状態 |
-|-------|------|------|
-| **0** | プロトコル文書、プロトタイプ layout-compile（225 LED）、ESP スパイクファーム、UDP ベンチツール | 完了 |
-| **1** | Rust ランタイム、ループ E2E、**60 fps ベンチ合格** | UDP E2E 成功扱い。送信耐性・mDNS・レイアウトハッシュ等を実装済 |
-| **1.5** | 最小 Web（`/api/v1/state` + `/health` ポーリング、`idle`/`loop` 切替）— API のドッグフーディング | 完了 |
-| **2** | メディアパイプライン（正距円筒→シーケンス） | 静止画1枚→1フレームシーケンス + 一覧 + Web/API 選択再生 実装済。次: アップロード/複数フレーム |
-| **3** | インタラクティブ（リップル） | 未着手 |
-| **4a** | デジタル/アナログ時計（依存が軽く先行しやすい） | 未着手 |
-| **4b** | サーバマイク（cpal・プラットフォーム差） | 未着手 |
-| **5** | クライアントマイク、OTA、展示 runbook | 未着手 |
-
----
-
-## 20. archived-glowbe との関係
-
-| 旧 | 新 |
-|----|-----|
-| ブラウザ中心 | **Rust ランタイム中心** |
-| GU チャンク UDP | **Glowbe Wire UDP v1** |
-| 無印 I2S パラレル（旧 Glowbe） | **S3: NeoPixelBus LCD / 無印プロト: NeoPixelBus I2S0** |
-| Studio オーサリング | **サーバメディア変換 + 薄い Web UI** |
-| TouchDesigner / Relay | **廃止** |
-
-コードマージは行わない。幾何・UV の **参照のみ**。
-
----
-
 ## 用語集
 
 | 用語 | 意味 |
@@ -605,9 +546,8 @@ LAN 到達者が制御・UDP 送信可能。展示は閉じた AP を運用で�
 | 正距円筒図法 | Equirectangular。横長 2:1 が球面全体のテクスチャ |
 | glowbe-layout | LED 配線・幾何プリセットの JSON 形式 v1 |
 | シーケンス | メディア変換後の LED フレーム列（`assets/sequences/`） |
-| RMT | ESP32 のリモートコントロール周辺機器。WS2812 系のビットバンギングに利用可能。本リポジトリの **無印プロト**では NeoPixelBus **I2S0 並列**を既定とし、RMT per line はフォールバック検討用 |
+| RMT | ESP32 のリモートコントロール周辺機器。WS2812 系のビットバンギングに利用可能。本リポジトリでは NeoPixelBus **I2S0 並列**を既定とする |
 | I2S0 並列 | NeoPixelBus `NeoEsp32I2s0X8/X16Ws2812xMethod` による ESP32 マルチライン LED 駆動（詳細は `docs/firmware/LED-OUTPUT.md`） |
-| DMA パラレル | DMA がメモリ上のバッファを LCD ペリフェラルへ転送し、複数データ線を低 CPU 負荷で同時駆動する方式 |
 
 ---
 
