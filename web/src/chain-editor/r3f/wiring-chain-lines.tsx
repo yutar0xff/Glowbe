@@ -95,7 +95,7 @@ export function HopDirectionArrow({
   by,
   bz,
   color,
-  hideBackface: _hideBackface,
+  hideBackface,
   dimmed,
   placement = "segment",
 }: {
@@ -111,6 +111,7 @@ export function HopDirectionArrow({
   dimmed: boolean;
   placement?: HopArrowPlacement;
 }) {
+  void hideBackface;
   const built = useMemo(
     () => buildArrowGeometry(ax, ay, az, bx, by, bz, placement),
     [ax, ay, az, bx, by, bz, placement],

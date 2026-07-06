@@ -16,11 +16,11 @@ use std::time::{Duration, Instant};
 use tokio::time;
 use uuid::Uuid;
 
-use crate::layouts;
 use crate::clip;
 use crate::device_slot::DeviceSlot;
 use crate::devices::DeviceRecord;
 use crate::discover;
+use crate::layouts;
 use crate::mate_api;
 use crate::media;
 use crate::state::{
@@ -1584,10 +1584,7 @@ struct LayoutDuplicateRequest {
     display_name: Option<String>,
 }
 
-async fn get_layout_source(
-    app: SharedState,
-    Path(layout_id): Path<String>,
-) -> impl IntoResponse {
+async fn get_layout_source(app: SharedState, Path(layout_id): Path<String>) -> impl IntoResponse {
     match layouts::get_layout_source(&app.repo_root, &layout_id) {
         Ok(source) => (StatusCode::OK, Json(source)).into_response(),
         Err(e) => (
@@ -1676,7 +1673,8 @@ async fn delete_layout(app: SharedState, Path(layout_id): Path<String>) -> impl 
                 .into_response();
         }
     };
-    match layouts::delete_user_layout(&app.repo_root, &app.compiled_dir, &layout_id, &device_usage) {
+    match layouts::delete_user_layout(&app.repo_root, &app.compiled_dir, &layout_id, &device_usage)
+    {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (
             StatusCode::BAD_REQUEST,

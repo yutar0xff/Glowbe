@@ -1,105 +1,195 @@
 # Glowbe
 
-サーバ権威型の LED 球体プラットフォーム（v2）。
+<p align="center">
+  <img src="./docs/images/glowbe-hero.jpg" alt="Glowbe — desktop LED spherical display" width="720" />
+</p>
 
-- 設計（あるべき姿）: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- 実装状況・引き継ぎ（正本）: [`docs/STATUS.md`](docs/STATUS.md)
-- 環境変数: [`docs/ENV.md`](docs/ENV.md)
+---
 
-## セキュリティ・運用
+## Glowbe とは
 
-Glowbe は **同一 LAN 内の信頼できるネットワーク**向けです。
+**Glowbe**は、**glow する globe** — 卓上の球体 LED ディスプレイです。
+将来的には、近未来的インテリア兼、卓上に佇む相棒のような存在にできたらいいなと思っています。
 
-- **HTTP API・WebSocket・UDP（FRAME / STATUS / LINK）に認証はありません。** ランタイムを `0.0.0.0` で公開したり、インターネットに晒さないでください。
-- Wi-Fi 認証情報は `firmware/esp32/include/wifi_config.h`（gitignore）にのみ置きます。
-- 機密設定は `config.toml` および `web/.env.*.local`（いずれも gitignore）に置きます。
+LAN 上の **中継サーバ（`glowbe-runtime`）** がアニメーションを合成し、ESP32 球体へ UDP で送ります。**Glowbe Studio**（Web UI）から **スマホやタブレット** でも操作でき、モード切替・インタラクティブ・Mate 表情など **リアルタイム制御** が可能です。
+
+ソフトウェア（Rust ランタイム + Web UI）、ESP32 ファームウェア、基板・筐体データをひとつのリポジトリで公開しています。
+
+## デモ動画
+
+YouTube プレイリスト: [Glowbe](https://www.youtube.com/playlist?list=PLaepnv5k-lJI)
+
+## 制作動機
+
+- 卓上に相棒みたいなのがいたらいいな
+- モノづくりしてます感のある DIY インテリアみたいなのがあったらいいな
+- 就職先の電子部品メーカーの製品を使った何かを作ってみたい
+
+## システム概要
+
+```
+スマホ / タブレット / PC
+        │
+        ▼
+Web（Glowbe Studio）  ── HTTP / WebSocket ──►  glowbe-runtime（Rust・中継）
+                                                      │
+                                              Glowbe Wire UDP
+                                                      ▼
+                                              ESP32 + LED 球体
+```
+
+- **15panels**（`icosahedron-15`、225 LED）と **60panels**（`geodesic-2v-60`、1260 LED）の 2 バリアント
+- モード例: ループ再生、インタラクティブ、**Mate**（相棒）、Idle
+- Chain profile エディタで配線・レイアウトを編集可能
 
 ## リポジトリ構成
 
 | パス | 内容 |
 |------|------|
-| `runtime/` | Rust 常駐サーバ（Phase 1: ループ出力 + HTTP API） |
-| `web/` | Vite + React（`/` ステータス、`/mode` で Idle トグル + 各モード、`/mode/loop`・`/mode/interactive`、英語 UI） |
-| `firmware/esp32/` | ESP32 ファーム |
-| `config/layouts/` | LED レイアウト（`glowbe-layout` v1） |
-| `docs/DEV.md` | 開発時の注意（ランタイム+Web、ESP、ポート） |
-| `docs/ENV.md` | 環境変数（Web / systemd） |
-| `protocol/` | UDP・API・シーケンス仕様 |
-| `tools/` | レイアウトコンパイル等 |
+| [`runtime/`](runtime/) | 常駐サーバ（フレーム合成・UDP 送信・HTTP/WS API） |
+| [`web/`](web/) | Glowbe Studio（Vite + React） |
+| [`firmware/esp32/`](firmware/esp32/) | ESP32 ファーム（PlatformIO） |
+| [`packages/core/`](packages/core/) | `@glowbe/core` — 幾何・LED レイアウト |
+| [`config/layouts/`](config/layouts/) | レイアウト定義（`glowbe-layout` v1） |
+| [`hardware/`](hardware/) | 基板（EasyEDA `.eprj`）・3D プリント |
+| [`protocol/`](protocol/) | UDP・REST・レイアウト仕様 |
+| [`docs/`](docs/) | 設計・セットアップ・ベンチ等 |
 
-旧版: [archived-glowbe](https://github.com/yutar0xff/archived-glowbe)
+## ドキュメント
 
-## クイックスタート（15panels）
+| ドキュメント | 内容 |
+|-------------|------|
+| [はじめに](docs/GETTING_STARTED.md) | ビルド・フラッシュ・起動 |
+| [アーキテクチャ](docs/ARCHITECTURE.md) | システム設計 |
+| [リリース概要](docs/STATUS.md) | 本リリースの機能一覧 |
+| [開発メモ](docs/DEV.md) | ローカル開発の注意 |
+| [環境変数](docs/ENV.md) | Web / デプロイ設定 |
+| [Mate モード](docs/MATE.md) | 球面顔レンダラ |
+| [ハードウェア](hardware/README.md) | PCB・3D プリント |
 
-### 1. レイアウトコンパイル
+## 制作者
 
-`tools/layout-compile.ts` は、現時点では幾何プリセット展開のため **隣接クローンの [archived-glowbe](https://github.com/yutar0xff/archived-glowbe)**（`../archived-Glowbe/packages/core`）を参照します。リポジトリに同梱済みの `assets/compiled/` と `firmware/esp32/include/generated/` があれば、再コンパイルなしでもランタイム・ファームのビルドは可能です。**レイアウトコンパイルは将来的に本リポジトリ内で自己完結する予定**です。
+**yutar0xff** — [X (@yutar0xff)](https://x.com/yutar0xff)
 
-```bash
-npx tsx tools/layout-compile.ts config/layouts/presets/icosahedron-15.layout.json
-npx tsx tools/layout-compile.ts config/layouts/presets/geodesic-2v-60.layout.json
-```
+ソフト・ハードともに素人制作です。AI 支援を利用しており、内容を十分に検証できていない部分があります。**自己責任でご利用ください。**
 
-→ `assets/compiled/<layout-id>.*` と `firmware/esp32/include/generated/<layout-id>/glowbe_layout.h`（各 PlatformIO `env` の `-I` でどちらを使うか指定）
+日頃オープンソースの恩恵を受けているため、本プロジェクトもオープンソース化しています。
 
-### 2. ファーム（スパイク）
+## セキュリティ
 
-```bash
-cd firmware/esp32 && uv sync
-cp include/wifi_config.h.example include/wifi_config.h
-# wifi_config.h を編集
-uv run pio run -e 15panels -t upload
-```
-
-### 3. ランタイム（Phase 1）
-
-```bash
-cp config.example.toml config.toml
-# 手動 IP: device.esp_ip = "..."（シリアル diag の ip=...）
-# または esp_ip を省略して mDNS（同一 LAN、ESP が _glowbe._udp を広告）
-
-cd runtime && cargo run -- ../config.toml
-```
-
-- UDP **49152** で FRAME 送信（60 fps、**論理 RGB**）
-- HTTP **`config.toml` の `[server] bind` ポート**（既定例 **8748**）— `GET /api/v1/state`（`fpsOut`, `fpsRx`, `frameLoopStaleMs`, `layoutMismatch` 等）
-- `GET /health` — 出力ループが 1s 以上止まっていると **503**
-- ESP から STATUS **49153** を受信（20 バイト推奨、`layout_hash` 含む）
-
-### 4. Web ダッシュボード（Phase 1.5）
-
-```bash
-cd web && npm install
-npm run dev
-```
-
-- 環境変数: [`docs/ENV.md`](docs/ENV.md) · 開発の注意: [`docs/DEV.md`](docs/DEV.md)
-
-既定では `web/.env.development` の `GLOWBE_RUNTIME_URL`（`http://127.0.0.1:8748`）へプロキシします。上書きは `web/.env.development.local` か、一時的に `GLOWBE_RUNTIME_URL=... npm run dev`。静的ビルドで別オリジンへ API がある場合はビルド時に `VITE_GLOWBE_API_BASE`（[`docs/ENV.md`](docs/ENV.md)）。
-
-### 5. 静止画からシーケンス生成（Phase 2）
-
-```bash
-cargo run --manifest-path runtime/Cargo.toml -- \
-  convert-image /path/to/equirectangular.png sequence-id config.toml
-```
-
-生成後、runtime 起動中に Web ダッシュボードの Sequences から選択するか、`POST /api/v1/loop/select` で `sequenceId` を選択すると loop モードで再生します。
-
-### 6. ベンチ
-
-[`docs/BENCHMARK.md`](docs/BENCHMARK.md) 参照。最低 **60 fps × 5 分**（15panels・2.4 GHz）。
-
-## 次の開発ステップ
-
-Phase 2: 正距円筒 **単一画像** および **ZIP 連番**（最大 3600 フレーム）→ シーケンス、REST **`/api/v1/media/*`**、**`displayName`**（変換時指定 + **`PATCH /api/v1/sequences/:id`**）、Studio の **UV 散布プレビュー** と WS **`getLayoutUv` / `layoutUv`**。次は **動画** 変換・進捗のより細かい割合・60fps ベンチ記録。具体タスクは [`docs/STATUS.md`](docs/STATUS.md) の §7。
-
-## 開発要件
-
-- Node 20+（`layout-compile` / `web`）
-- Rust toolchain（ランタイム）
-- PlatformIO（ファーム）
+同一 LAN 内の信頼できるネットワーク向けです。HTTP / WebSocket / UDP に認証はありません。インターネットに公開しないでください。
 
 ## ライセンス
 
-[MIT](LICENSE)
+| 対象 | ライセンス |
+|------|------------|
+| ソフトウェア | [MIT](LICENSE) |
+| ハードウェア（`hardware/`） | [CERN-OHL-P-2.0](LICENSE.hardware) |
+
+詳細: [LICENSES.md](LICENSES.md)
+
+## コントリビューション
+
+Issue や Pull Request、フィードバックを歓迎します。使ってみた感想や改良報告もお待ちしています。
+
+## 寄付
+
+[![GitHub Sponsors](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ea4aaa)](https://github.com/sponsors/yutar0xff)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/yutar0xff)
+
+**今後も開発を続ける保証はありません。** 現公開に対するチップとしてのみ受け付けます。返礼や特典、開発スケジュールの約束はありません。
+
+---
+
+## What is Glowbe?
+
+**Glowbe** is a **glowing globe** — a desktop LED spherical display.
+Someday I hope it feels like a little futuristic companion sitting on your desk.
+
+A **relay server (`glowbe-runtime`)** on your LAN synthesizes animation frames and sends them to the ESP32 sphere over UDP. **Glowbe Studio** (web UI) lets you control it from a **phone or tablet** on the same network — mode changes, interactive taps, Mate expressions, and other **real-time control**.
+
+This repository publishes the software (Rust runtime + web UI), ESP32 firmware, LED layout definitions, and PCB / enclosure data together.
+
+## Demo videos
+
+YouTube playlist: [Glowbe](https://www.youtube.com/playlist?list=PLaepnv5k-lJI)
+
+## Why I built it
+
+- I wanted a little companion on my desk
+- I wanted DIY-style decor that feels handmade
+- I wanted to build something using products from the electronic-components maker I will join
+
+## System overview
+
+```
+Phone / tablet / PC
+        │
+        ▼
+Web (Glowbe Studio)  ── HTTP / WebSocket ──►  glowbe-runtime (Rust relay)
+                                                  │
+                                          Glowbe Wire UDP
+                                                  ▼
+                                          ESP32 + LED sphere
+```
+
+- Two rig variants: **15panels** (`icosahedron-15`, 225 LEDs) and **60panels** (`geodesic-2v-60`, 1260 LEDs)
+- Modes include loop playback, interactive, **Mate** (companion face), and idle
+- Chain profile editor for wiring and layout customization
+
+## Repository layout
+
+| Path | Contents |
+|------|----------|
+| [`runtime/`](runtime/) | Daemon (frame synthesis, UDP, HTTP/WS API) |
+| [`web/`](web/) | Glowbe Studio (Vite + React) |
+| [`firmware/esp32/`](firmware/esp32/) | ESP32 firmware (PlatformIO) |
+| [`packages/core/`](packages/core/) | `@glowbe/core` — geometry & LED layout |
+| [`config/layouts/`](config/layouts/) | Layout definitions (`glowbe-layout` v1) |
+| [`hardware/`](hardware/) | PCB (EasyEDA `.eprj`) & 3D print files |
+| [`protocol/`](protocol/) | UDP, REST, and layout specs |
+| [`docs/`](docs/) | Design, setup, benchmarks, etc. |
+
+## Documentation
+
+| Document | Contents |
+|----------|----------|
+| [Getting started](docs/GETTING_STARTED.md) | Build, flash, and run |
+| [Architecture](docs/ARCHITECTURE.md) | System design |
+| [Release overview](docs/STATUS.md) | Features in this release |
+| [Development notes](docs/DEV.md) | Local dev tips |
+| [Environment variables](docs/ENV.md) | Web / deploy config |
+| [Mate mode](docs/MATE.md) | Spherical face renderer |
+| [Hardware](hardware/README.md) | PCB & 3D print |
+
+## Author
+
+**yutar0xff** — [X (@yutar0xff)](https://x.com/yutar0xff)
+
+Both software and hardware are hobby work. AI assistance is involved, and some content has not been fully verified. **Use at your own risk.**
+
+I benefit from open source every day, so I open-sourced this project too.
+
+## Security
+
+Intended for a trusted LAN. HTTP, WebSocket, and UDP have no authentication. Do not expose to the internet.
+
+## License
+
+| Scope | License |
+|-------|---------|
+| Software | [MIT](LICENSE) |
+| Hardware (`hardware/`) | [CERN-OHL-P-2.0](LICENSE.hardware) |
+
+See [LICENSES.md](LICENSES.md).
+
+## Contributing
+
+Issues, pull requests, and feedback are welcome. Reports of how you tried it or improved it are welcome too.
+
+## Donations
+
+[![GitHub Sponsors](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ea4aaa)](https://github.com/sponsors/yutar0xff)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/yutar0xff)
+
+**There is no guarantee of continued development.** Donations are accepted only as tips for the currently published release. No perks, rewards, or development schedule is promised.

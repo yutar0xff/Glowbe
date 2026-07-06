@@ -1,9 +1,8 @@
-# Glowbe — Mate モード 設計・実装計画
+# Glowbe — Mate モード
 
-> **役割:** 本書は **mate モード（球体 LED に「顔」を表示し、Web UI から表情を切り替え、将来は AI エージェント連携でリアルタイム表情・リップシンクする）** の設計と、実装を分割して進めるためのタスク計画。
-> **対象ブランチ:** `feature/product-studio`
-> **前提読み物:** [`ARCHITECTURE.md`](ARCHITECTURE.md)（全体設計）・[`STATUS.md`](STATUS.md)（実装状況）・[`../protocol/control-api.md`](../protocol/control-api.md)。
-> **適用レイアウト:** `geodesic-2v-60`（1260 LED / 60panels）。`icosahedron-15`（225 LED / 15panels）では mate モードを **提供しない**（解像度不足）。
+> **役割:** **mate モード**（球体 LED に「顔」を表示し、Web UI および WebSocket から表情を制御する）の設計と実装参照。  
+> **前提:** [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`STATUS.md`](STATUS.md) · [`../protocol/control-api.md`](../protocol/control-api.md)  
+> **レイアウト:** `geodesic-2v-60`（1260 LED / 60panels）のみ。`icosahedron-15` では mate を提供しない。
 
 ---
 
@@ -18,7 +17,7 @@
 | M3 | Web UI からプリセットを選んで表示を切り替えられる |
 | M4 | **呼吸感**（ゆるやかな明滅・スケール揺れ）と**瞬き**を常時加える |
 | M5 | 表情間を**シームレスに遷移**（モーフ）できる |
-| M6 | 将来の AI 連携に向けて、**リアルタイムにパラメータを上書きするライブ制御**（リップシンク用の口開閉など）を WS で受けられる |
+| M6 | WebSocket で**リアルタイムにパラメータを上書き**（口開閉・viseme 等） |
 | M7 | 非直角・疎な LED 格子でも崩れない描画（SDF カバレッジによるアンチエイリアス）にする |
 
 ### 非ゴール（本フェーズ）
@@ -26,8 +25,8 @@
 | ID | 内容 |
 |----|------|
 | NM1 | 15panels（225 LED）での mate 対応 |
-| NM2 | AI エージェント本体・音声認識・TTS（口開閉を**受ける口**だけ用意し、駆動元は別途） |
-| NM3 | Web 上での GUI 表情エディタ（プリセットは JSON 編集で足りる。GUI は将来の任意拡張） |
+| NM2 | AI エージェント本体・音声認識・TTS（口開閉を**受ける口**のみ。駆動元は外部） |
+| NM3 | Web 上での GUI 表情エディタ（プリセットは JSON 編集で定義） |
 | NM4 | ファーム変更（mate はランタイムが RGB を生成するだけ。**単一ライター原則**を崩さない） |
 
 ---
@@ -407,65 +406,12 @@ OutputMode::Mate => {
 
 - プリセット一覧（グリッド or セレクト）→ クリックで `POST /api/v1/mate/expression`（遷移 ms スライダ）。
 - 呼吸 ON/OFF・周期・振幅スライダ。
-- **ライブプレビュー**: 既存の球面プレビュー（`LayoutUvSphereCanvas` + `previewSubscribe` の preview frame）を流用。実装追加は最小。
-- （任意・後フェーズ）Face Frame 校正: `frontLongitudeU`/`forwardTiltDeg`/`faceAngularRadiusDeg` スライダ → `POST /api/v1/mate/frame`。校正中はデバッグ表情（§6.4 相当: 中心十字＋外周リング）を出すと合わせやすい。
+- **ライブプレビュー**: 既存の球面プレビュー（`LayoutUvSphereCanvas` + `previewSubscribe`）を流用。
+- Face Frame 校正: `frontLongitudeU` / `forwardTiltDeg` / `faceAngularRadiusDeg` スライダ → `POST /api/v1/mate/frame`。
 
 ---
 
-## 9. 実装フェーズ分割（下位モデル向けタスク）
-
-各フェーズは**独立してビルド・テスト可能**にし、`cargo test` と `web` の `npm run build` を緑に保つ。フェーズ完了ごとに STATUS.md を更新。
-
-### Phase A — 幾何と静的レンダリング（ハードウェア不要で検証可）
-**目標:** mate モードで**単一の固定表情**を球に出す。遷移・呼吸・瞬き・ライブなし。
-1. `runtime/src/state.rs`: `OutputMode::Mate`（`code()=3`, `parse("mate")`, `as_str`）追加。
-2. `runtime/src/mate.rs`: `FaceFrame`/`FaceSample`/`build_face_samples`、SDF（まず `ellipse`, `polyline`）、`Expression`/`Part`、`resolve_preset`、`render`。
-3. ビルトイン `neutral`（目 2・口 1）を `include_str!`。
-4. `device_slot.rs`: `mate_samples`/`mate_frame`/`mate_presets`/現在表情、`ensure_mate_samples`, `render_mate`。
-5. `output.rs`: `OutputMode::Mate` 腕。
-6. `api.rs`: `POST /api/v1/mode`（mate 動作確認）＋ `GET /api/v1/mate/presets` ＋ `POST /api/v1/mate/expression`（遷移なし＝即時差し替えでよい）。
-- **受け入れ基準:**
-  - `cargo test`: `build_face_samples` で前面 LED の `weight>0`・裏面 `weight=0`、対称な目が左右対称な被覆を持つ等の単体テスト。
-  - 手元 ESP（無印 or S3）かプレビューで「目 2 つ＋口」の neutral 顔が前面に表示される。
-  - 解像度予算（§3.4）に沿い、線が途切れない。
-
-### Phase B — プリセット読込と遷移
-1. `assets/mate/*.face.json` のローダ＋バリデーション＋ビルトイン拡充（`happy/sad/angry/surprised/sleepy`）。
-2. スロットモーフ `lerp_expression`、`MateTransition`、`set_mate_expression(transition_ms)`。
-3. `POST /api/v1/mate/expression` を遷移対応に。
-- **受け入れ基準:** プリセット間切替が `transitionMs` でシームレスに補間される（`cargo test` で `lerp_expression` の端点一致・中間単調性、点数不一致時のクロスフェード）。不正 JSON はスキップしてログ。
-
-### Phase C — 呼吸・瞬き
-1. `BreathingParams`/`BlinkState`、`render_mate` に適用。
-2. `POST /api/v1/mate/breathing`、WS `setBreathing`/`blink`。
-- **受け入れ基準:** 常時ゆるやかな明滅、ランダム瞬き。`blink:true` の目のみ潰れる。
-
-### Phase D — Web パネル
-1. 型/API/`OutputMode` 追加、`StudioPage` タブ、`MateModePanel`（プリセット選択・遷移 ms・呼吸）。
-2. 既存プレビューを mate でも表示。
-- **受け入れ基準:** `npm run build` 緑、UI からプリセット切替・呼吸調整ができ、プレビューに反映。
-
-### Phase E — stamp 小物（ピクセルアート PNG）
-
-**目標:** 正方形ピクセルアート PNG を 1:1 で stamp 化し、表情遷移でもバウンス・ちらつきが出ないようにする。
-
-1. **インポートツール:** `mate-import-stamp` — PNG の色分けを `palette`＋`pixels` 索引に格納（透明=外側）。
-2. **ランタイム:** 読込時 EDT、等方スケールでサンプリング。表示色はプリセット側で再配色。
-3. **資産:** `heart`・`anger` など。解像度は作者の PNG に従う（ビルトインは 16×16）。
-4. **トランジションのバウンス対策（必須）:** SDF 補間・呼吸/瞬きの連続適用（既存方針を維持）。
-- **受け入れ基準:** `cargo test` 緑、プレビューでハート・怒りマークが意図した形・色、Neutral↔Love 遷移にバウンスなし。
-
-### Phase F — ライブ制御（AI/リップシンク土台）
-1. WS `viseme`/`setSlot`/`clearLive`、口スロット専用 `openness`/`width` ロジック、無入力リターン。
-2. `MateLive` 保持と表情遷移との共存。
-- **受け入れ基準:** WS で `openness` を流すと口が開閉。表情を変えても口駆動が継続。`clearLive` で解除。
-
-### Phase G（任意）— Face Frame 校正 UI
-- `GET/POST /api/v1/mate/frame`、デバッグ表情、Web スライダ。実機の前面方向を合わせる。
-
----
-
-## 10. テスト戦略
+## 9. テスト戦略
 
 - **Rust 単体（`cargo test`）:** 射影（前面/裏面/対称性）、各 SDF の符号と被覆率の単調性、`lerp_expression` の端点・中間、プリセット JSON バリデーション、口 viseme ロジック。
 - **決定的レンダリング:** 小さな合成 `FaceSample` 集合に対する `render` 出力をスナップショット的に検証（特定 LED が点灯/消灯）。
@@ -474,9 +420,9 @@ OutputMode::Mate => {
 
 ---
 
-## 11. リスク・注意点
+## 10. リスク・注意点
 
-- **校正依存:** 顔が「正面」に出るかは `frontLongitudeU`（配線/設置向き）に依存。Phase A〜では既定値で出し、Phase G で合わせる。実機到着前はプレビューで形状検証に集中する。
+- **校正依存:** 顔が「正面」に出るかは `frontLongitudeU`（配線/設置向き）に依存。`POST /api/v1/mate/frame` と Web スライダで調整する。
 - **解像度:** §3.4 の最小サイズを破ると小物・細線が消える。プリセット作者（人間/AI）はこの予算を守る。
 - **単一ライター原則:** mate もランタイムのみが RGB を生成。ファーム・ワイヤは不変。
 - **既存モードへの非干渉:** `mate` 状態は専用フィールドに隔離。`interactive`/`loop` の挙動を変えない。
@@ -485,7 +431,7 @@ OutputMode::Mate => {
 
 ---
 
-## 12. 触るファイル一覧（要約）
+## 11. 触るファイル一覧（要約）
 
 | 区分 | ファイル | 変更 |
 |------|----------|------|

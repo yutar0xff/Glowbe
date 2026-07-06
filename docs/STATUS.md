@@ -1,146 +1,78 @@
-# Glowbe — 実装状況・引き継ぎ（STATUS）
+# Glowbe — リリース概要
 
-> **役割:** 本書は「いま何ができていて、次に何をやるか」の**正本**。
-> 設計の「あるべき姿」は [`ARCHITECTURE.md`](ARCHITECTURE.md)、各仕様は [`../protocol/`](../protocol/)。
-> 最終更新: 2026-07-06（ESP32 無印のみ・15panels/60panels 命名統一）
-
----
-
-## 1. 全体サマリ
-
-| 指標 | 現在地 |
-|------|--------|
-| フェーズ | **Phase 2（メディア→クリップ変換・ループ再生）+ mate v3** |
-| ランタイム | loop クリップ再生（ビルトインデモ + メディア）/ **mate** 顔レンダラ + 状態 API。`cargo test` **52** 件パス（既知 1 件失敗: `morph_sdf_avoids_midpoint_dimming`） |
-| ファーム | UDP 受信・フレーム再構成・**受信/表示デュアルタスク**・NeoPixelBus I2S0 並列ドライバ。欠落時は前フレーム保持 + プレイアウト遅延 |
-| UDP E2E | ESP32 で 60panels / 15panels ベンチ通過（[`BENCHMARK.md`](BENCHMARK.md)） |
-| Web | **Glowbe Studio**（Loop / Interactive / Idle / **Mate**・クリップ選択・ZIP/画像アップロード・**UV 散布プレビュー**） |
-| メディアパイプライン | **Phase 2**（静止画 / **ZIP 連番** / 動画インポート → **`equirect.bin` クリップ**・`displayName`・進捗 GET） |
-
-> ハードウェア前提: **ESP32**（NeoPixelBus I2S0 並列）。60panels は `geodesic-2v-60`（1260 LED）、15panels は `icosahedron-15`（225 LED）。詳細は `docs/firmware/LED-OUTPUT.md`。
+> **役割:** 本リリースに含まれる機能の一覧。  
+> 設計: [`ARCHITECTURE.md`](ARCHITECTURE.md) · セットアップ: [`GETTING_STARTED.md`](GETTING_STARTED.md) · API: [`../protocol/control-api.md`](../protocol/control-api.md)
 
 ---
 
-## 2. コンポーネント別ステータス
+## 1. 概要
 
-凡例: ✅ 実装済 / 🟡 一部 / ⬜ 未着手 / 📄 設計のみ
-
-| コンポーネント | パス | 状況 | 備考 |
-|----------------|------|------|------|
-| Rust ランタイム | `runtime/` | 🟡 | 送信失敗でループ停止しない・60 連続失敗で再接続／mDNS（`esp_ip` 省略時）／`[assets].compiled_dir`／ホットパス atomics／`layoutMismatch`・**論理 RGB** ワイヤ |
-| `Mode` trait・モード合成 | `runtime/`（§9） | 🟡 | trait 化は未実装。`idle` / `loop` / `interactive` / **`mate`** |
-| ループクリップ | `runtime/src/clip.rs`, `demos.rs`, `equirect.rs` | ✅ | レイアウト非依存 equirect サンプル + ビルトインデモ（`demo/expanding-rings` 等） |
-| メディアワーカー / 変換 | `runtime/src/media.rs` + HTTP `media/*` | 🟡 | CLI + **REST**（PNG/JPEG・**ZIP 連番**・動画 → `assets/clips/<id>/`・`PATCH …/clips` で表示名） |
-| mate モード | `runtime/src/mate/` | ✅ | 60panels 1260 LED 向け SDF 顔・プリセット・スタンプ・モーフ。設計 [`MATE.md`](MATE.md) |
-| サーバマイク（cpal） | `runtime/`（§6.1） | ⬜ | Phase 4 |
-| Web クライアント | `web/` | ✅ | **Glowbe Studio**（Loop: クリップ一覧・アップロード・**UV プレビュー**・Mate プリセット UI） |
-| ESP ファーム | `firmware/esp32/` | ✅ | Wi-Fi STA / UDP / 再構成 / **20 バイト STATUS**（`layout_hash`）。**stream worker + display worker** 分離 |
-| LED ドライバ | `src/led_driver.cpp` | ✅ | NeoPixelBus I2S0 並列（`led_driver_parallel.h`）、論理 RGB → `NeoGrbFeature` |
-| レイアウト v1 + コンパイル | `config/layouts/presets/`, `tools/layout-compile.ts`, Studio chain profiles | ✅ | 15panels 225 LED + **60panels `geodesic-2v-60`** |
-| プロトコル文書 | `protocol/` | ✅ | udp-wire / control-api / glowseq / compiled-layout |
-| ベンチツール | `tools/bench-udp.mjs`, `tools/listen-status.mjs` | ✅ | 無印で合格記録あり（[`BENCHMARK.md`](BENCHMARK.md)） |
-| PCB / hardware | `hardware/pcb/` | ⬜ | ディレクトリ未追加 |
+| 項目 | 内容 |
+|------|------|
+| ランタイム | ループクリップ・メディア変換・**mate** 顔レンダラ・HTTP/WS API |
+| ファーム | ESP32 · UDP 受信 · NeoPixelBus I2S0 並列 · デュアルタスク（受信/表示） |
+| Web | **Glowbe Studio** — Loop / Interactive / Idle / Mate · クリップ管理 · Chain profile エディタ |
+| レイアウト | **15panels** `icosahedron-15`（225 LED）· **60panels** `geodesic-2v-60`（1260 LED） |
+| ハードウェア | `hardware/pcb/` に EasyEDA **v2.2.47** の `.eprj`（Gerber はローカルエクスポート） |
 
 ---
 
-## 3. API エンドポイント別
+## 2. コンポーネント
 
-| エンドポイント | 状況 | メモ |
-|----------------|------|------|
-| `GET /api/v1/state` | ✅ | `layoutId, mode, …`。`mate` 時は mate 要約を含む |
-| `GET /health` | ✅ | 出力ループ tick が **1s 超 stale** なら **503**、そうでなければ **200 ok** |
-| `POST /api/v1/mode` | ✅ | `idle` / `loop` / `interactive` / **`mate`** |
-| `POST /api/v1/master-tone` | ✅ | 全モード最終段の明るさ・ガンマ（`masterBrightness` / `masterGamma` を `state` に反映） |
-| `GET /api/v1/clips` | ✅ | ビルトインデモ + `assets/clips/` の統合一覧 |
-| `PATCH /api/v1/clips/:id` | ✅ | `manifest.json` の **`displayName`** 更新 |
-| `DELETE /api/v1/clips/:id` | ✅ | メディアクリップ削除（ビルトインデモは不可） |
-| `POST /api/v1/loop/select` | ✅ | `clipId` でループ再生を選択 |
-| `GET /api/v1/mate/presets` | ✅ | 表情プリセット一覧 |
-| `POST /api/v1/mate/expression` | ✅ | プリセット選択・モーフ遷移 |
-| `POST /api/v1/mate/breathing` | ✅ | 呼吸パラメータ |
-| `GET /api/v1/layout/uv` | ✅ | `assets/compiled/<layoutId>.ledmap.json` を返す |
-| `GET /api/v1/ws`（state 配信） | ✅ | 接続直後 + 1 秒ごとに state を送信 |
-| `GET /api/v1/ws`（interactive） | ✅ | `interactive` 複数パルス同時加算・色/輪パラメータ・`masterSettings` |
-| `GET /api/v1/ws`（mate） | ✅ | `mate` 時のライブ制御（表情・呼吸など） |
-| `media/upload`, `media/convert`, `GET …/media/:uploadId` | 🟡 | **PNG/JPEG + ZIP + 動画** → クリップ変換・進捗 **`progress`** |
-| `GET /api/v1/ws` `getLayoutUv` | ✅ | **`layoutUv`** 応答（`GET /layout/uv` 相当） |
-| `GET /api/v1/ws` `previewSubscribe` | ✅ | バイナリ LED フレーム（約 30fps） |
-
-詳細仕様: [`../protocol/control-api.md`](../protocol/control-api.md)
+| コンポーネント | パス |
+|----------------|------|
+| Rust ランタイム | `runtime/` |
+| Web クライアント | `web/` |
+| ESP32 ファーム | `firmware/esp32/` |
+| レイアウト・コンパイル | `config/layouts/`, `tools/layout-compile.ts`, `packages/core/` |
+| プロトコル | `protocol/` |
+| 基板 | `hardware/pcb/` |
+| ベンチ | `tools/bench-udp.mjs`, [`BENCHMARK.md`](BENCHMARK.md) |
 
 ---
 
-## 4. モード別（§9）
+## 3. 出力モード
 
-| モード | id | 状況 |
+| モード | id | 概要 |
 |--------|-----|------|
-| ループ再生 | `loop` | ✅ 選択クリップをレイアウト UV でサンプル。未選択時は内蔵テストパターン（`pattern.rs`） |
-| インタラクティブ（消灯＋WS） | `interactive` | ✅ 消灯出力＋WS `interactive` でパルス合成。エフェクト: `sphereGaussian` / `expandingRingDiagonal`（既定 `expandingRingDiagonal`）。`loop` では WS 合成は拒否 |
-| 相棒（球面顔） | `mate` | ✅ 製品 1260 LED 向け SDF 顔レンダラ + プリセット・スタンプ。設計 [`MATE.md`](MATE.md) |
-| デジタル時計 | `clock_digital` | ⬜ Phase 4a（ロードマップ分割後） |
-| アナログ時計 | `clock_analog` | ⬜ Phase 4a |
-| サーバマイク | `mic` | ⬜ Phase 4b |
+| Idle | `idle` | 黒フレーム送出 |
+| ループ | `loop` | クリップを UV サンプリングして再生 |
+| インタラクティブ | `interactive` | WS タップでリップル等 |
+| Mate | `mate` | 60panels 向け SDF 顔（[`MATE.md`](MATE.md)） |
+| Text | `text` | 球面テキストフロー |
 
 ---
 
-## 5. プロトコル整合（重要メモ）
+## 4. 主な API
 
-- **STATUS offset 10 は `drops`**。実装・仕様・API（`espDrops`）で一致。
-- **STATUS 拡張（20 バイト）:** 末尾 4 バイトに `layout_hash`（FNV-1a）。ランタイムは `meta.layoutHash` と照合し `layoutMismatch` を立てる。16 バイト STATUS では `layout_hash` 照合をスキップする。
-- **FRAME チャンク RGB 上限:** ランタイム・ファームとも **1440 バイト**（16 バイトヘッダと合わせて IPv4 UDP で MTU 内）。ESP 側 `FrameAssembler` バッファ **4096** バイト。
-- **ワイヤ色順:** **論理 RGB**（R,G,B）。GRB 物理順は **NeoPixelBus `NeoGrbFeature`** が担当（二重変換を解消済み）。
-- **欠落時表示:** 完全フレームが揃わない場合は LED を更新せず、最後に表示したフレームを保持する。受信途絶で自動消灯しない。
-- **プレイアウト遅延:** ファーム側 `GLOWBE_PLAYOUT_LAG_FRAMES` 既定 2、リング 8。ESP32 無印で低 fps でも出ていた消灯ちらつきは、この方針で解消確認済み。
-- 現ファームの `drops` は主に **不正ヘッダで破棄したパケット数**。
-- **未完成フレーム破棄:** `FrameAssembler` は、別 `frame_id` に切り替わる際に前フレームが未完なら **`incomplete_frame_aborts`** を増やす（シリアル `diag` の `frame_aborts=`）。STATUS の `drops` とは別指標（ワイヤ上の STATUS には未載せ）。
+| エンドポイント | 用途 |
+|----------------|------|
+| `GET /api/v1/state` | 状態・fps・レイアウト |
+| `POST /api/v1/mode` | モード切替 |
+| `GET/POST /api/v1/layouts/*` | レイアウト catalog・CRUD・コンパイル |
+| `GET /api/v1/clips` · `POST /api/v1/loop/select` | クリップ一覧・再生選択 |
+| `POST /api/v1/media/*` | 画像/ZIP/動画 → クリップ変換 |
+| `GET /api/v1/mate/*` · WS `mate` | 表情・呼吸・ライブ制御 |
+| `GET /api/v1/ws` | state · interactive · preview · layout UV |
 
----
-
-## 6. 既知の課題 / TODO
-
-| # | 内容 | 優先 |
-|---|------|------|
-| 1 | **60panels で 60fps×5 分ベンチを再計測し `BENCHMARK.md` に追記** | 中 |
-| 2 | ~~WebSocket の interactive~~ → 実装済 | 完了 |
-| 3 | `Mode` trait 導入（loop 固定からプラグイン化へ） | 中 |
-| 4 | ~~frame-drop（チャンク欠落）カウント~~ → シリアル `frame_aborts` で計上 | 完了（STATUS への載せは未） |
-| 5 | LICENSE 確定（README "TBD"。完全オープン方針なら明示） | 中 |
-| 6 | ~~60panels レイアウト `geodesic-2v-60` のコンパイル~~ → コンパイル済・実機検証継続 | 完了 |
-| 7 | `mate::morph_sdf_avoids_midpoint_dimming` テスト失敗の修正 | 中 |
-| 8 | `hardware/pcb/glowbe-revA/` の追加 | 低 |
-| 9 | **判断待ち:** `SK6805` と NeoPixelBus `NeoGrbFeature`/`Ws2812x` タイミングの整合／`SK6812` 等への切替 | 低 |
-| 10 | PlatformIO ファームの `pio run` を CI に追加（キャッシュ設定含む） | 低 |
-
-**直近の実装反映（`feature/product-studio`）:** mate v3（SDF 顔・プリセット・スタンプ・Studio UI）、60panels レイアウトと ESP32 デュアルタスクストリーム、レイアウト非依存ループクリップ（equirect サンプル + ビルトインデモ）、`/api/v1/clips` と `loop/select` の `clipId`、UDP 送信失敗耐性、layout hash、mDNS、GitHub Actions（Rust + Web）。
+詳細: [`protocol/control-api.md`](../protocol/control-api.md)
 
 ---
 
-## 7. 次の具体タスク
+## 5. プロトコルメモ
 
-1. **60panels 実機でベンチ再計測**: 5 分 → [`BENCHMARK.md`](BENCHMARK.md) に追記。
-2. mate モーフ SDF の既知テスト失敗を修正。
-3. AI エージェント連携（mate ライブ制御の外部駆動）は Phase 以降で検討（設計は [`MATE.md`](MATE.md) §将来）。
-
----
-
-## 8. 開発環境セットアップ
-
-| 対象 | 要件 | コマンド |
-|------|------|----------|
-| レイアウト | Node 20+ | `npx tsx tools/layout-compile.ts config/layouts/presets/geodesic-2v-60.layout.json` |
-| ランタイム | Rust toolchain + C linker | `cd runtime && cargo run -- ../config.toml` |
-| Web | Node 20+ | `cd web && npm install && npm run dev`（`/api` と WS をランタイムへプロキシ。`/` のみ） |
-| 静止画変換 | Rust + PNG/JPEG | `cargo run --manifest-path runtime/Cargo.toml -- convert-image /path/to/image.png clip-id config.toml` |
-| ファーム | PlatformIO（`uv`） | `cd firmware/esp32 && uv sync && uv run pio run -e 60panels -t upload` |
-| ベンチ | Node 20+ | `docs/BENCHMARK.md` 参照 |
-
-`config.toml` は `config.example.toml` をコピーする。**`device.esp_ip`** は実機 IP にするか、**省略**して同一 LAN で **mDNS**（ESP が `_glowbe._udp` を広告）を使う。
+- **論理 RGB**（R,G,B）で FRAME 送出。GRB 変換はファームの NeoPixelBus が担当。
+- **STATUS** 20 バイト推奨（末尾 `layout_hash`）。不一致時 `layoutMismatch`。
+- 欠落フレーム時は前フレーム保持（自動消灯しない）。
 
 ---
 
-## 9. 引き継ぎ上の注意
+## 6. セットアップ
 
-- `archived-glowbe` は **幾何・UV マッピングの参照のみ**。コードマージ・プロトコル/ファーム互換は非目標（§20）。
-- ESP32 ファームは **NeoPixelBus I2S0 並列**（`docs/firmware/LED-OUTPUT.md`）。
-- すべてのピクセルはランタイムが生成する**単一ライター**原則を崩さない（§設計原則 1）。
-- mate モードは **`geodesic-2v-60`（60panels）のみ**対応。15panels 225 LED では提供しない。
+[`GETTING_STARTED.md`](GETTING_STARTED.md) を参照。
+
+**運用上の注意:**
+
+- ESP32 ファームは NeoPixelBus I2S0 並列（[`firmware/LED-OUTPUT.md`](firmware/LED-OUTPUT.md)）。
+- ピクセルはランタイムのみが生成する（単一ライター原則）。
+- Mate は **60panels**（`geodesic-2v-60`）のみ。15panels では提供しない。

@@ -51,6 +51,7 @@ pub struct CompileResult {
     pub led_count: u16,
     pub data_line_count: u8,
     pub gpios: Vec<u8>,
+    #[allow(dead_code)]
     pub leds_per_line: Vec<u16>,
 }
 
@@ -143,15 +144,19 @@ fn read_meta(compiled_dir: &Path, id: &str) -> Result<Value> {
 }
 
 pub fn read_layout_hash(compiled_dir: &Path, id: &str) -> Option<u32> {
-    read_meta(compiled_dir, id)
-        .ok()
-        .and_then(|meta| meta.get("layoutHash").and_then(|v| v.as_u64()).map(|x| x as u32))
+    read_meta(compiled_dir, id).ok().and_then(|meta| {
+        meta.get("layoutHash")
+            .and_then(|v| v.as_u64())
+            .map(|x| x as u32)
+    })
 }
 
 pub fn read_led_count(compiled_dir: &Path, id: &str) -> Option<u16> {
-    read_meta(compiled_dir, id)
-        .ok()
-        .and_then(|meta| meta.get("ledCount").and_then(|v| v.as_u64()).map(|x| x as u16))
+    read_meta(compiled_dir, id).ok().and_then(|meta| {
+        meta.get("ledCount")
+            .and_then(|v| v.as_u64())
+            .map(|x| x as u16)
+    })
 }
 
 pub fn compile_layout_via_node(repo_root: &Path, layout: &Value) -> Result<CompileResult> {
@@ -176,9 +181,7 @@ pub fn compile_layout_via_node(repo_root: &Path, layout: &Value) -> Result<Compi
             .write_all(payload.to_string().as_bytes())
             .context("write layout-build stdin")?;
     }
-    let out = child
-        .wait_with_output()
-        .context("wait layout-build.mjs")?;
+    let out = child.wait_with_output().context("wait layout-build.mjs")?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         anyhow::bail!(
@@ -210,7 +213,8 @@ pub fn ensure_preset_compiled(repo_root: &Path, compiled_dir: &Path) -> Result<(
     if !preset_dir.is_dir() {
         return Ok(());
     }
-    for entry in fs::read_dir(&preset_dir).with_context(|| format!("read {}", preset_dir.display()))?
+    for entry in
+        fs::read_dir(&preset_dir).with_context(|| format!("read {}", preset_dir.display()))?
     {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().to_string();
@@ -297,7 +301,10 @@ pub fn list_layout_catalog(
 
         let display_name = meta["displayName"].as_str().map(String::from);
         let variant = meta["variant"].as_str().map(String::from);
-        let led_count = meta["ledCount"].as_u64().unwrap_or(0).min(u64::from(u16::MAX)) as u16;
+        let led_count = meta["ledCount"]
+            .as_u64()
+            .unwrap_or(0)
+            .min(u64::from(u16::MAX)) as u16;
         let data_line_count = meta["dataLineCount"]
             .as_u64()
             .unwrap_or(0)
@@ -356,8 +363,7 @@ pub fn save_layout_source(
     }
 
     let user_dir = user_source_dir(repo_root);
-    fs::create_dir_all(&user_dir)
-        .with_context(|| format!("mkdir {}", user_dir.display()))?;
+    fs::create_dir_all(&user_dir).with_context(|| format!("mkdir {}", user_dir.display()))?;
 
     let dest = source_path(repo_root, id, LayoutSourceKind::User);
     let tmp = dest.with_extension("layout.json.tmp");
@@ -477,9 +483,11 @@ pub fn import_studio_layout(
     let mut layout: Value = serde_json::from_str(&raw)?;
 
     // User import always gets a unique id unless caller set one.
-    if layout.get("id").and_then(|v| v.as_str()).is_some_and(|id| {
-        find_layout_source(repo_root, id).is_ok()
-    }) {
+    if layout
+        .get("id")
+        .and_then(|v| v.as_str())
+        .is_some_and(|id| find_layout_source(repo_root, id).is_ok())
+    {
         let new_id = format!("custom-{}", &Uuid::new_v4().simple().to_string()[..8]);
         if let Some(obj) = layout.as_object_mut() {
             obj.insert("id".into(), Value::String(new_id));

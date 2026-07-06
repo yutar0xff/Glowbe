@@ -4,6 +4,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { DEFAULT_PINS } from "@glowbe/core";
 import {
+  gpioValueForRow,
   MCU_TABLE_BTN_CLASS,
   maxDisplayWireColumns,
 } from "@/chain-editor/wiring-table-utils";
@@ -16,7 +17,6 @@ import {
 } from "@/chain-editor/wiring-helpers";
 import { Section, Stat } from "@/chain-editor/views/panel-ui";
 import {
-  gpioValueForRow,
   McuWiringTableRow,
 } from "@/chain-editor/views/mcu-wiring-table-row";
 

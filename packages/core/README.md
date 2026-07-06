@@ -1,15 +1,10 @@
 # @glowbe/core
 
-The **single source of truth** for device geometry and LED layout (the "Rig").
+Device geometry and LED layout math (the Rig model).
 
-- Zod schemas + inferred TypeScript types for the Rig (see
-  [`../../docs/data-model.md`](../../docs/data-model.md)).
-- Polyhedron geometry generators (icosahedron, geodesic 2V, …).
-- LED placement math: in-face patterns (zigzag/parallel) → per-LED 3D position,
-  normal, equirectangular UV, and physical address.
-- Calibration export + firmware header codegen helpers.
+- Zod schemas and TypeScript types for rigs and face layouts
+- Polyhedron generators (icosahedron, geodesic 2V, …)
+- LED placement: in-face patterns → 3D position, normal, equirect UV, wiring address
+- Layout compile helpers (firmware header export)
 
-Consumed by `apps/studio` (editing + preview) and `tools` (firmware codegen).
-**Do not duplicate these types elsewhere.**
-
-> Not yet implemented — created during Phase 0. See `../../docs/roadmap.md`.
+Used by `web/` (chain profile editor), `tools/layout-compile.ts`, and the runtime layout build IPC.

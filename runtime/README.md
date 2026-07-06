@@ -1,6 +1,6 @@
 # Glowbe Runtime
 
-Phase 1: 60 fps ループ出力 + Glowbe Wire UDP + HTTP 状態 API。
+常駐サーバ: 60 fps フレーム出力 · Glowbe Wire UDP · HTTP/WS API。
 
 ## ビルド
 
@@ -21,7 +21,7 @@ cargo run -- ../config.toml
 
 任意 `[assets].compiled_dir` / `[assets].sequences_dir` / `[assets].uploads_dir` で `assets/compiled`・`assets/sequences`・`assets/uploads` の場所を指定可能（リポジトリ外デプロイ）。
 
-## Phase 2: 静止画 → 1フレームシーケンス
+## 静止画 → クリップ
 
 ```bash
 # リポジトリルートから

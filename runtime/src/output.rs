@@ -436,8 +436,7 @@ async fn status_listener(port: u16, app: SharedState) {
                     let from_ip = from.ip().to_string();
                     if let Some(slot) = app.find_device_by_status_ip(&from_ip) {
                         let expected = slot.expected_layout_hash.read().ok().and_then(|g| *g);
-                        let mismatch =
-                            wire::layout_hash_mismatch(expected, st.layout_hash);
+                        let mismatch = wire::layout_hash_mismatch(expected, st.layout_hash);
                         if mismatch {
                             if let (Some(exp), Some(esp_h)) = (expected, st.layout_hash) {
                                 warn!(

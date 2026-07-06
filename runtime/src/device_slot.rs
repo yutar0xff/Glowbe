@@ -482,7 +482,8 @@ impl DeviceSlot {
     ) -> anyhow::Result<()> {
         let current = self.state.read().await.layout_id.clone();
         if current != layout_id {
-            self.switch_layout(compiled_dir, layout_id.to_string()).await
+            self.switch_layout(compiled_dir, layout_id.to_string())
+                .await
         } else {
             self.sync_expected_layout_hash_from_meta(compiled_dir, layout_id);
             Ok(())

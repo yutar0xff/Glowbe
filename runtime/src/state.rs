@@ -229,6 +229,7 @@ pub struct SharedApp {
 
 pub type SharedState = Arc<SharedApp>;
 
+#[allow(clippy::too_many_arguments)]
 pub fn new_shared(
     registry: DeviceRegistry,
     default_mode: &str,

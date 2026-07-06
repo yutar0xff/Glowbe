@@ -201,10 +201,10 @@ Delete a user profile when not referenced by any device. `204` on success.
 
 ### `POST /api/v1/layouts/import`
 
-Import archived `glowbe-studio-layout` JSON.
+Import `glowbe-studio-layout` JSON (migrated to v1 on import).
 
 ```json
-{ "studioLayout": { "kind": "glowbe-studio-layout", "...": "..." }, "variant": "product" }
+{ "studioLayout": { "kind": "glowbe-studio-layout", "...": "..." }, "variant": "geodesic-2v-60" }
 ```
 
 Creates a user profile, migrates to v1, and compiles. Response `201` includes `layout` + compile summary (same fields as `POST /api/v1/layouts`).
@@ -383,35 +383,23 @@ WebSocket の **Binary** メッセージ。ビッグエンディアン。
 
 クライアントは `ledCount` とバッファ長を検証すること。
 
-## Phase 対応 / 実装状況
+## エンドポイント一覧
 
-| エンドポイント | Phase | 実装 |
-|----------------|-------|------|
-| `GET /api/v1/state` | 1 | ✅ 実装済 |
-| `GET /health` | 1 | ✅ 実装済 |
-| `POST /api/v1/mode` (`idle` / `loop` / `interactive` / `mate` / `text`) | 1 | ✅ 実装済 |
-| `POST /api/v1/master-tone` | 1 | ✅ 実装済 |
-| `GET` / `POST /api/v1/text/config` | 3 | ✅ 実装済 |
-| `POST /api/v1/loop/select` | 2 | ✅ 実装済 |
-| `POST /api/v1/loop/clear-selection` | 2 | ✅ 実装済 |
-| `POST /api/v1/loop/pause` | 2 | ✅ 実装済 |
-| `GET /api/v1/layout/uv` | 1–2 | ✅ 実装済 |
-| `GET /api/v1/layouts` | 2 | ✅ catalog (preset + user) |
-| `GET/PUT /api/v1/layouts/{id}/source` | 2 | ✅ |
-| `POST /api/v1/layouts` | 2 | ✅ create user + compile |
-| `DELETE /api/v1/layouts/{id}` | 2 | ✅ user only |
-| `POST /api/v1/layouts/import` | 2 | ✅ studio-layout → v1 |
-| `POST /api/v1/layouts/{id}/duplicate` | 2 | ✅ preset → user |
-| `POST /api/v1/device/layout` | 2 | ✅ 実装済 |
-| `GET /api/v1/ws`（state 配信） | 1–2 | ✅ 実装済 |
-| `GET /api/v1/ws`（interactive） | 1–2 | ✅ interactive UV 合成・複数エフェクト |
-| `GET /api/v1/clips`（デモ + メディア統合） | 2 | ✅ 実装済 |
-| `PATCH /api/v1/clips/:id`（`displayName`） | 2 | ✅ 実装済 |
-| `media/*`（upload / convert / GET 進捗） | 2 | 🟡 画像+ZIP 連番。**動画**は未 |
-| `GET /api/v1/ws`（`previewSubscribe` + バイナリ RGB、約 30fps） | 2 | ✅ 実装済 |
-| `GET /api/v1/ws`（`getLayoutUv` → `layoutUv`） | 2 | ✅ 実装済 |
-| clock modes 関連 | 4 | ⬜ 未実装 |
+| エンドポイント | 備考 |
+|----------------|------|
+| `GET /api/v1/state` | 状態・fps・レイアウト |
+| `GET /health` | 出力ループ死活 |
+| `POST /api/v1/mode` | `idle` / `loop` / `interactive` / `mate` / `text` |
+| `POST /api/v1/master-tone` | 全モード共通輝度・ガンマ |
+| `GET` / `POST /api/v1/text/config` | Text モード設定 |
+| `POST /api/v1/loop/select` · `clear-selection` · `pause` | ループクリップ |
+| `GET /api/v1/layout/uv` | LED UV マップ |
+| `GET/PUT/POST/DELETE /api/v1/layouts/*` | レイアウト catalog・CRUD・コンパイル |
+| `POST /api/v1/layouts/import` · `…/duplicate` | インポート・複製 |
+| `POST /api/v1/device/layout` | デバイスへのレイアウト割当 |
+| `GET /api/v1/ws` | state · interactive · mate · preview · layout UV |
+| `GET /api/v1/clips` · `PATCH/DELETE …/clips/:id` | クリップ一覧・表示名 |
+| `GET/POST /api/v1/mate/*` | Mate 表情・呼吸 |
+| `POST /api/v1/media/*` | 画像 / ZIP / 動画 → クリップ変換 |
 
-> 進捗の正本は [`docs/STATUS.md`](../docs/STATUS.md)。本表はスナップショットであり、ズレた場合は STATUS を優先。
-
-OpenAPI 化は Phase 1 着手時に `protocol/control-api.openapi.yaml` へ移行可。
+機能概要: [`docs/STATUS.md`](../docs/STATUS.md)

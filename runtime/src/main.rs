@@ -1,4 +1,3 @@
-mod layouts;
 mod api;
 mod clip;
 mod config;
@@ -7,6 +6,7 @@ mod device_slot;
 mod devices;
 mod discover;
 mod equirect;
+mod layouts;
 mod master_tone;
 mod mate;
 mod mate_api;

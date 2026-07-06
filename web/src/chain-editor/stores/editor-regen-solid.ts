@@ -45,7 +45,7 @@ export function computeRegenSolid(
   const newChains = snapshot.wirePinChains.map((row) =>
     row.map((id) => (id && faceSet.has(id) ? id : "")),
   );
-  let newGpio = snapshot.wirePinGpio.slice(0, newChains.length);
+  const newGpio = snapshot.wirePinGpio.slice(0, newChains.length);
   while (newGpio.length < newChains.length) {
     newGpio.push(DEFAULT_PINS[newGpio.length] ?? -1);
   }

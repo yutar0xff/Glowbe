@@ -53,7 +53,7 @@ npx tsx tools/layout-compile.ts config/layouts/presets/geodesic-2v-60.layout.jso
 
 Runtime uses `npx tsx tools/layout-build.mjs` (stdin IPC) on `PUT /api/v1/layouts/{id}/source`.
 
-## Import from archived studio format
+## Import from `glowbe-studio-layout`
 
 ```bash
 node tools/migrate-studio-layout.mjs <studio.json> <out.layout.json> geodesic-2v-60|icosahedron-15

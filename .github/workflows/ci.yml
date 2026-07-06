@@ -34,8 +34,13 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: web/package-lock.json
-      - name: npm ci
+          cache-dependency-path: |
+            packages/core/package-lock.json
+            web/package-lock.json
+      - name: npm ci (core)
+        run: npm ci
+        working-directory: packages/core
+      - name: npm ci (web)
         run: npm ci
       - name: lint
         run: npm run lint
