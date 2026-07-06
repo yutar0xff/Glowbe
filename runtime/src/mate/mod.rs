@@ -10,8 +10,8 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use tracing::warn;
 
-use crate::media;
 use crate::layouts;
+use crate::media;
 use crate::sphere::unit_dir_from_equirect_uv_y_up;
 
 pub mod stamp_edt;

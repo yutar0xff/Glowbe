@@ -78,17 +78,17 @@ export function createEditorWiringSlice(
       const s = get();
       const wi = s.wiringWalkPinIndex;
       if (wi == null) return;
-      let rowPeek = [...(s.wirePinChains[wi] ?? [])];
+      const rowPeek = [...(s.wirePinChains[wi] ?? [])];
       while (rowPeek.length > 0 && rowPeek[rowPeek.length - 1] === "") rowPeek.pop();
       if (rowPeek.length > 0 && rowPeek[rowPeek.length - 1] === faceId) return;
       let chains = s.wirePinChains.map((r) => [...r]);
-      let gpio = [...s.wirePinGpio];
+      const gpio = [...s.wirePinGpio];
       while (wi >= chains.length) {
         chains.push([]);
         gpio.push(DEFAULT_PINS[gpio.length] ?? -1);
       }
       chains = chains.map((r) => r.map((c) => (c === faceId ? "" : c)));
-      let row = [...(chains[wi] ?? [])];
+      const row = [...(chains[wi] ?? [])];
       while (row.length > 0 && row[row.length - 1] === "") row.pop();
       row.push(faceId);
       chains[wi] = row;
@@ -134,7 +134,7 @@ export function createEditorWiringSlice(
       const s = get();
       if (faceId.length > 0 && s.wirePinChains[pinIndex]?.[colIndex] === faceId) return;
       let chains = s.wirePinChains.map((r) => [...r]);
-      let gpio = [...s.wirePinGpio];
+      const gpio = [...s.wirePinGpio];
       while (pinIndex >= chains.length) {
         chains.push([]);
         gpio.push(DEFAULT_PINS[gpio.length] ?? -1);

@@ -1,8 +1,7 @@
-import type { ThreeEvent } from "@react-three/fiber";
 import { useEditorStore } from "@/chain-editor/stores/editor-store";
 
 /** 3D でクリックした面が表にあれば、そのセルを Face Attachment のプレビューにする。 */
-export function attachmentFacePointerDown(faceId: string, _e: ThreeEvent<PointerEvent>) {
+export function attachmentFacePointerDown(faceId: string) {
   const chains = useEditorStore.getState().wirePinChains;
   for (let ri = 0; ri < chains.length; ri++) {
     const row = chains[ri] ?? [];

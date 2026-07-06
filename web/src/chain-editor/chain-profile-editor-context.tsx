@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, type ReactNode } from 'react'
 import type { SaveLayoutResponse } from '@/chain-editor/layout-save'
 import type { CompiledLayoutSummary } from '@/types'

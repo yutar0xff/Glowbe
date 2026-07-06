@@ -1,7 +1,6 @@
 
 
 import { ChevronDown, ChevronUp, X } from "lucide-react";
-import { DEFAULT_PINS } from "@glowbe/core";
 import {
   formatFaceChainCell,
   MCU_TABLE_BTN_CLASS,
@@ -189,9 +188,4 @@ export function McuWiringTableRow({
       <td className="border-l border-border/60 bg-muted/20" aria-hidden />
     </tr>
   );
-}
-
-/** Default GPIO for a row index when `wirePinGpio` is sparse. */
-export function gpioValueForRow(ri: number, wirePinGpio: number[]): number {
-  return wirePinGpio[ri] ?? DEFAULT_PINS[ri] ?? -1;
 }
