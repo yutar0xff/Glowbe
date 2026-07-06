@@ -51,6 +51,7 @@ pub struct CompileResult {
     pub led_count: u16,
     pub data_line_count: u8,
     pub gpios: Vec<u8>,
+    #[allow(dead_code)]
     pub leds_per_line: Vec<u16>,
 }
 

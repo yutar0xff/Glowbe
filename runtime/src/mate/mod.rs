@@ -21,6 +21,7 @@ mod stamps;
 pub use stamp_import::{import_stamp_from_png, write_stamp_json};
 use stamps::{StampMask, StampRegistry};
 
+#[allow(dead_code)]
 pub const MATE_LAYOUT_ID: &str = "geodesic-2v-60";
 /// Minimum LEDs for mate face rendering (icosahedron-15 has 225).
 pub const MATE_MIN_LED_COUNT: u16 = 225;
