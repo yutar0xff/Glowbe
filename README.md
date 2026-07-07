@@ -1,9 +1,31 @@
 # Glowbe
 
-<a align="center" href="https://www.youtube.com/playlist?list=PLaepnv5k-lJI">
-  <img src="./docs/images/glowbe-hero.png" alt="Glowbe — desktop LED spherical display" width="720" />
-  <p>YouTube playlist: <a href="https://www.youtube.com/playlist?list=PLaepnv5k-lJI">Glowbe</a></p>
-</a>
+<p align="center">
+  <a href="https://www.youtube.com/playlist?list=PLaepnv5k-lJI">
+    <img src="./docs/images/glowbe-hero.png" alt="Glowbe — desktop LED spherical display" width="100%" />
+  </a>
+</p>
+
+<p align="center">YouTube playlist: <a href="https://www.youtube.com/playlist?list=PLaepnv5k-lJI">Glowbe</a></p>
+
+## 目次
+
+- [What is Glowbe?](#what-is-glowbe)
+- [制作動機](#制作動機)
+- [機能](#機能)
+  - [リアルタイム制御](#リアルタイム制御)
+  - [モード](#モード)
+  - [Chain profile エディタ](#chain-profile-エディタ)
+- [技術仕様](#技術仕様)
+  - [システム構成](#システム構成)
+- [リポジトリ構成](#リポジトリ構成)
+- [ドキュメント](#ドキュメント)
+- [制作者](#制作者)
+- [セキュリティ](#セキュリティ)
+- [ライセンス](#ライセンス)
+- [コントリビューション](#コントリビューション)
+- [寄付](#寄付)
+- [English](#what-is-glowbe-1)
 
 ---
 
@@ -122,6 +144,24 @@ Issue や Pull Request、フィードバックを歓迎します。使ってみ�
 **今後も開発を続ける保証はありません。** 現公開に対するチップとしてのみ受け付けます。返礼や特典、開発スケジュールの約束はありません。
 
 ---
+
+## Table of contents
+
+- [What is Glowbe?](#what-is-glowbe-1)
+- [Why I built it](#why-i-built-it)
+- [Features](#features)
+  - [Real-time control](#real-time-control)
+  - [Modes](#modes)
+  - [Chain profile editor](#chain-profile-editor)
+- [Technical specs](#technical-specs)
+  - [System architecture](#system-architecture)
+- [Repository layout](#repository-layout)
+- [Documentation](#documentation)
+- [Author](#author)
+- [Security](#security)
+- [License](#license)
+- [Contributing](#contributing)
+- [Donations](#donations)
 
 ## What is Glowbe?
 
