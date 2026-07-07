@@ -31,7 +31,9 @@ uv run pio run -e 60panels -t upload    # 60panels
 
 ```bash
 cp config.example.toml config.toml
-# device.esp_ip を ESP の IP にするか、省略して mDNS（_glowbe._udp）
+cp assets/devices.json.example assets/devices.json
+# config.toml: device.esp_ip を ESP の IP にするか、省略して mDNS（_glowbe._udp）
+# devices.json: 明るさ・デバイス登録など（Studio からも編集可）。Git には含めない
 
 cd runtime && cargo run -- ../config.toml
 ```

@@ -16,6 +16,9 @@ firmware/esp32/include/generated/custom-*/
 # Secrets / local config
 wifi_config.h
 config.toml
+assets/devices.json
+assets/devices.json.bak
+assets/devices.json.tmp
 # dotenv: リポジトリに載せない個人用・機密用
 .env
 .env.local

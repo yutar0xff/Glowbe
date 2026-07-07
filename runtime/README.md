@@ -15,7 +15,9 @@ cargo build --release
 
 ```bash
 cp ../config.example.toml ../config.toml
-# device.esp_ip を ESP の IP にするか、省略して mDNS（`_glowbe._udp`）
+cp ../assets/devices.json.example ../assets/devices.json
+# config.toml: device.esp_ip を ESP の IP にするか、省略して mDNS（`_glowbe._udp`）
+# devices.json: ローカル設定（Git 管理外）。省略時は config.toml から初回生成される
 cargo run -- ../config.toml
 ```
 
