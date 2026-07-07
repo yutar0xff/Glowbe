@@ -1,23 +1,20 @@
 # Glowbe
 
-<p align="center">
-  <img src="./docs/images/glowbe-hero.jpg" alt="Glowbe — desktop LED spherical display" width="720" />
-</p>
+<a align="center" href="https://www.youtube.com/playlist?list=PLaepnv5k-lJI">
+  <img src="./docs/images/glowbe-hero.png" alt="Glowbe — desktop LED spherical display" width="720" />
+  <p>YouTube playlist: <a href="https://www.youtube.com/playlist?list=PLaepnv5k-lJI">Glowbe</a></p>
+</a>
 
 ---
 
-## Glowbe とは
+## What is Glowbe?
 
 **Glowbe**は、**glow する globe** — 卓上の球体 LED ディスプレイです。
-将来的には、近未来的インテリア兼、卓上に佇む相棒のような存在にできたらいいなと思っています。
+近未来的インテリア、卓上に佇む相棒のようなデバイスを目指しています。
 
-LAN 上の **中継サーバ（`glowbe-runtime`）** がアニメーションを合成し、ESP32 球体へ UDP で送ります。**Glowbe Studio**（Web UI）から **スマホやタブレット** でも操作でき、モード切替・インタラクティブ・Mate 表情など **リアルタイム制御** が可能です。
+制作者の [yutar0xff (X @yutar0xff)](https://x.com/yutar0xff) はソフトウェア・ハードウェアともに素人です。各種 AI を利用しており、内容を十分に検証できていない部分があります。**自己責任でご利用ください。**
 
-ソフトウェア（Rust ランタイム + Web UI）、ESP32 ファームウェア、基板・筐体データをひとつのリポジトリで公開しています。
-
-## デモ動画
-
-YouTube プレイリスト: [Glowbe](https://www.youtube.com/playlist?list=PLaepnv5k-lJI)
+常日頃、私自身が様々なオープンソースプロジェクトの恩恵を受けているため、本プロジェクトもオープンソース化してみました。**ぜひフィードバックや改良してみたよという報告を心待ちにしております！** 使い方の質問なども気兼ねなくお尋ねください。
 
 ## 制作動機
 
@@ -25,22 +22,46 @@ YouTube プレイリスト: [Glowbe](https://www.youtube.com/playlist?list=PLaep
 - モノづくりしてます感のある DIY インテリアみたいなのがあったらいいな
 - 就職先の電子部品メーカーの製品を使った何かを作ってみたい
 
-## システム概要
+## 機能
+
+### リアルタイム制御
+
+**Glowbe Studio**（Web UI）から **スマホやタブレット** でも操作でき、各種モード切替、インタラクティブエフェクト、Mateモードの表情変更など **リアルタイム制御** が可能です。
+
+### モード
+
+- Idle : 消灯
+- Loop : 動画など、あらかじめ登録したコンテンツのループ再生
+- Interactive : Glowbe Studio 上でインタラクティブに操作できるエフェクト
+- Mate : 相棒のように表情を表示
+- Text : 電光掲示板のように任意のテキストを表示
+
+### Chain profile エディタ
+
+複雑となるLEDの配線やレイアウトをエディタ上で簡単に編集できます。実機を組み立てた後、LEDの座標を手動で入力する必要はありません。
+
+## 技術仕様
+
+試作機の **15panels**（`icosahedron-15`、225 LED）版と本番機の **60panels**（`geodesic-2v-60`、1260 LED）の2つのバリエーションがあります。
+
+### システム構成
+
+LAN 上で **Glowbe Studio**、**Runtime**、**Glowbe 本体の ESP** が連携する **2 ノード構成**です（制御ホスト側に Studio と Runtime、実機側に ESP）。
+
+- **Glowbe Studio** ↔ **Runtime**: HTTP / WebSocket
+- **Runtime** ↔ **Glowbe 本体の ESP**: UDP
+
+**Glowbe Studio** は Vite + React、**Runtime** は Rust で実装しています。
+
+ソフトウェア（Runtime + Web UI）、ESP32 ファームウェア、基板・筐体データすべてをこのリポジトリで公開しています。
 
 ```
-スマホ / タブレット / PC
-        │
-        ▼
-Web（Glowbe Studio）  ── HTTP / WebSocket ──►  glowbe-runtime（Rust・中継）
+[Browser] Glowbe Studio  ── HTTP / WebSocket ──►  Runtime (Rust)
                                                       │
-                                              Glowbe Wire UDP
+                                                     UDP
                                                       ▼
-                                              ESP32 + LED 球体
+                                               Glowbe 本体 (ESP)
 ```
-
-- **15panels**（`icosahedron-15`、225 LED）と **60panels**（`geodesic-2v-60`、1260 LED）の 2 バリアント
-- モード例: ループ再生、インタラクティブ、**Mate**（相棒）、Idle
-- Chain profile エディタで配線・レイアウトを編集可能
 
 ## リポジトリ構成
 
@@ -69,17 +90,18 @@ Web（Glowbe Studio）  ── HTTP / WebSocket ──►  glowbe-runtime（Rust
 
 ## 制作者
 
-**yutar0xff** — [X (@yutar0xff)](https://x.com/yutar0xff)
+**yutar0xff** (ユータロー)と申します。
 
-ソフト・ハードともに素人制作です。AI 支援を利用しており、内容を十分に検証できていない部分があります。**自己責任でご利用ください。**
-
-日頃オープンソースの恩恵を受けているため、本プロジェクトもオープンソース化しています。
+- X: [@yutar0xff](https://x.com/yutar0xff)
+- Website: [yutar0xff.com](https://yutar0xff.com)
 
 ## セキュリティ
 
 同一 LAN 内の信頼できるネットワーク向けです。HTTP / WebSocket / UDP に認証はありません。インターネットに公開しないでください。
 
 ## ライセンス
+
+あまり詳しくないので、一旦は以下で公開します。ライセンスについてご相談等ありましたら、お気軽にお問い合わせください。
 
 | 対象 | ライセンス |
 |------|------------|
@@ -104,15 +126,11 @@ Issue や Pull Request、フィードバックを歓迎します。使ってみ�
 ## What is Glowbe?
 
 **Glowbe** is a **glowing globe** — a desktop LED spherical display.
-Someday I hope it feels like a little futuristic companion sitting on your desk.
+I'm aiming for a futuristic interior piece and a little companion on your desk.
 
-A **relay server (`glowbe-runtime`)** on your LAN synthesizes animation frames and sends them to the ESP32 sphere over UDP. **Glowbe Studio** (web UI) lets you control it from a **phone or tablet** on the same network — mode changes, interactive taps, Mate expressions, and other **real-time control**.
+I'm [yutar0xff (X @yutar0xff)](https://x.com/yutar0xff), the creator. Both software and hardware are hobby work. I use various AI tools, and some content has not been fully verified. **Use at your own risk.**
 
-This repository publishes the software (Rust runtime + web UI), ESP32 firmware, LED layout definitions, and PCB / enclosure data together.
-
-## Demo videos
-
-YouTube playlist: [Glowbe](https://www.youtube.com/playlist?list=PLaepnv5k-lJI)
+I benefit from open source projects every day, so I open-sourced this one too. **I'd love your feedback or reports that you tried improving it!** Feel free to ask questions about how to use it.
 
 ## Why I built it
 
@@ -120,22 +138,46 @@ YouTube playlist: [Glowbe](https://www.youtube.com/playlist?list=PLaepnv5k-lJI)
 - I wanted DIY-style decor that feels handmade
 - I wanted to build something using products from the electronic-components maker I will join
 
-## System overview
+## Features
+
+### Real-time control
+
+From **Glowbe Studio** (web UI), you can control Glowbe from a **phone or tablet** — switch modes, run interactive effects, change Mate expressions, and more with **real-time control**.
+
+### Modes
+
+- Idle: lights off
+- Loop: loop playback of pre-registered content such as video clips
+- Interactive: effects you control interactively in Glowbe Studio
+- Mate: companion-style facial expressions
+- Text: display arbitrary text like an LED ticker
+
+### Chain profile editor
+
+Edit complex LED wiring and layout in the editor. After assembling the hardware, you don't need to enter LED coordinates by hand.
+
+## Technical specs
+
+Two variants: a prototype **15panels** (`icosahedron-15`, 225 LEDs) and a production **60panels** (`geodesic-2v-60`, 1260 LEDs).
+
+### System architecture
+
+On your LAN, **Glowbe Studio**, **Runtime**, and the **ESP on the Glowbe unit** work together in a **two-node setup** (Studio and Runtime on the control host, ESP on the device).
+
+- **Glowbe Studio** ↔ **Runtime**: HTTP / WebSocket
+- **Runtime** ↔ **ESP on the Glowbe unit**: UDP
+
+**Glowbe Studio** is built with Vite + React; **Runtime** is built with Rust.
+
+All software (Runtime + web UI), ESP32 firmware, and PCB / enclosure data are published in this repository.
 
 ```
-Phone / tablet / PC
-        │
-        ▼
-Web (Glowbe Studio)  ── HTTP / WebSocket ──►  glowbe-runtime (Rust relay)
-                                                  │
-                                          Glowbe Wire UDP
-                                                  ▼
-                                          ESP32 + LED sphere
+[Browser] Glowbe Studio  ── HTTP / WebSocket ──►  Runtime (Rust)
+                                                      │
+                                                     UDP
+                                                      ▼
+                                               Glowbe unit (ESP)
 ```
-
-- Two rig variants: **15panels** (`icosahedron-15`, 225 LEDs) and **60panels** (`geodesic-2v-60`, 1260 LEDs)
-- Modes include loop playback, interactive, **Mate** (companion face), and idle
-- Chain profile editor for wiring and layout customization
 
 ## Repository layout
 
@@ -164,17 +206,18 @@ Web (Glowbe Studio)  ── HTTP / WebSocket ──►  glowbe-runtime (Rust rel
 
 ## Author
 
-**yutar0xff** — [X (@yutar0xff)](https://x.com/yutar0xff)
+I'm **yutar0xff** (Yutaro).
 
-Both software and hardware are hobby work. AI assistance is involved, and some content has not been fully verified. **Use at your own risk.**
-
-I benefit from open source every day, so I open-sourced this project too.
+- X: [@yutar0xff](https://x.com/yutar0xff)
+- Website: [yutar0xff.com](https://yutar0xff.com)
 
 ## Security
 
 Intended for a trusted LAN. HTTP, WebSocket, and UDP have no authentication. Do not expose to the internet.
 
 ## License
+
+I'm not very familiar with licensing, so for now I'm publishing under the following. If you have questions or want to discuss licensing, feel free to reach out.
 
 | Scope | License |
 |-------|---------|
@@ -185,7 +228,7 @@ See [LICENSES.md](LICENSES.md).
 
 ## Contributing
 
-Issues, pull requests, and feedback are welcome. Reports of how you tried it or improved it are welcome too.
+Issues, pull requests, and feedback are welcome. We'd also love to hear how you used it or what you improved.
 
 ## Donations
 
