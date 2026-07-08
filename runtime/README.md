@@ -53,7 +53,7 @@ cargo run --manifest-path runtime/Cargo.toml -- gen-demo-expanding-rings demo-ex
 | `GET /api/v1/state` | HTTP（`config.toml` の `[server] bind`、既定例 8748） |
 | `GET /health` | 同上（出力ループ停止時 503） |
 | `POST /api/v1/mode` | 同上（`idle` / `loop` / `interactive`） |
-| `POST /api/v1/master-tone` | 同上（全モード共通の最終輝度・ガンマ） |
+| `POST /api/v1/master-tone` | 同上（全モード共通の最終輝度） |
 | `POST /api/v1/loop/select` | 同上（生成済みシーケンス選択） |
 | `GET /api/v1/sequences` | 同上（一覧・任意 `displayName`） |
 | `PATCH /api/v1/sequences/{sequenceId}` | 同上（`displayName` を manifest に反映） |

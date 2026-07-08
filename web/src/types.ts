@@ -36,7 +36,6 @@ export type RuntimeState = {
   espLayoutHash?: number | null
   framesSent: number
   masterBrightness: number
-  masterGamma: number
   /** Device front yaw (deg). Rotates sampling UV around the vertical axis. */
   frontYawDeg: number
 }
@@ -48,12 +47,41 @@ export type ClipSummary = {
   fps: number
   width: number
   height: number
+  sourceId?: string
+  thumbFrameIndex?: number
   sourceKind?: string
   sourceWidth: number
   sourceHeight: number
   createdAtUnixSec: number
   displayName?: string
   isDemo?: boolean
+  /** Loop-media gamma (demos are always 1). */
+  gamma: number
+}
+
+export type SourceSummary = {
+  id: string
+  kind: string
+  frameCount: number
+  width: number
+  height: number
+  fps?: number
+  createdAtUnixSec: number
+  displayName?: string
+}
+
+export type ClipPlacement = {
+  mode: 'equirect-planar' | 'stereographic' | string
+  /** Planar: equirect patch center. */
+  centerU: number
+  centerV: number
+  /** Stereographic: patch center orientation (RH yaw / elevation). */
+  yawDeg: number
+  pitchDeg: number
+  scale: number
+  /** Twist about patch outward axis. */
+  rollDeg: number
+  sourceAspect: number
 }
 
 export type Health = {
@@ -109,7 +137,6 @@ export type DeviceRecord = {
   layoutId: string
   outputFps: number
   masterBrightness?: number
-  masterGamma?: number
   frontYawDeg?: number
 }
 
@@ -134,6 +161,5 @@ export type DeviceCreateInput = {
   layoutId: string
   outputFps: number
   masterBrightness?: number
-  masterGamma?: number
   frontYawDeg?: number
 }

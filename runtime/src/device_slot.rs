@@ -34,7 +34,6 @@ pub struct DeviceSlot {
     pub(crate) interactive_solid: StdRwLock<Option<[u8; 3]>>,
     interactive_default_effect: AtomicU8,
     master_brightness_bits: AtomicU32,
-    master_gamma_bits: AtomicU32,
     pub(crate) preview_frame: StdRwLock<Vec<u8>>,
     pub(crate) preview_seq: AtomicU32,
     output_send_epoch: AtomicU32,
@@ -68,7 +67,6 @@ impl DeviceSlot {
             record.display_name.clone()
         };
         let brightness = crate::master_tone::clamp_brightness_f32(record.master_brightness as f32);
-        let gamma = crate::master_tone::clamp_gamma_f32(record.master_gamma as f32);
         let anim_origin = Instant::now();
         Ok(Arc::new(Self {
             record: StdRwLock::new(DeviceRecord {
@@ -93,7 +91,6 @@ impl DeviceSlot {
                 InteractiveEffectKind::ExpandingRingDiagonal.code(),
             ),
             master_brightness_bits: AtomicU32::new(f32::to_bits(brightness)),
-            master_gamma_bits: AtomicU32::new(f32::to_bits(gamma)),
             preview_frame: StdRwLock::new(vec![0u8; preview_len]),
             preview_seq: AtomicU32::new(0),
             output_send_epoch: AtomicU32::new(0),
@@ -120,7 +117,7 @@ impl DeviceSlot {
     }
 
     pub fn update_record(&self, rec: DeviceRecord) {
-        self.set_master_tone(rec.master_brightness as f32, rec.master_gamma as f32);
+        self.set_master_brightness(rec.master_brightness as f32);
         if let Ok(mut g) = self.record.write() {
             *g = rec;
         }
@@ -163,6 +160,19 @@ impl DeviceSlot {
         self.bump_output_send_epoch();
         let mut state = self.state.write().await;
         state.loop_clip_id = Some(id);
+    }
+
+    /// Replace the in-memory clip (e.g. after gamma patch) without resetting playback timing.
+    pub fn replace_loaded_clip(&self, clip: Arc<LoadedClip>) {
+        let id = clip.id.clone();
+        if let Ok(mut slot) = self.clip.write() {
+            *slot = Some(clip);
+        }
+        self.bump_output_send_epoch();
+        // Keep loop_clip_id in sync if somehow unset.
+        if let Ok(mut state) = self.state.try_write() {
+            state.loop_clip_id = Some(id);
+        }
     }
 
     pub async fn clear_clip(&self) {
@@ -367,17 +377,10 @@ impl DeviceSlot {
         f32::from_bits(self.master_brightness_bits.load(Ordering::Relaxed))
     }
 
-    pub fn master_gamma(&self) -> f32 {
-        f32::from_bits(self.master_gamma_bits.load(Ordering::Relaxed))
-    }
-
-    pub fn set_master_tone(&self, brightness: f32, gamma: f32) {
+    pub fn set_master_brightness(&self, brightness: f32) {
         let b = crate::master_tone::clamp_brightness_f32(brightness);
-        let g = crate::master_tone::clamp_gamma_f32(gamma);
         self.master_brightness_bits
             .store(f32::to_bits(b), Ordering::Relaxed);
-        self.master_gamma_bits
-            .store(f32::to_bits(g), Ordering::Relaxed);
         self.bump_output_send_epoch();
     }
 

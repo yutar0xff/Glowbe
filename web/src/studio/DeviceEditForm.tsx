@@ -99,7 +99,7 @@ export function DeviceEditForm({
   onCancel,
   onDelete,
   toneDisabled,
-  onToneCommit,
+  onBrightnessCommit,
 }: {
   formKey: string
   draft: DeviceDraft
@@ -120,7 +120,7 @@ export function DeviceEditForm({
   onCancel: () => void
   onDelete: () => void
   toneDisabled?: boolean
-  onToneCommit: (brightness: number, gamma: number) => void
+  onBrightnessCommit: (brightness: number) => void
 }) {
   const returnQuery = '?returnTo=device'
 
@@ -227,11 +227,10 @@ export function DeviceEditForm({
         idPrefix={formKey}
         fps={parseDraftFps(draft.outputFps)}
         brightness={draft.masterBrightness}
-        gamma={draft.masterGamma}
         frontYawDeg={draft.frontYawDeg}
         disabled={toneDisabled}
         onFpsCommit={(value) => onChange({ outputFps: String(value) })}
-        onToneCommit={onToneCommit}
+        onBrightnessCommit={onBrightnessCommit}
         onFrontYawCommit={(deg) => onChange({ frontYawDeg: deg })}
       />
       <div className="flex flex-wrap gap-2">

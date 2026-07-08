@@ -36,10 +36,10 @@
 mate モードは既存のモード機構（`Idle`/`Loop`/`Interactive`）と同じ流儀で **1 つの出力モードとして**足す。新しい送信経路やファーム改造は不要。
 
 - **モード保持:** `runtime/src/state.rs` の `enum OutputMode`。`DeviceSlot.mode_code: AtomicU8`（`runtime/src/device_slot.rs`）。
-- **毎フレーム合成:** `runtime/src/output.rs` の `device_output_loop`。tick ごとに `slot.output_mode()` で分岐し、`rgb: Vec<u8>`（長さ `led_count*3`、**論理 RGB**）を埋める → `apply_master_tone` → `wire::encode_frame` で UDP 送出。`mate` 用の `match` 腕を 1 つ足す。
+- **毎フレーム合成:** `runtime/src/output.rs` の `device_output_loop`。tick ごとに `slot.output_mode()` で分岐し、`rgb: Vec<u8>`（長さ `led_count*3`、**論理 RGB**）を埋める → デバイス輝度（＋loop メディア時のみクリップ gamma）→ `wire::encode_frame` で UDP 送出。`mate` 用の `match` 腕を 1 つ足す。
 - **時刻:** サーバ単調時計のみ（`loop_start.elapsed()` 等）。クライアント時刻は使わない。
 - **LED の幾何:** コンパイル済み `assets/compiled/<layoutId>.ledmap.json` に各 LED の正距円筒 `(u,v)`。`(u,v) → 単位方向ベクトル(Y 上)` は `runtime/src/sphere.rs::unit_dir_from_equirect_uv_y_up`。
-- **プレビュー:** 既に `slot.preview_frame`（最終 RGB）を WS `previewSubscribe` でブラウザへ配信済み。mate の出力もこの経路で**そのままプレビューできる**（追加実装不要）。
+- **プレビュー:** 既に `slot.preview_frame`（トーン適用前 RGB）を WS `previewSubscribe` でブラウザへ配信済み。mate の出力もこの経路で**そのままプレビューできる**（追加実装不要）。
 - **WS コマンド作法:** `runtime/src/api.rs::handle_ws_text` がテキスト JSON を `type` で分岐。`interactive` の実装が良い手本。
 - **REST 作法:** `runtime/src/api.rs::router` にルート追加。`post_mode` がモード切替の手本。
 - **Web 型/呼び出し:** `web/src/types.ts`（`OutputMode` 文字列ユニオン）・`web/src/api.ts`・`web/src/studio/StudioPage.tsx`（モードタブ）・`web/src/studio/InteractiveModePanel.tsx`（パネル手本）。
@@ -80,22 +80,23 @@ LED は上 2/3（北極寄り）に偏るため、`forward` は水平から**上
 
 | パラメータ | 既定 | 意味 |
 |------------|------|------|
-| `frontLongitudeU` | 0.5 | 顔正面の経度。`u` 値で指定（`lam = 2π·u − π`）。実機の配線/設置向きに合わせて校正 |
-| `forwardTiltDeg` | 28 | `forward` を赤道面から上へ傾ける角度（度）。LED 被覆中央（赤道の約 +30° 上）に合わせる |
+| `yawDeg` | 0 | 顔正面の RH yaw（+Y まわり、度）。0 で正面 +X（equirect `u = 0.5`） |
+| `pitchDeg` | 28 | `forward` の仰角（赤道から +Y 側が正、度）。LED 被覆中央（赤道の約 +30° 上）に合わせる |
 | `faceAngularRadiusDeg` | 70 | 顔平面の半径 1 に対応する `forward` からの開き角（度）。大きいほど顔が小さく収まる |
 | `silhouetteFadeDeg` | 12 | 可視縁（`faceAngularRadiusDeg`）付近のフェード幅（度）。シルエットを滑らかに消す |
 
 `forward` の構成（既定値の場合、Y 上座標）:
 
 ```
-lam0 = 2π·frontLongitudeU − π          # = 0 （u=0.5）
-tilt = forwardTiltDeg in rad           # = 0.489
-forward = ( cos(tilt)·cos(lam0),  sin(tilt),  cos(tilt)·sin(lam0) )
+yaw = yawDeg in rad                    # = 0
+pitch = pitchDeg in rad                # = 0.489
+λ = −yaw
+forward = ( cos(pitch)·cos(λ),  sin(pitch),  cos(pitch)·sin(λ) )
 up      = (0, 1, 0) を forward で直交化（up' = normalize(up − (up·forward)·forward)）
 right   = normalize(cross(up', forward))
 ```
 
-> これらは **mate-frame として永続化**する（§7.3）。最初は既定値でよいが、実機の前面方向 `frontLongitudeU` は校正が要る。校正用に**デバッグ表情**（§6.4）を用意する。
+> これらは **mate-frame として永続化**する（§7.3）。最初は既定値でよい。校正用に**デバッグ表情**（§6.4）を用意する。
 
 ### 3.3 LED → 顔平面の射影（正射影）
 
@@ -332,7 +333,7 @@ t = loop_start.elapsed()
 
 責務（純関数中心・テスト容易に）:
 
-- `FaceFrame { forward, up, right, ang_radius_rad, fade_rad, front_longitude_u, tilt_deg }` と `from_params(...)`。
+- `FaceFrame { forward, up, right, ang_radius_rad, fade_rad, yaw_deg, pitch_deg }` と `from_params(...)`。
 - `FaceSample { x: f32, y: f32, weight: f32 }`。`build_face_samples(ledmap_uv: &[(f32,f32)], frame: &FaceFrame) -> Vec<FaceSample>`。
 - パーツ SDF: `sdf_ellipse`, `sdf_ring(arc)`, `sdf_polyline`, `sdf_triangle`, `sdf_teardrop`, `sample_stamp`。各 `(fx,fy)` で距離 or 被覆率を返す。
 - `Part`（解決済みの数値パーツ）と `Expression { background, parts: Vec<Part> }`。
@@ -377,7 +378,7 @@ OutputMode::Mate => {
 }
 ```
 
-`render_mate` は `mate.rs::render` を呼ぶ薄いラッパ。`apply_master_tone` は既存の最終段がそのまま効く。プレビュー配信も既存経路で動く。
+`render_mate` は `mate.rs::render` を呼ぶ薄いラッパ。最終段のデバイス輝度は既存経路のまま。プレビュー配信も既存経路で動く。
 
 ### 7.5 パフォーマンス
 
@@ -407,7 +408,7 @@ OutputMode::Mate => {
 - プリセット一覧（グリッド or セレクト）→ クリックで `POST /api/v1/mate/expression`（遷移 ms スライダ）。
 - 呼吸 ON/OFF・周期・振幅スライダ。
 - **ライブプレビュー**: 既存の球面プレビュー（`LayoutUvSphereCanvas` + `previewSubscribe`）を流用。
-- Face Frame 校正: `frontLongitudeU` / `forwardTiltDeg` / `faceAngularRadiusDeg` スライダ → `POST /api/v1/mate/frame`。
+- Face Frame 校正: `yawDeg` / `pitchDeg` / `faceAngularRadiusDeg` スライダ → `POST /api/v1/mate/frame`。
 
 ---
 
@@ -422,7 +423,7 @@ OutputMode::Mate => {
 
 ## 10. リスク・注意点
 
-- **校正依存:** 顔が「正面」に出るかは `frontLongitudeU`（配線/設置向き）に依存。`POST /api/v1/mate/frame` と Web スライダで調整する。
+- **校正依存:** 顔が「正面」に出るかは `yawDeg`（設置向き）に依存。`POST /api/v1/mate/frame` と Web スライダで調整する。
 - **解像度:** §3.4 の最小サイズを破ると小物・細線が消える。プリセット作者（人間/AI）はこの予算を守る。
 - **単一ライター原則:** mate もランタイムのみが RGB を生成。ファーム・ワイヤは不変。
 - **既存モードへの非干渉:** `mate` 状態は専用フィールドに隔離。`interactive`/`loop` の挙動を変えない。

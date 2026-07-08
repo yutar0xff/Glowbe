@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Loader2 } from 'lucide-react'
+import { StudioNav } from '@/components/StudioNav'
 import { API_BASE } from '@/api'
 import { Button } from '@/components/ui/button'
 import { ChainProfileEditorProvider } from '@/chain-editor/chain-profile-editor-context'
@@ -444,22 +445,27 @@ export function ChainProfileEditorPage() {
   return (
     <ChainProfileEditorProvider value={editorContext}>
       <div className="flex h-svh min-h-0 flex-col bg-background">
-        <header className="flex shrink-0 flex-wrap items-center gap-3 border-b px-3 py-2 sm:px-4">
-          <Button type="button" variant="ghost" size="sm" asChild>
-            <Link to={backHref}>
-              <ArrowLeft className="size-4" aria-hidden />
-              Back
-            </Link>
-          </Button>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-semibold">
-              {isDraftRoute ? 'New chain profile' : 'Chain profile editor'}
-            </h1>
-            {layoutId ? (
-              <p className="truncate font-mono text-xs text-muted-foreground">{layoutId}</p>
-            ) : (
-              <p className="truncate text-xs text-muted-foreground">Unsaved draft</p>
-            )}
+        <header className="shrink-0 border-b px-3 py-2 sm:px-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" variant="ghost" size="sm" asChild>
+              <Link to={backHref}>
+                <ArrowLeft className="size-4" aria-hidden />
+                Back
+              </Link>
+            </Button>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-sm font-semibold">
+                {isDraftRoute ? 'New chain profile' : 'Chain profile editor'}
+              </h1>
+              {layoutId ? (
+                <p className="truncate font-mono text-xs text-muted-foreground">{layoutId}</p>
+              ) : (
+                <p className="truncate text-xs text-muted-foreground">Unsaved draft</p>
+              )}
+            </div>
+          </div>
+          <div className="mt-2 pb-1">
+            <StudioNav compact />
           </div>
         </header>
 

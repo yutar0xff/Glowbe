@@ -69,7 +69,17 @@ function firstPointerId(m: Map<number, PointerEntry>): number | null {
   return it.done ? null : it.value
 }
 
-function LedInstanced({ uv, liveLedRgb }: { uv: LayoutUvResponse; liveLedRgb?: Uint8Array | null }) {
+function LedInstanced({
+  uv,
+  liveLedRgb,
+  color,
+  emissive,
+}: {
+  uv: LayoutUvResponse
+  liveLedRgb?: Uint8Array | null
+  color?: string
+  emissive?: string
+}) {
   const ref = useRef<THREE.InstancedMesh>(null)
   const dummy = useMemo(() => new THREE.Object3D(), [])
   const count = uv.leds.length
@@ -126,13 +136,81 @@ function LedInstanced({ uv, liveLedRgb }: { uv: LayoutUvResponse; liveLedRgb?: U
     <instancedMesh key="std-led" ref={ref} args={[undefined, undefined, count]} frustumCulled={false}>
       <sphereGeometry args={[0.018, 10, 10]} />
       <meshStandardMaterial
-        color="#0e7490"
-        emissive="#22d3ee"
+        color={color ?? '#0e7490'}
+        emissive={emissive ?? '#22d3ee'}
         emissiveIntensity={1.1}
         roughness={0.35}
         metalness={0.2}
       />
     </instancedMesh>
+  )
+}
+
+/**
+ * Equirect PNG as sphere backdrop, aligned with Glowbe UV and LED dots.
+ *
+ * Convention (must stay consistent with `sphere.rs` / 2D map):
+ * - Glowbe v=0 = north (+Y), v=1 = south (−Y); image top = v=0
+ * - Three.js SphereGeometry: UV.v=1 at +Y (north), UV.v=0 at −Y (south)
+ * - TextureLoader flipY=true maps image top → texture V=1 → north pole (no extra V flip)
+ * - Longitude: Three UV.u≈0.5 at +X = Glowbe u=0.5; LEDs use `deviceEquirectUToSphereU`
+ *   when placing dots, so the texture must NOT mirror U again.
+ */
+function EquirectBackdrop({ url }: { url: string }) {
+  const [texture, setTexture] = useState<THREE.Texture | null>(null)
+  const meshRef = useRef<THREE.Mesh>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const loader = new THREE.TextureLoader()
+    loader.load(
+      url,
+      (tex) => {
+        if (cancelled) {
+          tex.dispose()
+          return
+        }
+        tex.wrapS = THREE.RepeatWrapping
+        tex.wrapT = THREE.ClampToEdgeWrapping
+        tex.colorSpace = THREE.SRGBColorSpace
+        // Keep TextureLoader default flipY=true so Glowbe v=0 (image top) lands on +Y.
+        tex.flipY = true
+        tex.needsUpdate = true
+        setTexture((prev) => {
+          prev?.dispose()
+          return tex
+        })
+      },
+      undefined,
+      () => {
+        if (!cancelled) setTexture(null)
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [url])
+
+  useLayoutEffect(() => {
+    if (meshRef.current) meshRef.current.raycast = () => {}
+  }, [texture])
+
+  useEffect(
+    () => () => {
+      texture?.dispose()
+    },
+    [texture],
+  )
+
+  if (!texture) {
+    return <BackdropSphere />
+  }
+
+  return (
+    <mesh ref={meshRef}>
+      <sphereGeometry args={[0.995, 72, 72]} />
+      <meshBasicMaterial map={texture} toneMapped={false} side={THREE.FrontSide} />
+    </mesh>
   )
 }
 
@@ -391,6 +469,8 @@ function SpherePointerRouter({
 
 function Scene({
   uv,
+  extraLayouts,
+  equirectTextureUrl,
   disabled,
   pulseHighlights,
   bridge,
@@ -398,7 +478,9 @@ function Scene({
   orbitRadius,
   liveLedRgb,
 }: {
-  uv: LayoutUvResponse
+  uv: LayoutUvResponse | null
+  extraLayouts?: { key: string; uv: LayoutUvResponse; color: string; emissive: string }[]
+  equirectTextureUrl?: string | null
   disabled: boolean
   pulseHighlights: TapUvHighlight[]
   bridge: RefObject<SphereTapBridge>
@@ -415,6 +497,9 @@ function Scene({
     }
   }, [bridge])
 
+  const primary = uv
+  const extras = extraLayouts ?? []
+
   return (
     <>
       <BridgeCameraSync bridge={bridge} />
@@ -424,13 +509,17 @@ function Scene({
       <directionalLight position={[-4, -1, -2]} intensity={0.25} />
 
       <group rotation={[0, FRONT_TO_BLUE_AXIS_Y, 0]}>
-        <BackdropSphere />
+        {equirectTextureUrl ? (
+          <EquirectBackdrop key={equirectTextureUrl} url={equirectTextureUrl} />
+        ) : (
+          <BackdropSphere />
+        )}
 
         <mesh ref={hitSphereRef}>
           <sphereGeometry args={[1, 72, 72]} />
           <meshStandardMaterial
             color="#94a3b8"
-            opacity={disabled ? 0.06 : 0.16}
+            opacity={disabled || equirectTextureUrl ? 0.04 : 0.16}
             transparent
             roughness={0.4}
             metalness={0.08}
@@ -438,7 +527,15 @@ function Scene({
           />
         </mesh>
 
-        <LedInstanced uv={uv} liveLedRgb={liveLedRgb} />
+        {primary ? <LedInstanced uv={primary} liveLedRgb={liveLedRgb} /> : null}
+        {extras.map((layer) => (
+          <LedInstanced
+            key={layer.key}
+            uv={layer.uv}
+            color={layer.color}
+            emissive={layer.emissive}
+          />
+        ))}
 
         {pulseHighlights.map((h) => (
           <TapHighlight3D key={h.id} pulse={h} />
@@ -458,22 +555,38 @@ function Scene({
   )
 }
 
+export type SphereLedOverlay = {
+  key: string
+  uv: LayoutUvResponse
+  color: string
+  emissive: string
+}
+
 /** Live 用: レイアウト UV の球面プレビュー（R3F）。 */
 export function LayoutUvSphereCanvas({
   uv,
+  extraLayouts,
+  equirectTextureUrl,
   disabled,
   onSphereTap,
   pulseHighlights,
   className,
   liveLedRgb,
+  hint,
 }: {
-  uv: LayoutUvResponse
+  /** Primary layout LEDs (may be null when only overlay presets are shown). */
+  uv: LayoutUvResponse | null
+  /** Additional LED position overlays (e.g. preset reference layouts). */
+  extraLayouts?: SphereLedOverlay[]
+  /** Optional equirectangular texture on the sphere (same local frame as LED dots). */
+  equirectTextureUrl?: string | null
   disabled: boolean
   onSphereTap: (u: number, v: number, uSphere?: number) => void
   pulseHighlights: TapUvHighlight[]
   className?: string
   /** Raw RGB per LED (`leds.length * 3`). When set, each sphere instance uses these colors. */
   liveLedRgb?: Uint8Array | null
+  hint?: string
 }) {
   const [orbitRadius, setOrbitRadius] = useState(() => clampOrbitRadius(DEFAULT_SPHERE_ORBIT_R))
 
@@ -517,6 +630,8 @@ export function LayoutUvSphereCanvas({
           <Suspense fallback={null}>
             <Scene
               uv={uv}
+              extraLayouts={extraLayouts}
+              equirectTextureUrl={equirectTextureUrl}
               disabled={disabled}
               pulseHighlights={pulseHighlights}
               bridge={bridge}
@@ -529,7 +644,7 @@ export function LayoutUvSphereCanvas({
 
         <div className="pointer-events-none absolute inset-x-0 bottom-14 z-[5] flex justify-center">
           <span className="rounded bg-background/55 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-            Drag to orbit · extra finger tap for pulse
+            {hint ?? 'Drag to orbit · extra finger tap for pulse'}
           </span>
         </div>
       </div>

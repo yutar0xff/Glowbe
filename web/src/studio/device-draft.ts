@@ -3,7 +3,6 @@ import { validateOutputFps } from './device-output-settings'
 
 export const DEFAULT_OUTPUT_FPS = 120
 export const DEFAULT_MASTER_BRIGHTNESS = 1
-export const DEFAULT_MASTER_GAMMA = 1
 export const DEFAULT_FRONT_YAW_DEG = 0
 export const FRONT_YAW_DEG_MIN = -180
 export const FRONT_YAW_DEG_MAX = 180
@@ -15,7 +14,6 @@ export type DeviceDraft = {
   layoutId: string
   outputFps: string
   masterBrightness: number
-  masterGamma: number
   frontYawDeg: number
 }
 
@@ -50,14 +48,13 @@ export function emptyCreateDraft(layoutId: string, outputFps: number): DeviceDra
     layoutId,
     outputFps: String(outputFps),
     masterBrightness: DEFAULT_MASTER_BRIGHTNESS,
-    masterGamma: DEFAULT_MASTER_GAMMA,
     frontYawDeg: DEFAULT_FRONT_YAW_DEG,
   }
 }
 
 export function editDraftFromRecord(
   rec: DeviceRecord,
-  tone?: { brightness: number; gamma: number },
+  tone?: { brightness: number },
 ): DeviceDraft {
   return {
     displayName: rec.displayName ?? '',
@@ -66,7 +63,6 @@ export function editDraftFromRecord(
     layoutId: rec.layoutId,
     outputFps: String(rec.outputFps),
     masterBrightness: rec.masterBrightness ?? tone?.brightness ?? DEFAULT_MASTER_BRIGHTNESS,
-    masterGamma: rec.masterGamma ?? tone?.gamma ?? DEFAULT_MASTER_GAMMA,
     frontYawDeg: rec.frontYawDeg ?? DEFAULT_FRONT_YAW_DEG,
   }
 }
@@ -97,7 +93,6 @@ export function toRecord(id: string, draft: DeviceDraft): DeviceRecord | { error
     layoutId: draft.layoutId.trim(),
     outputFps: fps.value,
     masterBrightness: draft.masterBrightness,
-    masterGamma: draft.masterGamma,
     frontYawDeg: clampFrontYawDeg(draft.frontYawDeg),
   }
 }

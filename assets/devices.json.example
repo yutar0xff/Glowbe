@@ -9,7 +9,6 @@
       "layoutId": "icosahedron-15",
       "outputFps": 60,
       "masterBrightness": 1.0,
-      "masterGamma": 1.0,
       "frontYawDeg": 0.0
     },
     {
@@ -19,7 +18,6 @@
       "layoutId": "geodesic-2v-60",
       "outputFps": 120,
       "masterBrightness": 1.0,
-      "masterGamma": 1.0,
       "frontYawDeg": 0.0
     }
   ]

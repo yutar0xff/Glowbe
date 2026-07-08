@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
-import { CalendarClock, Pause, Play, Pencil, Sparkles, Square, Trash2, Upload } from 'lucide-react'
-import { LayoutUvSheet } from '@/components/LayoutUvMap'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { CalendarClock, ExternalLink, Pause, Play, Pencil, Sparkles, Square, Trash2 } from 'lucide-react'
 import { LayoutUvSphereCanvas } from '@/components/LayoutUvSphereCanvas'
+import { NumberSliderRow } from '@/components/NumberSliderRow'
 import { formatDate } from '@/format'
-import { API_BASE } from '@/api'
+import { clipThumbnailUrl, patchClip } from '@/lib/clip-api'
 import { useGlowbeStandaloneLedPreview } from '@/hooks/use-glowbe-standalone-led-preview'
 import { useLayoutUv } from '@/hooks/use-layout-uv'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
@@ -12,12 +12,10 @@ import type { ClipSummary, RuntimeState } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { ModeResetBar } from './ModeResetBar'
 
 function clipThumbUrl(clip: ClipSummary): string | null {
-  if (clip.isDemo) return null
-  return `${API_BASE}/api/v1/clips/${encodeURIComponent(clip.id)}/source-frame/0`
+  return clipThumbnailUrl(clip)
 }
 
 function ClipGridCard({
@@ -35,10 +33,12 @@ function ClipGridCard({
     setClipDisplayName,
     setLoopPlaybackPaused,
     clearLoopSelection,
+    refreshLoad,
   } = useGlowbeRuntime()
   const loopPlaybackPaused = load.kind === 'ready' && load.state.loopPlaybackPaused
   const isDemo = Boolean(clip.isDemo)
   const [draft, setDraft] = useState(clip.displayName ?? '')
+  const [gamma, setGamma] = useState(clip.gamma ?? 1)
   const [saving, setSaving] = useState(false)
   const [renameErr, setRenameErr] = useState<string | null>(null)
   const [thumbErr, setThumbErr] = useState(false)
@@ -46,10 +46,11 @@ function ClipGridCard({
 
   useEffect(() => {
     setDraft(clip.displayName ?? '')
+    setGamma(clip.gamma ?? 1)
     setRenameErr(null)
     setThumbErr(false)
     setLabelEditing(false)
-  }, [clip.id, clip.displayName])
+  }, [clip.id, clip.displayName, clip.gamma])
 
   const title = clip.displayName?.trim() ? clip.displayName.trim() : clip.id
   const thumbUrl = clipThumbUrl(clip)
@@ -71,6 +72,21 @@ function ClipGridCard({
         setRenameErr(e instanceof Error ? e.message : String(e))
       } finally {
         setSaving(false)
+      }
+    })()
+  }
+
+  const onCommitGamma = (v: number) => {
+    if (isDemo) return
+    setGamma(v)
+    void (async () => {
+      setRenameErr(null)
+      try {
+        await patchClip(clip.id, { gamma: v })
+        await refreshLoad()
+      } catch (e) {
+        setRenameErr(e instanceof Error ? e.message : String(e))
+        setGamma(clip.gamma ?? 1)
       }
     })()
   }
@@ -189,6 +205,18 @@ function ClipGridCard({
           <p className="font-mono text-[10px] text-muted-foreground">
             {clip.sourceKind ?? clip.kind}
           </p>
+          {!isDemo ? (
+            <NumberSliderRow
+              id={`clip-gamma-${clip.id}`}
+              label="Gamma"
+              min={0.45}
+              max={3.5}
+              step={0.05}
+              value={gamma}
+              disabled={clipBusy !== null}
+              onCommit={onCommitGamma}
+            />
+          ) : null}
           {clip.createdAtUnixSec > 0 ? (
             <p className="inline-flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
               <CalendarClock className="size-3 shrink-0" aria-hidden />
@@ -270,34 +298,6 @@ function ClipGridCard({
   )
 }
 
-function LoopSourcePreview({
-  clipId,
-  frameIndex,
-}: {
-  clipId: string
-  frameIndex: number
-}) {
-  const [err, setErr] = useState(false)
-  const url = `${API_BASE}/api/v1/clips/${encodeURIComponent(clipId)}/source-frame/${frameIndex}`
-
-  if (err) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        Could not load source frame (built-in demos and some clips lack stored import media).
-      </p>
-    )
-  }
-
-  return (
-    <img
-      src={url}
-      alt="Current clip equirectangular source frame"
-      className="aspect-[2/1] w-full max-w-4xl rounded-lg border border-border bg-black/40 object-contain"
-      onError={() => setErr(true)}
-    />
-  )
-}
-
 export function LoopModePanel({
   state,
   clips,
@@ -305,35 +305,15 @@ export function LoopModePanel({
   state: RuntimeState
   clips: ClipSummary[]
 }) {
-  const {
-    uploadMediaFile,
-    convertMediaUpload,
-    mediaUploadBusy,
-    mediaConvertBusy,
-    clipBusy,
-    activeDeviceId,
-    clearLoopSelection,
-    setLoopPlaybackPaused,
-  } = useGlowbeRuntime()
+  const { clipBusy, activeDeviceId, clearLoopSelection, setLoopPlaybackPaused } = useGlowbeRuntime()
   const playingClipId = state.mode === 'loop' ? state.loopClipId : null
   const { uv, uvError, uvLoading } = useLayoutUv(state.layoutId, state.ledCount)
-  const showSourcePreview =
-    state.mode === 'loop' &&
-    playingClipId != null &&
-    !playingClipId.startsWith('demo/') &&
-    state.loopSourceFrame != null
-  const ledPreviewStream = Boolean(showSourcePreview && uv && !uvError)
-  const { liveRgbBuf, liveRgbRevision } = useGlowbeStandaloneLedPreview(
-    ledPreviewStream,
+  const previewEnabled = state.mode === 'loop'
+  const { liveRgbBuf } = useGlowbeStandaloneLedPreview(
+    previewEnabled,
     state.ledCount,
     activeDeviceId,
   )
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [uploadErr, setUploadErr] = useState<string | null>(null)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [lastUploadId, setLastUploadId] = useState<string | null>(null)
-  const [convertFps, setConvertFps] = useState('30')
-  const [convertDisplayName, setConvertDisplayName] = useState('')
   const [resetBusy, setResetBusy] = useState(false)
 
   const resetToDefaults = async () => {
@@ -352,204 +332,32 @@ export function LoopModePanel({
 
   const loopBusy = resetBusy || clipBusy !== null
 
-  const onPickFile = () => {
-    setUploadErr(null)
-    fileRef.current?.click()
-  }
-
-  const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    e.target.value = ''
-    if (!f) return
-    setSelectedFile(f)
-    setLastUploadId(null)
-    setUploadErr(null)
-  }
-
-  const onUploadOnly = () => {
-    if (!selectedFile) return
-    void (async () => {
-      setUploadErr(null)
-      try {
-        const { uploadId } = await uploadMediaFile(selectedFile)
-        setLastUploadId(uploadId)
-      } catch (err) {
-        setUploadErr(err instanceof Error ? err.message : String(err))
-      }
-    })()
-  }
-
-  const onConvert = () => {
-    if (!lastUploadId) return
-    const fps = Number.parseInt(convertFps, 10)
-    if (!Number.isFinite(fps) || fps < 1 || fps > 120) {
-      setUploadErr('FPS must be between 1 and 120.')
-      return
-    }
-    void (async () => {
-      setUploadErr(null)
-      try {
-        const label = convertDisplayName.trim()
-        await convertMediaUpload(lastUploadId, fps, label || undefined)
-        setLastUploadId(null)
-        setSelectedFile(null)
-      } catch (err) {
-        setUploadErr(err instanceof Error ? err.message : String(err))
-      }
-    })()
-  }
-
   return (
     <div className="space-y-6">
       <ModeResetBar onReset={resetToDefaults} busy={resetBusy} disabled={loopBusy && !resetBusy} />
-      {showSourcePreview ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Source preview & live LEDs</CardTitle>
-            <CardDescription>
-              Top row: clip source frame and equirectangular LED map (frame {state.loopSourceFrame}). Bottom: 3D
-              sphere with the same live RGB as sent to the device.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-              <div className="min-w-0 space-y-2">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Clip frame</p>
-                <LoopSourcePreview clipId={playingClipId!} frameIndex={state.loopSourceFrame!} />
-              </div>
-              <div className="min-w-0 space-y-2">
-                {uvLoading ? (
-                  <p className="flex items-center gap-2 text-sm text-muted-foreground">Loading layout UV…</p>
-                ) : uvError ? (
-                  <p className="max-w-full break-words text-sm text-destructive" role="alert">
-                    {uvError}
-                  </p>
-                ) : uv ? (
-                  <>
-                    <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Equirect (2D)
-                    </p>
-                    <LayoutUvSheet
-                      uv={uv}
-                      disabled
-                      pulseHighlights={[]}
-                      liveLedRgb={liveRgbBuf.current}
-                      liveLedRevision={liveRgbRevision}
-                    />
-                  </>
-                ) : null}
-              </div>
-              {uv && !uvLoading && !uvError ? (
-                <div className="min-w-0 space-y-2 lg:col-span-2">
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Sphere (Three.js)
-                  </p>
-                  <LayoutUvSphereCanvas
-                    uv={uv}
-                    disabled={false}
-                    pulseHighlights={[]}
-                    liveLedRgb={liveRgbBuf.current ?? undefined}
-                    onSphereTap={() => {}}
-                  />
-                </div>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Upload className="size-5 text-muted-foreground" aria-hidden />
-            Upload equirectangular
-          </CardTitle>
+          <CardTitle className="text-lg">Live LEDs</CardTitle>
           <CardDescription>
-            Step 1: choose a file and upload it to the server. Step 2: convert that upload into a layout-independent
-            clip (default 256×128 equirect). Accepts <strong>PNG / JPEG</strong> (1 frame), <strong>ZIP</strong> of
-            same-sized equirectangular PNG/JPEG (sorted by file name, max 3600 frames), or{' '}
-            <strong>MP4 / WebM / MOV / MKV</strong> (server needs <span className="font-mono">ffmpeg</span>). After
-            convert, the original file is copied into the clip folder as{' '}
-            <span className="font-mono">source-import.*</span> for previews.
+            3D sphere preview of loop output (pre-tone RGB; device brightness and clip gamma are not applied).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/png,image/jpeg,.jpg,.jpeg,.zip,application/zip,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.mkv"
-            className="sr-only"
-            onChange={onFileChange}
-          />
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="button" variant="secondary" onClick={onPickFile} disabled={clipBusy !== null}>
-              Choose file
-            </Button>
-            {selectedFile ? (
-              <span className="max-w-md truncate font-mono text-xs text-muted-foreground" title={selectedFile.name}>
-                {selectedFile.name}
-              </span>
-            ) : (
-              <span className="text-xs text-muted-foreground">No file selected</span>
-            )}
-            <Button
-              type="button"
-              onClick={onUploadOnly}
-              disabled={!selectedFile || mediaUploadBusy || clipBusy !== null}
-            >
-              {mediaUploadBusy ? 'Uploading…' : 'Upload'}
-            </Button>
-          </div>
-
-          {lastUploadId ? (
-            <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
-              <p className="font-mono text-xs text-muted-foreground">
-                uploadId: <span className="text-foreground">{lastUploadId}</span>
-              </p>
-              <div className="grid max-w-md gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="glowbe-convert-fps" className="text-xs">
-                    FPS
-                  </Label>
-                  <Input
-                    id="glowbe-convert-fps"
-                    inputMode="numeric"
-                    value={convertFps}
-                    onChange={(e) => setConvertFps(e.target.value)}
-                    className="font-mono text-sm"
-                    disabled={mediaConvertBusy}
-                  />
-                </div>
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="glowbe-convert-label" className="text-xs">
-                    Display name (optional)
-                  </Label>
-                  <Input
-                    id="glowbe-convert-label"
-                    value={convertDisplayName}
-                    onChange={(e) => setConvertDisplayName(e.target.value)}
-                    placeholder="e.g. Sunset test"
-                    className="font-mono text-sm"
-                    disabled={mediaConvertBusy}
-                  />
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="default"
-                onClick={onConvert}
-                disabled={mediaConvertBusy || clipBusy !== null}
-              >
-                {mediaConvertBusy ? 'Converting…' : 'Convert to clip'}
-              </Button>
-            </div>
-          ) : null}
-
-          {uploadErr ? (
-            <p className="text-sm text-destructive" role="alert">
-              {uploadErr}
+          {uvLoading ? (
+            <p className="text-sm text-muted-foreground">Loading layout UV…</p>
+          ) : uvError ? (
+            <p className="max-w-full break-words text-sm text-destructive" role="alert">
+              {uvError}
             </p>
+          ) : uv ? (
+            <LayoutUvSphereCanvas
+              uv={uv}
+              disabled={false}
+              pulseHighlights={[]}
+              liveLedRgb={liveRgbBuf.current ?? undefined}
+              onSphereTap={() => {}}
+              hint="Drag to orbit · live LED colors"
+            />
           ) : null}
         </CardContent>
       </Card>
@@ -560,16 +368,28 @@ export function LoopModePanel({
             <Play className="size-5 text-muted-foreground" aria-hidden />
             Clips
           </CardTitle>
-          <CardDescription>
-            {clips.length === 0
-              ? 'No clips loaded yet.'
-              : `${clips.length} available — built-in demos and uploaded media; thumbnails where possible.`}
+          <CardDescription className="flex flex-wrap items-center gap-2">
+            <span>
+              {clips.length === 0
+                ? 'No clips loaded yet.'
+                : `${clips.length} available — select a clip to play in loop mode.`}
+            </span>
+            <Button type="button" variant="link" size="sm" className="h-auto p-0" asChild>
+              <Link to="/clips">
+                <ExternalLink className="size-3.5" aria-hidden />
+                Clip editor
+              </Link>
+            </Button>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {clips.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Upload and convert above, or use built-in demos such as{' '}
+              Create clips in the{' '}
+              <Link to="/clips" className="text-primary underline-offset-4 hover:underline">
+                Clip editor
+              </Link>
+              , or use built-in demos such as{' '}
               <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">demo/expanding-rings</code>.
             </p>
           ) : (

@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use uuid::{Uuid, Version};
 
 use crate::config::Config;
-use crate::master_tone::{clamp_brightness, clamp_gamma};
+use crate::master_tone::clamp_brightness;
 
-pub use crate::master_tone::{DEFAULT_MASTER_BRIGHTNESS, DEFAULT_MASTER_GAMMA};
+pub use crate::master_tone::DEFAULT_MASTER_BRIGHTNESS;
 
 pub const DEFAULT_OUTPUT_FPS: u32 = 120;
 
@@ -96,8 +96,6 @@ pub struct DeviceRecord {
     pub output_fps: u32,
     #[serde(default = "default_master_brightness")]
     pub master_brightness: f64,
-    #[serde(default = "default_master_gamma")]
-    pub master_gamma: f64,
     /// デバイス正面の yaw（度）。全モードのサンプリング UV を鉛直軸まわりに回す。
     #[serde(default)]
     pub front_yaw_deg: f64,
@@ -107,13 +105,9 @@ fn default_master_brightness() -> f64 {
     DEFAULT_MASTER_BRIGHTNESS
 }
 
-fn default_master_gamma() -> f64 {
-    DEFAULT_MASTER_GAMMA
-}
 
 fn clamp_master_tone(rec: &mut DeviceRecord) {
     rec.master_brightness = clamp_brightness(rec.master_brightness);
-    rec.master_gamma = clamp_gamma(rec.master_gamma);
     rec.front_yaw_deg = clamp_front_yaw_deg(rec.front_yaw_deg);
 }
 
@@ -168,9 +162,8 @@ impl DeviceRegistry {
             let mut tone_clamped = false;
             for rec in &mut devices {
                 let before_b = rec.master_brightness;
-                let before_g = rec.master_gamma;
                 clamp_master_tone(rec);
-                if rec.master_brightness != before_b || rec.master_gamma != before_g {
+                if rec.master_brightness != before_b {
                     tone_clamped = true;
                 }
             }
@@ -237,14 +230,13 @@ impl DeviceRegistry {
         self.save()
     }
 
-    pub fn update_master_tone(&mut self, id: &str, brightness: f64, gamma: f64) -> Result<()> {
+    pub fn update_master_brightness(&mut self, id: &str, brightness: f64) -> Result<()> {
         let pos = self
             .devices
             .iter()
             .position(|d| d.id == id)
             .ok_or_else(|| anyhow::anyhow!("device not found: {id}"))?;
         self.devices[pos].master_brightness = clamp_brightness(brightness);
-        self.devices[pos].master_gamma = clamp_gamma(gamma);
         self.save()
     }
 
@@ -344,7 +336,6 @@ fn seed_from_config(config: &Config) -> Vec<DeviceRecord> {
             layout_id: config.device.layout_id.clone(),
             output_fps: DEFAULT_OUTPUT_FPS,
             master_brightness: DEFAULT_MASTER_BRIGHTNESS,
-            master_gamma: DEFAULT_MASTER_GAMMA,
             front_yaw_deg: 0.0,
         }]
     };
@@ -437,7 +428,6 @@ mod tests {
             layout_id: "icosahedron-15".into(),
             output_fps: DEFAULT_OUTPUT_FPS,
             master_brightness: DEFAULT_MASTER_BRIGHTNESS,
-            master_gamma: DEFAULT_MASTER_GAMMA,
             front_yaw_deg: 0.0,
         };
         assert!(validate_record(&rec, &dir).is_ok());
@@ -462,7 +452,6 @@ mod tests {
                 layout_id: "icosahedron-15".into(),
                 output_fps: DEFAULT_OUTPUT_FPS,
                 master_brightness: DEFAULT_MASTER_BRIGHTNESS,
-                master_gamma: DEFAULT_MASTER_GAMMA,
                 front_yaw_deg: 0.0,
             }],
         };
@@ -474,7 +463,6 @@ mod tests {
             layout_id: "icosahedron-15".into(),
             output_fps: 60,
             master_brightness: DEFAULT_MASTER_BRIGHTNESS,
-            master_gamma: DEFAULT_MASTER_GAMMA,
             front_yaw_deg: 0.0,
         };
         assert!(reg.upsert(updated, &dir).is_ok());

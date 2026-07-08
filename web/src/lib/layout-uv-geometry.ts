@@ -14,7 +14,8 @@ export function equirectDisplayPointerToUv(
 
 /**
  * ランタイム `sphere::unit_dir_from_equirect_uv_y_up` と同じ式。
- * Y 上、v=0 が北極、u は経度（周期）。
+ * Y 上、**v=0 が北極 (+Y)**、**v=1 が南極 (−Y)**、u は経度（周期）。
+ * 2D equirect マップでも v=0 が画像上端。
  */
 export function uvToUnitDirYUp(u: number, v: number): [number, number, number] {
   const uu = ((u % 1) + 1) % 1

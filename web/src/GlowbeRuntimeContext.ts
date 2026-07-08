@@ -35,7 +35,7 @@ export type GlowbeRuntimeContextValue = {
   clearLoopSelection: () => Promise<void>
   /** Pause or resume loop clip timeline (no-op if output is not looping). */
   setLoopPlaybackPaused: (paused: boolean) => Promise<void>
-  setMasterTone: (brightness: number, gamma: number) => Promise<void>
+  setMasterBrightness: (brightness: number) => Promise<void>
   /** Upload only (`POST /api/v1/media/upload`, multipart `file`). */
   uploadMediaFile: (file: File) => Promise<{ uploadId: string }>
   /** Convert an uploaded asset by ID; polls until done, then refreshes the list. */

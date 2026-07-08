@@ -2,7 +2,6 @@
 //! 設計: `docs/MATE.md`
 
 use std::collections::{BTreeSet, HashMap};
-use std::f32::consts::PI;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -43,16 +42,18 @@ const BUILTIN_PRESETS: &[&str] = &[
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FaceFrameParams {
-    pub front_longitude_u: f32,
-    pub forward_tilt_deg: f32,
+    /// RH yaw about +Y (deg). 0 = face forward along +X.
+    pub yaw_deg: f32,
+    /// Elevation from equator toward +Y (deg).
+    pub pitch_deg: f32,
     pub face_angular_radius_deg: f32,
 }
 
 impl Default for FaceFrameParams {
     fn default() -> Self {
         Self {
-            front_longitude_u: 0.5,
-            forward_tilt_deg: 28.0,
+            yaw_deg: 0.0,
+            pitch_deg: 28.0,
             face_angular_radius_deg: 70.0,
         }
     }
@@ -69,10 +70,7 @@ pub struct FaceFrame {
 
 impl FaceFrame {
     pub fn from_params(params: FaceFrameParams) -> Self {
-        let tilt = params.forward_tilt_deg.to_radians();
-        let lam0 = 2.0 * PI * params.front_longitude_u.rem_euclid(1.0) - PI;
-        let cp = tilt.cos();
-        let forward = [cp * lam0.cos(), tilt.sin(), cp * lam0.sin()];
+        let forward = crate::orientation::unit_dir_from_yaw_pitch_deg(params.yaw_deg, params.pitch_deg);
         let world_up = [0.0f32, 1.0, 0.0];
         let dot = world_up[0] * forward[0] + world_up[1] * forward[1] + world_up[2] * forward[2];
         let mut up = [
@@ -98,8 +96,8 @@ impl FaceFrame {
     pub fn cache_key(&self) -> u64 {
         let p = &self.params;
         let bits = [
-            p.front_longitude_u.to_bits() as u64,
-            p.forward_tilt_deg.to_bits() as u64,
+            p.yaw_deg.to_bits() as u64,
+            p.pitch_deg.to_bits() as u64,
             p.face_angular_radius_deg.to_bits() as u64,
         ];
         bits.iter().fold(0xcbf29ce484222325u64, |h, &b| {

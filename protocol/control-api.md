@@ -30,14 +30,13 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
   "layoutMismatch": false,
   "framesSent": 216000,
   "masterBrightness": 1,
-  "masterGamma": 1,
   "frontYawDeg": 0
 }
 ```
 
-- `masterBrightness`: 全モード共通の最終輝度係数（0–1、1 = 100% が既定）。UDP 直前に各チャンネルへ乗算。Studio UI では 0–100% 表示。ファーム側では layout の LED 総数と 4 A 電源の 80%（3.2 A）・LED 白 15 mA を前提にした上限（`kGlowbeLedBrightness`）を別途適用。
-- `masterGamma`: 全モード共通のガンマ補正（約 0.45–3.5、1 が既定）。`out = clamp( ((in/255)×brightness)^(1/gamma) × 255 )`。
-- `frontYawDeg`: デバイス正面の yaw（度、−180〜180、0 が既定）。全モードのサンプリング UV の経度 `u` を鉛直軸まわりに回す（`u' = (u + frontYawDeg/360) mod 1`）。`GET /api/v1/layout/uv` と WS `layoutUv` も同じシフトを適用して返すため、2D/3D プレビューとインタラクティブのタップ座標は正面中心に揃う。デバイスごとに `devices.json` へ保存。
+- `masterBrightness`: 全モード共通の最終輝度係数（0–1、1 = 100% が既定）。UDP / プレビュー直前に各チャンネルへ乗算。Studio UI では 0–100% 表示。ファーム側では layout の LED 総数と 4 A 電源の 80%（3.2 A）・LED 白 15 mA を前提にした上限（`kGlowbeLedBrightness`）を別途適用。
+- **クリップ `gamma`**: デバイスではなく **クリップの `manifest.json`** に保存（デバイス間共通）。**loop ＋メディアクリップ**のときだけ適用（デモ・idle / interactive / mate / text では未適用）。`out = clamp( ((in/255)^gamma) × 255 )`。1 が既定。**> 1** で中間調が暗く（濃く）なる。
+- `frontYawDeg`: デバイス正面の yaw（度、−180〜180、0 が既定）。右手系・鉛直 +Y まわり（+X → −Z が正）。全モードのサンプリング UV の経度を `u' = (u − frontYawDeg/360) mod 1` で回す。既定正面は equirect `u = 0.5`（ワールド +X）。`GET /api/v1/layout/uv` と WS `layoutUv` も同じシフトを適用する。デバイスごとに `devices.json` へ保存。
 - `frameLoopStaleMs`: 直近のフレームループ tick からの経過時間（ms）。出力タスクが停止すると急増する。
 - `layoutMismatch`: ESP STATUS の `layout_hash` とランタイムの `meta.layoutHash` が食い違うとき `true`（いずれか欠損時は照合しない）。
 - `framesSent`: 完全送信に成功したフレーム数（累計）。
@@ -89,10 +88,10 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 ### `POST /api/v1/master-tone`
 
 ```json
-{ "brightness": 1.0, "gamma": 1.0 }
+{ "brightness": 1.0 }
 ```
 
-→ 実装済み: **全出力モード**で、フレームを UDP に送る直前に適用するマスター補正。`brightness` は 0–1（クランプ、1 = 100%）、`gamma` は約 0.45–3.5（クランプ）。`200` + 更新後 `state` オブジェクト。
+→ 実装済み: **全出力モード**で、描画後・UDP / プレビュー直前に輝度だけ適用。`brightness` は 0–1（クランプ、1 = 100%）。`200` + 更新後 `state` オブジェクト。ガンマはクリップ属性（`PATCH /api/v1/clips/:id` の `gamma`）。
 
 ### `GET /api/v1/text/config`
 
@@ -103,9 +102,9 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
   "content": "Hello, World. This is Glowbe, a spherical display created by Yutar0xff.",
   "textSizeDeg": 130.0,
   "speedDegPerSec": 150.0,
-  "centerLatDeg": 15.0,
-  "tiltDeg": -20.0,
-  "tiltAzimuthDeg": 30.0,
+  "yawDeg": 0.0,
+  "pitchDeg": 15.0,
+  "rollDeg": 0.0,
   "fadeStartDeg": 0.0,
   "fadeEndDeg": 120.0,
   "thickness": 1.0,
@@ -124,9 +123,9 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 | `content` | string | 最大 256 文字 | `"Hello, World. This is Glowbe, a spherical display created by Yutar0xff."` | 表示文字列（日本語可）。空なら背景色のみ。 |
 | `textSizeDeg` | 度 | 10–180 | 130 | 文字の角度高さ。 |
 | `speedDegPerSec` | 度/秒 | -360–360 | 150 | flow 速度。符号で流れる向き。 |
-| `centerLatDeg` | 度 | -80–80 | 15 | flow 中心緯度（0 = 赤道）。 |
-| `tiltDeg` | 度 | -90–0 | -20 | 帯の傾き量 θ（0 = 水平＝極が +Y、-90 = 縦）。 |
-| `tiltAzimuthDeg` | 度 | -180–180 | 30 | 傾ける方位角 φ（+X 基準・+Y 軸まわり右ねじ。0 = 正面 +X 方向へ倒す）。帯の極を `n(θ,φ)=(sinθcosφ, cosθ, -sinθsinφ)` に倒す。 |
+| `yawDeg` | 度 | -180–180 | 0 | 帯中心の RH yaw（+Y まわり、+X → −Z が正）。0 で正面 +X。 |
+| `pitchDeg` | 度 | -80–80 | 15 | 帯中心の仰角（赤道から +Y 側が正）。 |
+| `rollDeg` | 度 | -180–180 | 0 | 帯中心外向き軸まわりのツイスト（右手系）。 |
 | `fadeStartDeg` | 度 | 0–180 | 0 | 真裏（0°）からこの角度までは明るさ 0（背景色）。 |
 | `fadeEndDeg` | 度 | 0–180 | 120 | この角度で明るさ最大（文字色）。start→end で明るさをグラデーション。 |
 | `thickness` | — | 0–6 | 1 | 文字の太さ（リボン被覆のダイレーション量、小数可）。 |
@@ -255,7 +254,8 @@ Response `201` with `layout` + compile summary.
     "sourceHeight": 0,
     "createdAtUnixSec": 0,
     "displayName": "Expanding rings",
-    "isDemo": true
+    "isDemo": true,
+    "gamma": 1
   },
   {
     "id": "up-550e8400-e29b-41d4-a716-446655440000",
@@ -268,7 +268,8 @@ Response `201` with `layout` + compile summary.
     "sourceWidth": 2048,
     "sourceHeight": 1024,
     "createdAtUnixSec": 1781332800,
-    "displayName": "My clip"
+    "displayName": "My clip",
+    "gamma": 1
   }
 ]
 ```
@@ -284,10 +285,67 @@ Response `201` with `layout` + compile summary.
 ### `PATCH /api/v1/clips/:clipId`
 
 ```json
-{ "displayName": "New label" }
+{ "displayName": "New label", "thumbFrameIndex": 12, "gamma": 1.8 }
 ```
 
-→ 実装済み: メディアクリップの `manifest.json` の `displayName` を更新。ビルトインデモは `400`。`200` + 更新後のクリップ要約。
+→ 実装済み: メディアクリップの `manifest.json` を更新。`displayName` / `thumbFrameIndex` / `gamma` のいずれか一方以上必須。`thumbFrameIndex` はサムネ表示用のみ（`equirect.bin` は再 bake しない）。`gamma` は約 0.45–3.5（loop メディア再生時のみ適用、デバイス間共通）。ビルトインデモは `400`。`200` + 更新後のクリップ要約。再生中なら runtime の in-memory クリップも即時更新。
+
+新規クリップは `sourceId` を持ち、`GET …/thumbnail` で Source の thumb フレームをそのまま返す。
+
+### `GET /api/v1/clips/:clipId/thumbnail`
+
+→ 実装済み: クリップの `thumbFrameIndex` に対応する **Source 元フレーム** を PNG で返す（`sourceId` 必須）。ビルトインデモ・レガシークリップは `404`。
+
+### `POST /api/v1/clips/preview-frame`
+
+```json
+{
+  "sourceId": "uuid",
+  "frameIndex": 0,
+  "placement": {
+    "mode": "equirect-planar",
+    "centerU": 0.5,
+    "centerV": 0.5,
+    "scale": 1,
+    "rollDeg": 0,
+    "sourceAspect": 2
+  },
+  "width": 256,
+  "height": 128
+}
+```
+
+→ 実装済み: 指定 Source フレーム 1 枚に配置を適用したプレビュー PNG。`mode` は `equirect-planar` | `stereographic`。planar は `centerU`/`centerV`、stereographic は `yawDeg`/`pitchDeg` で中心を指定。ツイストは共通で `rollDeg`。
+
+### `POST /api/v1/clips/create`
+
+```json
+{
+  "sourceId": "uuid",
+  "thumbFrameIndex": 0,
+  "placement": { "mode": "equirect-planar", "centerU": 0.5, "centerV": 0.5, "scale": 1, "rollDeg": 0, "sourceAspect": 2 },
+  "fps": 30,
+  "displayName": "Optional",
+  "resolution": { "width": 256, "height": 128 }
+}
+```
+
+→ 実装済み: 非同期で全フレームをサーバ bake。`{ "jobId": "uuid", "clipId": "clip-…", "status": "queued" }`。`source-import` は置かない。stereographic 例: `"placement": { "mode": "stereographic", "yawDeg": 0, "pitchDeg": 0, "scale": 1, "rollDeg": 0, "sourceAspect": 2 }`。
+
+### `GET /api/v1/clips/jobs/:jobId`
+
+→ 実装済み: `{ "jobId", "status": "running"|"done"|"failed", "clipId?", "error?", "progress?" }`
+
+### Source（`assets/sources/<sourceId>/`）
+
+| メソッド | パス | 用途 |
+|---------|------|------|
+| `POST` | `/api/v1/sources/upload` | multipart `file` → `{ "sourceId", "status": "stored" }` |
+| `GET` | `/api/v1/sources` | 一覧 |
+| `GET` | `/api/v1/sources/:id` | 詳細 |
+| `PATCH` | `/api/v1/sources/:id` | `{ "displayName?" }` |
+| `GET` | `/api/v1/sources/:id/frame/:index` | 元フレーム PNG |
+| `DELETE` | `/api/v1/sources/:id` | 削除（参照 Clip ありは **409**） |
 
 ### `POST /api/v1/media/upload`
 
@@ -328,12 +386,12 @@ Response `201` with `layout` + compile summary.
 
 ## WebSocket `GET /api/v1/ws`
 
-→ 実装済み: 接続直後と約 1 秒ごとに `state` を送る。`ping` → `pong`。**`masterSettings`** は任意モードでマスター補正を更新（`POST /api/v1/master-tone` と同等）。**`interactive`** メッセージは、出力モードが **`interactive`** のときだけ合成（それ以外は `event_status` `error`）。**`previewSubscribe`** で有効化した接続には、約 **30fps** で **バイナリ** LED フレーム（UDP 直前と同一の最終 RGB）が送られる。
+→ 実装済み: 接続直後と約 1 秒ごとに `state` を送る。`ping` → `pong`。**`masterSettings`** は任意モードでマスター補正を更新（`POST /api/v1/master-tone` と同等）。**`interactive`** メッセージは、出力モードが **`interactive`** のときだけ合成（それ以外は `event_status` `error`）。**`previewSubscribe`** で有効化した接続には、約 **30fps** で **バイナリ** LED フレーム（トーン適用**前**の RGB）が送られる。
 
 ### クライアント → サーバ
 
 ```json
-{ "type": "masterSettings", "brightness": 0.85, "gamma": 1.15 }
+{ "type": "masterSettings", "brightness": 0.85 }
 { "type": "getLayoutUv" }
 { "type": "interactive", "action": "setEffect", "effect": "expandingRingDiagonal" }
 { "type": "interactive", "action": "setSolid", "enabled": true, "colorRgb": [16, 16, 24] }
@@ -345,7 +403,7 @@ Response `201` with `layout` + compile summary.
 { "type": "previewSubscribe", "enable": true }
 ```
 
-- **`masterSettings`** … `brightness` / `gamma` を任意指定（未指定のキーは**変更しない**）。全モードで有効。
+- **`masterSettings`** … `brightness` を任意指定（未指定なら変更しない）。全モードで有効。ガンマはクリップ側。
 - **`previewSubscribe`** … `enable`（既定 `true`）で、その WebSocket 接続への **バイナリ LED プレビュー**（約 30fps）を開始／停止する。成功時は `event_status`（`event`: `previewSubscribe`, `status`: `ok`）。出力モードは問わない。
 - **`getLayoutUv`** … 現在のランタイム `layoutId` の UV マップを返す（`GET /api/v1/layout/uv` と同一 JSON に **`"type": "layoutUv"`** を付与）。失敗時は `event_status`（`event`: `getLayoutUv`, `status`: `error`）。
 - **`interactive` + `action: "setEffect"`** … 以降のパルスで省略したときに使う既定エフェクトを設定（`effect`: `sphereGaussian` | `expandingRingDiagonal`）。
@@ -379,7 +437,7 @@ WebSocket の **Binary** メッセージ。ビッグエンディアン。
 | 4 | `u32` | フレーム更新シーケンス（単調増加、ラップ可） |
 | 8 | `u16` | `ledCount`（`state` / `meta` と一致） |
 | 10 | `u16` | 予約（0） |
-| 12 | `u8[ledCount*3]` | LED 順の R,G,B（UDP 送信直前と同一：マスター輝度・ガンマ適用後） |
+| 12 | `u8[ledCount*3]` | LED 順の R,G,B（合成後・**デバイス輝度・クリップ gamma 適用前**。UDP 送出前トーンは含めない） |
 
 クライアントは `ledCount` とバッファ長を検証すること。
 
@@ -390,7 +448,7 @@ WebSocket の **Binary** メッセージ。ビッグエンディアン。
 | `GET /api/v1/state` | 状態・fps・レイアウト |
 | `GET /health` | 出力ループ死活 |
 | `POST /api/v1/mode` | `idle` / `loop` / `interactive` / `mate` / `text` |
-| `POST /api/v1/master-tone` | 全モード共通輝度・ガンマ |
+| `POST /api/v1/master-tone` | 全モード共通の輝度 |
 | `GET` / `POST /api/v1/text/config` | Text モード設定 |
 | `POST /api/v1/loop/select` · `clear-selection` · `pause` | ループクリップ |
 | `GET /api/v1/layout/uv` | LED UV マップ |

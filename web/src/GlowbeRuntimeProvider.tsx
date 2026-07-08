@@ -466,7 +466,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [activeDeviceId])
 
-  const setMasterTone = useCallback(async (brightness: number, gamma: number) => {
+  const setMasterBrightness = useCallback(async (brightness: number) => {
     setMasterToneBusy(true)
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 3500)
@@ -475,10 +475,10 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`${API_BASE}/api/v1/master-tone${q}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ brightness, gamma }),
+        body: JSON.stringify({ brightness }),
         signal: controller.signal,
       })
-      if (!res.ok) throw new Error(`Could not update master tone (error ${res.status}).`)
+      if (!res.ok) throw new Error(`Could not update master brightness (error ${res.status}).`)
       const newState = (await res.json()) as RuntimeState
       setLoad((prev) => {
         if (prev.kind === 'ready') {
@@ -487,7 +487,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         return prev
       })
     } catch (err) {
-      console.warn('setMasterTone failed', err)
+      console.warn('setMasterBrightness failed', err)
     } finally {
       window.clearTimeout(timeout)
       setMasterToneBusy(false)
@@ -505,7 +505,6 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         layoutId: input.layoutId,
         outputFps: input.outputFps,
         masterBrightness: input.masterBrightness ?? 1,
-        masterGamma: input.masterGamma ?? 1,
         frontYawDeg: input.frontYawDeg ?? 0,
       }),
     })
@@ -526,7 +525,6 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         layoutId: record.layoutId,
         outputFps: record.outputFps,
         masterBrightness: record.masterBrightness ?? 1,
-        masterGamma: record.masterGamma ?? 1,
         frontYawDeg: record.frontYawDeg ?? 0,
       }),
     })
@@ -696,7 +694,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       selectClip,
       clearLoopSelection,
       setLoopPlaybackPaused,
-      setMasterTone,
+      setMasterBrightness,
       uploadMediaFile,
       convertMediaUpload,
       setClipDisplayName,
@@ -731,7 +729,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       selectClip,
       clearLoopSelection,
       setLoopPlaybackPaused,
-      setMasterTone,
+      setMasterBrightness,
       uploadMediaFile,
       convertMediaUpload,
       setClipDisplayName,

@@ -211,6 +211,20 @@ pub enum MediaUploadPhase {
     },
 }
 
+/// `POST /api/v1/clips/create` の非同期変換ジョブ。
+#[derive(Debug, Clone)]
+pub enum ClipJobPhase {
+    Running {
+        progress: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    },
+    Done {
+        clip_id: String,
+    },
+    Failed {
+        message: String,
+    },
+}
+
 pub struct SharedApp {
     registry: StdRwLock<DeviceRegistry>,
     slots: StdRwLock<HashMap<String, Arc<DeviceSlot>>>,
@@ -220,8 +234,10 @@ pub struct SharedApp {
     pub compiled_dir: std::path::PathBuf,
     pub repo_root: std::path::PathBuf,
     pub clips_dir: std::path::PathBuf,
+    pub sources_dir: std::path::PathBuf,
     pub uploads_dir: std::path::PathBuf,
     pub media_uploads: RwLock<HashMap<String, MediaUploadEntry>>,
+    pub clip_jobs: RwLock<HashMap<String, ClipJobPhase>>,
     pub mate_presets: StdRwLock<crate::mate::PresetRegistry>,
     /// text モードのグリフラスタライズに使うフォント。読み込み失敗時は `None`（背景色のみ描画）。
     pub text_font: Option<Arc<fontdue::Font>>,
@@ -236,6 +252,7 @@ pub fn new_shared(
     repo_root: std::path::PathBuf,
     compiled_dir: std::path::PathBuf,
     clips_dir: std::path::PathBuf,
+    sources_dir: std::path::PathBuf,
     uploads_dir: std::path::PathBuf,
     mate_assets_dir: std::path::PathBuf,
     text_font: Option<Arc<fontdue::Font>>,
@@ -263,8 +280,10 @@ pub fn new_shared(
         repo_root,
         compiled_dir,
         clips_dir,
+        sources_dir,
         uploads_dir,
         media_uploads: RwLock::new(HashMap::new()),
+        clip_jobs: RwLock::new(HashMap::new()),
         mate_presets: StdRwLock::new(mate_presets),
         text_font,
     }))

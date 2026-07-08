@@ -10,13 +10,15 @@ import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { useGlowbeStandaloneLedPreview } from '@/hooks/use-glowbe-standalone-led-preview'
 import { useLayoutUv } from '@/hooks/use-layout-uv'
 import {
-  CENTER_LAT_DEG_MAX,
-  CENTER_LAT_DEG_MIN,
   DEFAULT_TEXT_PARAMS,
   FADE_ANGLE_DEG_MAX,
   FADE_ANGLE_DEG_MIN,
   LOOP_INTERVAL_SEC_MAX,
   LOOP_INTERVAL_SEC_MIN,
+  PITCH_DEG_MAX,
+  PITCH_DEG_MIN,
+  ROLL_DEG_MAX,
+  ROLL_DEG_MIN,
   SPEED_DEG_PER_SEC_MAX,
   SPEED_DEG_PER_SEC_MIN,
   TEXT_CONTENT_MAX,
@@ -24,10 +26,8 @@ import {
   TEXT_SIZE_DEG_MIN,
   THICKNESS_MAX,
   THICKNESS_MIN,
-  TILT_AZIMUTH_DEG_MAX,
-  TILT_AZIMUTH_DEG_MIN,
-  TILT_DEG_MAX,
-  TILT_DEG_MIN,
+  YAW_DEG_MAX,
+  YAW_DEG_MIN,
 } from '@/text/constants'
 import type { TextModeParams } from '@/text/types'
 import { useTextConfig } from '@/text/useTextConfig'
@@ -286,37 +286,37 @@ export function TextModePanel({ state }: { state: RuntimeState }) {
               onCommit={(v) => commit({ speedDegPerSec: v })}
             />
             <NumberSliderRow
-              id="text-center-lat"
-              label="Flow center latitude"
+              id="text-yaw"
+              label="Band center yaw"
               unit="°"
-              min={CENTER_LAT_DEG_MIN}
-              max={CENTER_LAT_DEG_MAX}
+              min={YAW_DEG_MIN}
+              max={YAW_DEG_MAX}
               step={1}
-              value={params.centerLatDeg}
+              value={params.yawDeg}
               disabled={textConfigBusy}
-              onCommit={(v) => commit({ centerLatDeg: v })}
+              onCommit={(v) => commit({ yawDeg: v })}
             />
             <NumberSliderRow
-              id="text-tilt"
-              label="Tilt amount (θ)"
+              id="text-pitch"
+              label="Band center pitch"
               unit="°"
-              min={TILT_DEG_MIN}
-              max={TILT_DEG_MAX}
+              min={PITCH_DEG_MIN}
+              max={PITCH_DEG_MAX}
               step={1}
-              value={params.tiltDeg}
+              value={params.pitchDeg}
               disabled={textConfigBusy}
-              onCommit={(v) => commit({ tiltDeg: v })}
+              onCommit={(v) => commit({ pitchDeg: v })}
             />
             <NumberSliderRow
-              id="text-tilt-azimuth"
-              label="Tilt direction (φ)"
+              id="text-roll"
+              label="Band roll"
               unit="°"
-              min={TILT_AZIMUTH_DEG_MIN}
-              max={TILT_AZIMUTH_DEG_MAX}
+              min={ROLL_DEG_MIN}
+              max={ROLL_DEG_MAX}
               step={1}
-              value={params.tiltAzimuthDeg}
+              value={params.rollDeg}
               disabled={textConfigBusy}
-              onCommit={(v) => commit({ tiltAzimuthDeg: v })}
+              onCommit={(v) => commit({ rollDeg: v })}
             />
             <NumberSliderRow
               id="text-thickness"

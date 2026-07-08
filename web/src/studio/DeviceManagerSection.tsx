@@ -9,7 +9,6 @@ import { DeviceEditForm } from './DeviceEditForm'
 import { DeviceOutputSettingsRow } from './DeviceOutputSettingsRow'
 import {
   DEFAULT_MASTER_BRIGHTNESS,
-  DEFAULT_MASTER_GAMMA,
   DEFAULT_OUTPUT_FPS,
   applyDiscoveredToDraft,
   editDraftFromRecord,
@@ -25,9 +24,9 @@ import { DEFAULT_LAYOUT_ID, isLayoutMismatch } from '@/layout-ids'
 import { LayoutMismatchAlert } from './LayoutMismatchAlert'
 import { useLayoutCatalog } from './useLayoutCatalog'
 
-function liveToneFromLoad(load: ReturnType<typeof useGlowbeRuntime>['load']) {
+function liveBrightnessFromLoad(load: ReturnType<typeof useGlowbeRuntime>['load']) {
   if (load.kind !== 'ready') return null
-  return { brightness: load.state.masterBrightness, gamma: load.state.masterGamma }
+  return load.state.masterBrightness
 }
 
 export function DeviceManagerSection() {
@@ -40,12 +39,12 @@ export function DeviceManagerSection() {
     updateDevice,
     deleteDevice,
     setActiveDevice,
-    setMasterTone,
+    setMasterBrightness,
     masterToneBusy,
   } = useGlowbeRuntime()
   const layoutId = load.kind === 'ready' ? load.state.layoutId : DEFAULT_LAYOUT_ID
   const defaultFps = load.kind === 'ready' ? load.state.targetFps : DEFAULT_OUTPUT_FPS
-  const liveTone = liveToneFromLoad(load)
+  const liveBrightness = liveBrightnessFromLoad(load)
   const liveFrontYaw = load.kind === 'ready' ? load.state.frontYawDeg : undefined
   const layoutMismatch = load.kind === 'ready' && isLayoutMismatch(load.state)
   const runtimeState = load.kind === 'ready' ? load.state : null
@@ -85,8 +84,8 @@ export function DeviceManagerSection() {
     }
     setEditDraft((prev) => {
       if (prev) return prev
-      const tone = liveToneFromLoad(load) ?? undefined
-      return editDraftFromRecord(selectedDevice, tone)
+      const tone = liveBrightnessFromLoad(load)
+      return editDraftFromRecord(selectedDevice, tone != null ? { brightness: tone } : undefined)
     })
   }, [editMode, selectedDevice, load])
 
@@ -128,7 +127,12 @@ export function DeviceManagerSection() {
     setDiscovered([])
     setError(null)
     if (selectedDevice) {
-      setEditDraft(editDraftFromRecord(selectedDevice, liveTone ?? undefined))
+      setEditDraft(
+        editDraftFromRecord(
+          selectedDevice,
+          liveBrightness != null ? { brightness: liveBrightness } : undefined,
+        ),
+      )
     }
   }
 
@@ -138,7 +142,11 @@ export function DeviceManagerSection() {
     setAddingDevice(false)
     if (editMode) {
       const rec = devices.find((d) => d.id === id)
-      if (rec) setEditDraft(editDraftFromRecord(rec, liveTone ?? undefined))
+      if (rec) {
+        setEditDraft(
+          editDraftFromRecord(rec, liveBrightness != null ? { brightness: liveBrightness } : undefined),
+        )
+      }
     }
   }
 
@@ -193,7 +201,6 @@ export function DeviceManagerSection() {
         layoutId: createDraft.layoutId.trim(),
         outputFps: fps.value,
         masterBrightness: createDraft.masterBrightness,
-        masterGamma: createDraft.masterGamma,
         frontYawDeg: createDraft.frontYawDeg,
       }
       if (!input.layoutId) {
@@ -232,8 +239,8 @@ export function DeviceManagerSection() {
       await updateDevice({
         ...selectedDevice,
         outputFps: fps,
-        masterBrightness: selectedDevice.masterBrightness ?? liveTone?.brightness ?? DEFAULT_MASTER_BRIGHTNESS,
-        masterGamma: selectedDevice.masterGamma ?? liveTone?.gamma ?? DEFAULT_MASTER_GAMMA,
+        masterBrightness:
+          selectedDevice.masterBrightness ?? liveBrightness ?? DEFAULT_MASTER_BRIGHTNESS,
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -250,8 +257,8 @@ export function DeviceManagerSection() {
       await updateDevice({
         ...selectedDevice,
         frontYawDeg: deg,
-        masterBrightness: selectedDevice.masterBrightness ?? liveTone?.brightness ?? DEFAULT_MASTER_BRIGHTNESS,
-        masterGamma: selectedDevice.masterGamma ?? liveTone?.gamma ?? DEFAULT_MASTER_GAMMA,
+        masterBrightness:
+          selectedDevice.masterBrightness ?? liveBrightness ?? DEFAULT_MASTER_BRIGHTNESS,
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -345,18 +352,17 @@ export function DeviceManagerSection() {
         />
       ) : null}
 
-      {!editMode && liveTone && selectedDevice ? (
+      {!editMode && liveBrightness != null && selectedDevice ? (
         <div className="rounded-lg border border-border/80 bg-muted/15 p-4">
           <DeviceOutputSettingsRow
             idPrefix={`device-${selectedDevice.id}`}
             fps={defaultFps}
-            brightness={liveTone.brightness}
-            gamma={liveTone.gamma}
+            brightness={liveBrightness}
             frontYawDeg={liveFrontYaw ?? selectedDevice.frontYawDeg ?? 0}
             disabled={quickSettingsBusyOrTone}
             onFpsCommit={commitQuickFps}
-            onToneCommit={(masterBrightness, masterGamma) => {
-              void setMasterTone(masterBrightness, masterGamma)
+            onBrightnessCommit={(masterBrightness) => {
+              void setMasterBrightness(masterBrightness)
             }}
             onFrontYawCommit={(deg) => {
               void commitQuickFrontYaw(deg)
@@ -390,8 +396,8 @@ export function DeviceManagerSection() {
                 onCancel={exitEditMode}
                 onDelete={() => {}}
                 toneDisabled={saveBusy}
-                onToneCommit={(masterBrightness, masterGamma) => {
-                  setCreateDraft((d) => ({ ...d, masterBrightness, masterGamma }))
+                onBrightnessCommit={(masterBrightness) => {
+                  setCreateDraft((d) => ({ ...d, masterBrightness }))
                 }}
               />
             </>
@@ -412,9 +418,9 @@ export function DeviceManagerSection() {
               onScanLan={() => void scanLan()}
               onPickDiscovered={() => {}}
               onChange={(patch) => setEditDraft((d) => (d ? { ...d, ...patch } : d))}
-              onToneCommit={(masterBrightness, masterGamma) => {
-                setEditDraft((d) => (d ? { ...d, masterBrightness, masterGamma } : d))
-                void setMasterTone(masterBrightness, masterGamma)
+              onBrightnessCommit={(masterBrightness) => {
+                setEditDraft((d) => (d ? { ...d, masterBrightness } : d))
+                void setMasterBrightness(masterBrightness)
               }}
               onSave={() => void saveEdit()}
               onCancel={exitEditMode}

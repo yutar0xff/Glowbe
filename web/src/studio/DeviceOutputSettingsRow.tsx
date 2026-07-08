@@ -5,10 +5,8 @@ import { Slider } from '@/components/ui/slider'
 import {
   brightnessToPercent,
   formatBrightnessPercent,
-  formatGamma,
   percentToBrightness,
   validateBrightnessPercent,
-  validateGamma,
   validateOutputFps,
 } from './device-output-settings'
 import { clampFrontYawDeg, FRONT_YAW_DEG_MAX, FRONT_YAW_DEG_MIN } from './device-draft'
@@ -24,44 +22,38 @@ export function DeviceOutputSettingsRow({
   idPrefix,
   fps,
   brightness,
-  gamma,
   frontYawDeg,
   disabled,
   onFpsCommit,
-  onToneCommit,
+  onBrightnessCommit,
   onFrontYawCommit,
 }: {
   idPrefix: string
   fps?: number
   brightness: number
-  gamma: number
   frontYawDeg?: number
   disabled?: boolean
   onFpsCommit?: (fps: number) => void
-  onToneCommit: (brightness: number, gamma: number) => void
+  onBrightnessCommit: (brightness: number) => void
   onFrontYawCommit?: (deg: number) => void
 }) {
   const dragging = useRef(false)
-  const toneRef = useRef({ brightness, gamma })
+  const brightnessRef = useRef(brightness)
   const yawDragging = useRef(false)
   const [fpsText, setFpsText] = useState(fps !== undefined ? String(fps) : '')
   const [brightnessText, setBrightnessText] = useState(formatBrightnessPercent(brightness))
-  const [gammaText, setGammaText] = useState(formatGamma(gamma))
   const [displayBrightnessPct, setDisplayBrightnessPct] = useState(brightnessToPercent(brightness))
-  const [displayGamma, setDisplayGamma] = useState(gamma)
   const [displayYaw, setDisplayYaw] = useState(frontYawDeg ?? 0)
   const [yawText, setYawText] = useState(String(Math.round(frontYawDeg ?? 0)))
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    toneRef.current = { brightness, gamma }
+    brightnessRef.current = brightness
     if (!dragging.current) {
       setDisplayBrightnessPct(brightnessToPercent(brightness))
-      setDisplayGamma(gamma)
       setBrightnessText(formatBrightnessPercent(brightness))
-      setGammaText(formatGamma(gamma))
     }
-  }, [brightness, gamma])
+  }, [brightness])
 
   useEffect(() => {
     if (frontYawDeg === undefined) return
@@ -77,13 +69,11 @@ export function DeviceOutputSettingsRow({
     }
   }, [fps])
 
-  const commitTone = (nextBrightness: number, nextGamma: number) => {
-    toneRef.current = { brightness: nextBrightness, gamma: nextGamma }
-    setDisplayBrightnessPct(brightnessToPercent(nextBrightness))
-    setDisplayGamma(nextGamma)
-    setBrightnessText(formatBrightnessPercent(nextBrightness))
-    setGammaText(formatGamma(nextGamma))
-    onToneCommit(nextBrightness, nextGamma)
+  const commitBrightness = (next: number) => {
+    brightnessRef.current = next
+    setDisplayBrightnessPct(brightnessToPercent(next))
+    setBrightnessText(formatBrightnessPercent(next))
+    onBrightnessCommit(next)
   }
 
   const commitFps = () => {
@@ -106,30 +96,16 @@ export function DeviceOutputSettingsRow({
       return
     }
     setError(null)
-    if (result.value !== toneRef.current.brightness) {
-      commitTone(result.value, toneRef.current.gamma)
+    if (result.value !== brightnessRef.current) {
+      commitBrightness(result.value)
     } else {
       setBrightnessText(formatBrightnessPercent(result.value))
     }
   }
 
-  const commitGammaText = () => {
-    const result = validateGamma(gammaText)
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    setError(null)
-    if (result.value !== toneRef.current.gamma) {
-      commitTone(toneRef.current.brightness, result.value)
-    } else {
-      setGammaText(formatGamma(result.value))
-    }
-  }
-
   const commitSlider = () => {
     dragging.current = false
-    commitTone(toneRef.current.brightness, toneRef.current.gamma)
+    commitBrightness(brightnessRef.current)
   }
 
   const commitYawText = () => {
@@ -150,7 +126,7 @@ export function DeviceOutputSettingsRow({
 
   return (
     <div className="space-y-2">
-      <div className={`grid grid-cols-1 gap-4 ${fps !== undefined ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+      <div className={`grid grid-cols-1 gap-4 ${fps !== undefined ? 'sm:grid-cols-2' : 'sm:grid-cols-1'}`}>
         {fps !== undefined ? (
           <div className="space-y-2">
             <Label htmlFor={`${idPrefix}-fps`} className="font-mono text-xs font-semibold">
@@ -205,49 +181,12 @@ export function DeviceOutputSettingsRow({
               dragging.current = true
               const pct = vals[0]!
               const next = percentToBrightness(pct)
-              toneRef.current.brightness = next
+              brightnessRef.current = next
               setDisplayBrightnessPct(pct)
               setBrightnessText(String(pct))
             }}
             onValueCommit={(vals) => {
-              toneRef.current.brightness = percentToBrightness(vals[0]!)
-              commitSlider()
-            }}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-gamma`} className="font-mono text-xs font-semibold">
-            Gamma
-          </Label>
-          <Input
-            id={`${idPrefix}-gamma-text`}
-            inputMode="decimal"
-            className="font-mono text-xs tabular-nums"
-            value={gammaText}
-            disabled={disabled}
-            onChange={(e) => {
-              setGammaText(e.target.value)
-              setError(null)
-            }}
-            onBlur={() => commitGammaText()}
-            onKeyDown={commitOnEnter}
-          />
-          <Slider
-            id={`${idPrefix}-gamma`}
-            disabled={disabled}
-            min={45}
-            max={350}
-            step={1}
-            value={[Math.round(displayGamma * 100)]}
-            onValueChange={(vals) => {
-              dragging.current = true
-              const next = vals[0]! / 100
-              toneRef.current.gamma = next
-              setDisplayGamma(next)
-              setGammaText(formatGamma(next))
-            }}
-            onValueCommit={(vals) => {
-              toneRef.current.gamma = vals[0]! / 100
+              brightnessRef.current = percentToBrightness(vals[0]!)
               commitSlider()
             }}
           />

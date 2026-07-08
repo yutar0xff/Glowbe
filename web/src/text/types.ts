@@ -4,12 +4,12 @@ export type TextModeParams = {
   textSizeDeg: number
   /** Flow speed in degrees per second (sign selects direction). */
   speedDegPerSec: number
-  /** Band center latitude in degrees (0 = equator). */
-  centerLatDeg: number
-  /** Tilt amount θ in degrees (0 = horizontal, pole at +Y; 90 = vertical). */
-  tiltDeg: number
-  /** Tilt direction azimuth φ in degrees (from +X, about +Y; 0 = tilt toward the front +X). */
-  tiltAzimuthDeg: number
+  /** Band mid-front RH yaw about +Y (deg). 0 = +X front. */
+  yawDeg: number
+  /** Band mid-front elevation toward +Y (deg). */
+  pitchDeg: number
+  /** Twist about band-center outward axis (deg, RH). */
+  rollDeg: number
   /** Longitude from the back (deg) below which brightness is 0 (background). */
   fadeStartDeg: number
   /** Longitude from the back (deg) at which brightness reaches full (text color). */

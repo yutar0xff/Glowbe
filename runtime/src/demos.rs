@@ -517,12 +517,15 @@ pub fn demo_clip_summaries() -> Vec<crate::media::ClipSummary> {
             fps: d.fps(),
             width: crate::equirect::DEFAULT_WIDTH,
             height: crate::equirect::DEFAULT_HEIGHT,
+            source_id: None,
+            thumb_frame_index: None,
             source_kind: None,
             source_width: 0,
             source_height: 0,
             created_at_unix_sec: 0,
             display_name: Some(d.display_name().to_string()),
             is_demo: Some(true),
+            gamma: 1.0,
         })
         .collect()
 }

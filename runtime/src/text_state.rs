@@ -1,15 +1,17 @@
 //! Per-device text mode runtime state (content, flow params, glyph ribbon cache).
 //!
-//! テキストは正面 (`u=0.5`) を中心に、真裏 (`u=0.0/1.0` の継ぎ目) から出現・消失する
+//! テキストは帯中心（`yawDeg` / `pitchDeg`）の正面を中心に、真裏の継ぎ目から出現・消失する
 //! 帯として球面に流す。色は各 LED の yaw 適用済み `(u,v)` から生成するため、frontYawDeg
 //! に自動追従する。真裏付近は明るさフェードで背景色に戻す。
 
+use std::f32::consts::PI;
 use std::sync::RwLock as StdRwLock;
 use std::time::Instant;
 
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::Font;
 
+use crate::orientation;
 use crate::sphere;
 
 /// リボン画素高（固定）。`text_size_deg` はサンプリング時の度→画素換算にのみ使う。
@@ -21,14 +23,12 @@ pub const TEXT_SIZE_DEG_MIN: f32 = 10.0;
 pub const TEXT_SIZE_DEG_MAX: f32 = 180.0;
 pub const SPEED_DEG_PER_SEC_MIN: f32 = -360.0;
 pub const SPEED_DEG_PER_SEC_MAX: f32 = 360.0;
-pub const CENTER_LAT_DEG_MIN: f32 = -80.0;
-pub const CENTER_LAT_DEG_MAX: f32 = 80.0;
-/// 傾き量 θ（0=水平、-90=縦）。
-pub const TILT_DEG_MIN: f32 = -90.0;
-pub const TILT_DEG_MAX: f32 = 0.0;
-/// 傾ける方位角 φ（+X 基準・+Y 軸まわり。0=正面 +X 方向へ倒す）。
-pub const TILT_AZIMUTH_DEG_MIN: f32 = -180.0;
-pub const TILT_AZIMUTH_DEG_MAX: f32 = 180.0;
+pub const YAW_DEG_MIN: f32 = -180.0;
+pub const YAW_DEG_MAX: f32 = 180.0;
+pub const PITCH_DEG_MIN: f32 = -80.0;
+pub const PITCH_DEG_MAX: f32 = 80.0;
+pub const ROLL_DEG_MIN: f32 = -180.0;
+pub const ROLL_DEG_MAX: f32 = 180.0;
 /// フェード開始/終了角（真裏からの経度、度）。0=真裏。
 pub const FADE_ANGLE_DEG_MIN: f32 = 0.0;
 pub const FADE_ANGLE_DEG_MAX: f32 = 180.0;
@@ -44,11 +44,12 @@ pub struct TextParams {
     pub content: String,
     pub text_size_deg: f32,
     pub speed_deg_per_sec: f32,
-    pub center_lat_deg: f32,
-    /// 傾き量 θ（度、0=水平＝極が +Y、-90=縦）。帯をこの角度だけ倒す。
-    pub tilt_deg: f32,
-    /// 傾ける方位角 φ（度、+X 基準・+Y 軸まわり右ねじ。0=正面 +X 方向へ倒す）。
-    pub tilt_azimuth_deg: f32,
+    /// Band mid-front orientation: RH yaw about +Y (deg).
+    pub yaw_deg: f32,
+    /// Band mid-front elevation toward +Y (deg).
+    pub pitch_deg: f32,
+    /// Twist about band-center outward axis (deg, RH).
+    pub roll_deg: f32,
     /// 真裏からの経度で、この角度まで明るさ 0（背景色）。
     pub fade_start_deg: f32,
     /// 真裏からの経度で、この角度で明るさ最大（文字色）。start→end で線形にグラデーション。
@@ -68,9 +69,9 @@ impl Default for TextParams {
                 .to_string(),
             text_size_deg: 130.0,
             speed_deg_per_sec: 150.0,
-            center_lat_deg: 15.0,
-            tilt_deg: -20.0,
-            tilt_azimuth_deg: 30.0,
+            yaw_deg: 0.0,
+            pitch_deg: 15.0,
+            roll_deg: 0.0,
             fade_start_deg: 0.0,
             fade_end_deg: 120.0,
             thickness: 1.0,
@@ -90,13 +91,9 @@ impl TextParams {
         self.speed_deg_per_sec = self
             .speed_deg_per_sec
             .clamp(SPEED_DEG_PER_SEC_MIN, SPEED_DEG_PER_SEC_MAX);
-        self.center_lat_deg = self
-            .center_lat_deg
-            .clamp(CENTER_LAT_DEG_MIN, CENTER_LAT_DEG_MAX);
-        self.tilt_deg = self.tilt_deg.clamp(TILT_DEG_MIN, TILT_DEG_MAX);
-        self.tilt_azimuth_deg = self
-            .tilt_azimuth_deg
-            .clamp(TILT_AZIMUTH_DEG_MIN, TILT_AZIMUTH_DEG_MAX);
+        self.yaw_deg = self.yaw_deg.clamp(YAW_DEG_MIN, YAW_DEG_MAX);
+        self.pitch_deg = self.pitch_deg.clamp(PITCH_DEG_MIN, PITCH_DEG_MAX);
+        self.roll_deg = self.roll_deg.clamp(ROLL_DEG_MIN, ROLL_DEG_MAX);
         self.fade_start_deg = self
             .fade_start_deg
             .clamp(FADE_ANGLE_DEG_MIN, FADE_ANGLE_DEG_MAX);
@@ -126,9 +123,9 @@ struct SamplesKey {
     layout_id: String,
     led_count: usize,
     front_yaw_bits: u32,
-    tilt_bits: u32,
-    tilt_azimuth_bits: u32,
-    center_lat_bits: u32,
+    yaw_bits: u32,
+    pitch_bits: u32,
+    roll_bits: u32,
 }
 
 impl SamplesKey {
@@ -136,17 +133,17 @@ impl SamplesKey {
         layout_id: &str,
         led_count: usize,
         front_yaw_deg: f32,
-        tilt_deg: f32,
-        tilt_azimuth_deg: f32,
-        center_lat_deg: f32,
+        yaw_deg: f32,
+        pitch_deg: f32,
+        roll_deg: f32,
     ) -> Self {
         Self {
             layout_id: layout_id.to_string(),
             led_count,
             front_yaw_bits: f32::to_bits(front_yaw_deg),
-            tilt_bits: f32::to_bits(tilt_deg),
-            tilt_azimuth_bits: f32::to_bits(tilt_azimuth_deg),
-            center_lat_bits: f32::to_bits(center_lat_deg),
+            yaw_bits: f32::to_bits(yaw_deg),
+            pitch_bits: f32::to_bits(pitch_deg),
+            roll_bits: f32::to_bits(roll_deg),
         }
     }
 }
@@ -223,24 +220,24 @@ impl TextRuntimeState {
         layout_uv: &[(f32, f32)],
         layout_id: &str,
         front_yaw_deg: f32,
-        tilt_deg: f32,
-        tilt_azimuth_deg: f32,
-        center_lat_deg: f32,
+        yaw_deg: f32,
+        pitch_deg: f32,
+        roll_deg: f32,
     ) {
         let want = SamplesKey::new(
             layout_id,
             layout_uv.len(),
             front_yaw_deg,
-            tilt_deg,
-            tilt_azimuth_deg,
-            center_lat_deg,
+            yaw_deg,
+            pitch_deg,
+            roll_deg,
         );
         if let Ok(g) = self.samples.read() {
             if g.as_ref().is_some_and(|c| c.key == want) {
                 return;
             }
         }
-        let per_led = compute_samples(layout_uv, tilt_deg, tilt_azimuth_deg, center_lat_deg);
+        let per_led = compute_samples(layout_uv, yaw_deg, pitch_deg, roll_deg);
         if let Ok(mut g) = self.samples.write() {
             *g = Some(TextSamples { key: want, per_led });
         }
@@ -272,9 +269,9 @@ impl TextRuntimeState {
             layout_uv,
             layout_id,
             front_yaw_deg,
-            params.tilt_deg,
-            params.tilt_azimuth_deg,
-            params.center_lat_deg,
+            params.yaw_deg,
+            params.pitch_deg,
+            params.roll_deg,
         );
 
         let (Ok(ribbon_g), Ok(samples_g)) = (self.ribbon.read(), self.samples.read()) else {
@@ -391,8 +388,8 @@ fn build_ribbon(font: &Font, content: &str, thickness: f32) -> Ribbon {
                 if px < 0 || py < 0 || px as usize >= width_px || py as usize >= height_px {
                     continue;
                 }
-                let idx = py as usize * width_px + px as usize;
-                cov[idx] = cov[idx].max(a);
+                let i = py as usize * width_px + px as usize;
+                cov[i] = cov[i].max(a);
             }
         }
     }
@@ -458,38 +455,30 @@ fn dilate(src: &[u8], w: usize, h: usize, r: usize) -> Vec<u8> {
     out
 }
 
-/// 各 LED の yaw 適用済み `(u,v)` から、tilt を戻した水平帯フレームでの `(s, t_deg)` を求める。
+/// 各 LED の yaw 適用済み `(u,v)` から、帯中心原点の `(s, t_deg)` を求める。
 ///
-/// 帯の極（法線）を球面座標 `n(θ,φ)=(sinθcosφ, cosθ, -sinθsinφ)` に倒す。θ（`tilt_deg`）は
-/// 傾け量（0=水平/極=+Y）、φ（`tilt_azimuth_deg`）は傾ける方位角（+X 基準・+Y 軸まわり右ねじ、
-/// φ=0 で +X＝正面方向へ倒す）。これを実現する水平な傾き軸は `a=(-sinφ, 0, -cosφ)`。
-/// 各方向ベクトルを軸 `a` まわりに `-θ` だけ Rodrigues 回転して帯フレームへ戻す。
+/// 帯中心方向 `c = yaw/pitch`、接平面の east/north に `rollDeg` を掛けたフレームで:
+/// - `s = atan2(east·d, c·d)/(2π) + 0.5`（中心で 0.5、真裏で継ぎ目）
+/// - `t_deg = asin(north·d)`（度、帯高さ方向）
 fn compute_samples(
     layout_uv: &[(f32, f32)],
-    tilt_deg: f32,
-    tilt_azimuth_deg: f32,
-    center_lat_deg: f32,
+    yaw_deg: f32,
+    pitch_deg: f32,
+    roll_deg: f32,
 ) -> Vec<(f32, f32)> {
-    let phi = tilt_azimuth_deg.to_radians();
-    let (sin_phi, cos_phi) = phi.sin_cos();
-    let (ax, az) = (-sin_phi, -cos_phi); // 傾き軸 a=(ax, 0, az)、水平面 (xz) 内
-    let alpha = (-tilt_deg).to_radians();
-    let (sin_a, cos_a) = alpha.sin_cos();
-    let one_minus = 1.0 - cos_a;
+    let c = orientation::unit_dir_from_yaw_pitch_deg(yaw_deg, pitch_deg);
+    let (e0, n0) = orientation::tangent_east_north(c);
+    let (east, north) = orientation::roll_tangent_basis(e0, n0, roll_deg);
     layout_uv
         .iter()
         .map(|&(u, v)| {
             let d = sphere::unit_dir_from_equirect_uv_y_up(u, v);
-            let (x, y, z) = (d[0], d[1], d[2]);
-            // v' = v·cosα + (a×v)·sinα + a·(a·v)·(1-cosα)、a=(ax,0,az)。
-            let dot = ax * x + az * z;
-            let (cx, cy, cz) = (-az * y, az * x - ax * z, ax * y);
-            let rx = x * cos_a + cx * sin_a + ax * dot * one_minus;
-            let ry = y * cos_a + cy * sin_a;
-            let rz = z * cos_a + cz * sin_a + az * dot * one_minus;
-            let (u2, v2) = sphere::equirect_uv_from_unit_dir_y_up(rx, ry, rz);
-            let deg = 90.0 - 180.0 * v2;
-            (u2, deg - center_lat_deg)
+            let x = d[0] * east[0] + d[1] * east[1] + d[2] * east[2];
+            let y = d[0] * north[0] + d[1] * north[1] + d[2] * north[2];
+            let z = d[0] * c[0] + d[1] * c[1] + d[2] * c[2];
+            let s = (x.atan2(z) / (2.0 * PI) + 0.5).rem_euclid(1.0);
+            let t_deg = y.clamp(-1.0, 1.0).asin().to_degrees();
+            (s, t_deg)
         })
         .collect()
 }
@@ -568,7 +557,6 @@ mod tests {
 
     #[test]
     fn descenders_are_not_clipped_at_bottom_edge() {
-        // ディセンダ付きの字形が下端で見切れないこと（余白行が残る＝クランプされていない）。
         let font = load_font();
         let ribbon = build_ribbon(&font, "gjpqy", 0.0);
         let w = ribbon.width_px;
@@ -597,8 +585,7 @@ mod tests {
     }
 
     #[test]
-    fn front_maps_to_mid_band() {
-        // 正面 (u=0.5, 赤道) は tilt=0 で s=0.5、t_deg=0 付近。
+    fn front_maps_to_mid_band_at_zero_orientation() {
         let samples = compute_samples(&[(0.5, 0.5)], 0.0, 0.0, 0.0);
         let (s, t) = samples[0];
         assert!((s - 0.5).abs() < 1e-3, "front s should be ~0.5, got {s}");
@@ -606,30 +593,47 @@ mod tests {
     }
 
     #[test]
-    fn front_and_back_stay_on_flow_seam_for_axis_directions() {
-        // 傾き軸が xz 平面内（φ=0/90/180）なら、正面/真裏は s=0.5 / s=0.0 の経度に留まる。
-        for &azimuth in &[0.0f32, 90.0, 180.0, -90.0] {
-            let s = compute_samples(&[(0.5, 0.5)], 60.0, azimuth, 0.0)[0].0;
-            assert!(
-                (s - 0.5).abs() < 1e-3,
-                "front s should stay 0.5 at φ={azimuth}, got {s}"
-            );
-            let b = compute_samples(&[(0.0, 0.5)], 60.0, azimuth, 0.0)[0].0;
-            assert!(
-                b.min(1.0 - b) < 1e-3,
-                "back s should stay at seam at φ={azimuth}, got {b}"
-            );
-        }
+    fn back_stays_on_flow_seam() {
+        let b = compute_samples(&[(0.0, 0.5)], 0.0, 0.0, 0.0)[0].0;
+        assert!(
+            b.min(1.0 - b) < 1e-3,
+            "back s should stay at seam, got {b}"
+        );
+    }
+
+    #[test]
+    fn pitch_moves_equator_point_off_band_center() {
+        let (s, t) = compute_samples(&[(0.5, 0.5)], 0.0, 30.0, 0.0)[0];
+        assert!((s - 0.5).abs() < 1e-3, "front s should stay ~0.5, got {s}");
+        assert!(
+            (t + 30.0).abs() < 0.5,
+            "equator front should be ~−pitch in band frame, got {t}"
+        );
+    }
+
+    #[test]
+    fn yaw_keeps_front_u_at_mid_s() {
+        // Content at u matching yaw-shifted front still maps to s=0.5.
+        let (u, _) = orientation::uv_from_yaw_pitch_deg(45.0, 0.0);
+        let (s, t) = compute_samples(&[(u, 0.5)], 45.0, 0.0, 0.0)[0];
+        assert!((s - 0.5).abs() < 1e-3, "yawed front s should be 0.5, got {s}");
+        assert!(t.abs() < 1e-2, "yawed front t should be ~0, got {t}");
+    }
+
+    #[test]
+    fn roll_changes_mapping() {
+        let a = compute_samples(&[(0.6, 0.45)], 0.0, 0.0, 0.0)[0];
+        let b = compute_samples(&[(0.6, 0.45)], 0.0, 0.0, 45.0)[0];
+        let d = (a.0 - b.0).abs() + (a.1 - b.1).abs();
+        assert!(d > 1e-2, "roll should change mapping, diff={d}");
     }
 
     #[test]
     fn frame_zero_places_head_at_back_seam() {
-        // elapsed=0 で先頭 (phase 0) が裏側の継ぎ目に来る＝fade 開始点から表示が始まる。
-        // 先頭の経度は a_deg = (-scroll0) mod period。
         for &(period, speed, want) in &[
-            (720.0f32, 150.0f32, 360.0f32), // 順方向: a_deg=360 側から流入
-            (360.0, 150.0, 0.0),            // 短文（period=360）でも継ぎ目
-            (720.0, -150.0, 0.0),           // 逆方向: a_deg=0 側から流入
+            (720.0f32, 150.0f32, 360.0f32),
+            (360.0, 150.0, 0.0),
+            (720.0, -150.0, 0.0),
         ] {
             let scroll0 = initial_scroll_offset_deg(period, speed);
             let head_a_deg = (-scroll0).rem_euclid(period);
@@ -638,33 +642,5 @@ mod tests {
                 "period={period} speed={speed}: head a_deg {head_a_deg} != {want}"
             );
         }
-    }
-
-    #[test]
-    fn azimuth_zero_tilts_toward_front() {
-        // φ=0 は正面(+X)方向へ倒す：正面点は帯フレームで s=0.5 を保ちつつ緯度が +θ ずれる。
-        let theta = 30.0f32;
-        let (s, t) = compute_samples(&[(0.5, 0.5)], theta, 0.0, 0.0)[0];
-        assert!(
-            (s - 0.5).abs() < 1e-3,
-            "front should stay at s=0.5, got {s}"
-        );
-        assert!((t - theta).abs() < 0.1, "front t_deg should be ~θ, got {t}");
-        // φ=90 は正面軸(+X)を傾き軸にするため、正面点は緯度が動かない。
-        let (s90, t90) = compute_samples(&[(0.5, 0.5)], theta, 90.0, 0.0)[0];
-        assert!((s90 - 0.5).abs() < 1e-3, "front should stay at s=0.5");
-        assert!(
-            t90.abs() < 0.1,
-            "front t_deg should stay ~0 at φ=90, got {t90}"
-        );
-    }
-
-    #[test]
-    fn azimuth_changes_tilt_direction() {
-        // φ を変えると同じ θ でも帯フレームの写像が変わる（軸方向が効いている）。
-        let front_axis = compute_samples(&[(0.6, 0.5)], 45.0, 0.0, 0.0)[0];
-        let side_axis = compute_samples(&[(0.6, 0.5)], 45.0, 90.0, 0.0)[0];
-        let d = (front_axis.0 - side_axis.0).abs() + (front_axis.1 - side_axis.1).abs();
-        assert!(d > 1e-2, "azimuth should change mapping, diff={d}");
     }
 }

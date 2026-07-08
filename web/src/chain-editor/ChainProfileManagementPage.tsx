@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Copy, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { StudioNav } from '@/components/StudioNav'
 import {
   deleteChainProfile,
   duplicateChainProfile,
@@ -90,25 +91,28 @@ export function ChainProfileManagementPage() {
 
   return (
     <div className="mx-auto flex min-h-svh max-w-3xl flex-col gap-4 p-4 sm:p-6">
-      <header className="flex flex-wrap items-center gap-3">
-        <Button type="button" variant="ghost" size="sm" asChild>
-          <Link to={backHref}>
-            <ArrowLeft className="size-4" aria-hidden />
-            Back
-          </Link>
-        </Button>
-        <div className="min-w-0 flex-1">
-          <h1 className="text-lg font-semibold">Chain profile management</h1>
-          <p className="text-sm text-muted-foreground">
-            Create, edit, duplicate, and delete LED chain profiles.
-          </p>
+      <header className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="ghost" size="sm" asChild>
+            <Link to={backHref}>
+              <ArrowLeft className="size-4" aria-hidden />
+              Back
+            </Link>
+          </Button>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg font-semibold">Chain profile management</h1>
+            <p className="text-sm text-muted-foreground">
+              Create, edit, duplicate, and delete LED chain profiles.
+            </p>
+          </div>
+          <Button type="button" size="sm" asChild>
+            <Link to={`/chain-profiles/new/edit${returnQuery}`}>
+              <Plus className="size-4" aria-hidden />
+              New profile
+            </Link>
+          </Button>
         </div>
-        <Button type="button" size="sm" asChild>
-          <Link to={`/chain-profiles/new/edit${returnQuery}`}>
-            <Plus className="size-4" aria-hidden />
-            New profile
-          </Link>
-        </Button>
+        <StudioNav />
       </header>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}

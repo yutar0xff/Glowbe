@@ -24,8 +24,8 @@ use crate::layouts;
 use crate::mate_api;
 use crate::media;
 use crate::state::{
-    InteractiveEffectKind, InteractivePulse, MediaUploadEntry, MediaUploadPhase, OutputMode,
-    RuntimeState, SharedState,
+    ClipJobPhase, InteractiveEffectKind, InteractivePulse, MediaUploadEntry, MediaUploadPhase,
+    OutputMode, RuntimeState, SharedState,
 };
 use crate::wire;
 
@@ -57,7 +57,6 @@ struct StateResponse {
     esp_layout_hash: Option<u32>,
     frames_sent: u64,
     master_brightness: f64,
-    master_gamma: f64,
     front_yaw_deg: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     loop_source_frame: Option<u32>,
@@ -94,7 +93,6 @@ struct LoopPauseRequest {
 #[serde(rename_all = "camelCase")]
 struct MasterToneRequest {
     brightness: f64,
-    gamma: f64,
 }
 
 #[derive(Deserialize)]
@@ -144,9 +142,9 @@ struct TextConfigResponse {
     content: String,
     text_size_deg: f32,
     speed_deg_per_sec: f32,
-    center_lat_deg: f32,
-    tilt_deg: f32,
-    tilt_azimuth_deg: f32,
+    yaw_deg: f32,
+    pitch_deg: f32,
+    roll_deg: f32,
     fade_start_deg: f32,
     fade_end_deg: f32,
     thickness: f32,
@@ -165,11 +163,11 @@ struct TextConfigRequest {
     #[serde(default)]
     speed_deg_per_sec: Option<f32>,
     #[serde(default)]
-    center_lat_deg: Option<f32>,
+    yaw_deg: Option<f32>,
     #[serde(default)]
-    tilt_deg: Option<f32>,
+    pitch_deg: Option<f32>,
     #[serde(default)]
-    tilt_azimuth_deg: Option<f32>,
+    roll_deg: Option<f32>,
     #[serde(default)]
     fade_start_deg: Option<f32>,
     #[serde(default)]
@@ -199,9 +197,9 @@ fn text_config_response(params: &crate::text_state::TextParams) -> TextConfigRes
         content: params.content.clone(),
         text_size_deg: params.text_size_deg,
         speed_deg_per_sec: params.speed_deg_per_sec,
-        center_lat_deg: params.center_lat_deg,
-        tilt_deg: params.tilt_deg,
-        tilt_azimuth_deg: params.tilt_azimuth_deg,
+        yaw_deg: params.yaw_deg,
+        pitch_deg: params.pitch_deg,
+        roll_deg: params.roll_deg,
         fade_start_deg: params.fade_start_deg,
         fade_end_deg: params.fade_end_deg,
         thickness: params.thickness,
@@ -299,8 +297,6 @@ struct DeviceCreateRequest {
     output_fps: u32,
     #[serde(default = "default_master_brightness")]
     master_brightness: f64,
-    #[serde(default = "default_master_gamma")]
-    master_gamma: f64,
     #[serde(default)]
     front_yaw_deg: f64,
 }
@@ -318,8 +314,6 @@ struct DeviceUpdateRequest {
     output_fps: u32,
     #[serde(default = "default_master_brightness")]
     master_brightness: f64,
-    #[serde(default = "default_master_gamma")]
-    master_gamma: f64,
     #[serde(default)]
     front_yaw_deg: f64,
 }
@@ -328,9 +322,6 @@ fn default_master_brightness() -> f64 {
     crate::devices::DEFAULT_MASTER_BRIGHTNESS
 }
 
-fn default_master_gamma() -> f64 {
-    crate::devices::DEFAULT_MASTER_GAMMA
-}
 
 type ApiError = (StatusCode, Json<ErrorResponse>);
 
@@ -645,6 +636,16 @@ pub fn router(app: SharedState) -> Router {
                 }
             }),
         )
+        .route(
+            "/api/v1/sources/upload",
+            post({
+                let app = app.clone();
+                move |multipart: Multipart| {
+                    let app = app.clone();
+                    async move { post_sources_upload(app, multipart).await }
+                }
+            }),
+        )
         .layer(DefaultBodyLimit::max(48 * 1024 * 1024));
 
     let app_health = app.clone();
@@ -767,6 +768,63 @@ pub fn router(app: SharedState) -> Router {
             }),
         )
         .route(
+            "/api/v1/clips/preview-frame",
+            post({
+                let app = app.clone();
+                move |body| post_clips_preview_frame(app.clone(), body)
+            }),
+        )
+        .route(
+            "/api/v1/clips/create",
+            post({
+                let app = app.clone();
+                move |body| post_clips_create(app.clone(), body)
+            }),
+        )
+        .route(
+            "/api/v1/clips/jobs/{job_id}",
+            get({
+                let app = app.clone();
+                move |path| get_clip_job(app.clone(), path)
+            }),
+        )
+        .route(
+            "/api/v1/clips/{clip_id}/thumbnail",
+            get({
+                let app = app.clone();
+                move |path| get_clip_thumbnail(app.clone(), path)
+            }),
+        )
+        .route(
+            "/api/v1/sources",
+            get({
+                let app = app.clone();
+                move || get_sources(app.clone())
+            }),
+        )
+        .route(
+            "/api/v1/sources/{source_id}",
+            get({
+                let app = app.clone();
+                move |path| get_source(app.clone(), path)
+            })
+            .patch({
+                let app = app.clone();
+                move |path, body| patch_source(app.clone(), path, body)
+            })
+            .delete({
+                let app = app.clone();
+                move |path| delete_source(app.clone(), path)
+            }),
+        )
+        .route(
+            "/api/v1/sources/{source_id}/frame/{frame_index}",
+            get({
+                let app = app.clone();
+                move |path| get_source_frame(app.clone(), path)
+            }),
+        )
+        .route(
             "/api/v1/clips/{clip_id}",
             patch({
                 let app = app.clone();
@@ -813,6 +871,13 @@ pub fn router(app: SharedState) -> Router {
             post({
                 let app = app.clone();
                 move |body| post_layout_import(app.clone(), body)
+            }),
+        )
+        .route(
+            "/api/v1/layouts/{layout_id}/uv",
+            get({
+                let app = app.clone();
+                move |path| get_layout_uv_by_id(app.clone(), path)
             }),
         )
         .route(
@@ -1045,24 +1110,17 @@ async fn handle_ws_text(
         }
         "masterSettings" => {
             let cur_b = slot.master_brightness();
-            let cur_g = slot.master_gamma();
             let brightness = v
                 .get("brightness")
                 .and_then(|x| x.as_f64())
                 .map(|x| x as f32)
                 .unwrap_or(cur_b);
-            let gamma = v
-                .get("gamma")
-                .and_then(|x| x.as_f64())
-                .map(|x| x as f32)
-                .unwrap_or(cur_g);
-            slot.set_master_tone(brightness, gamma);
+            slot.set_master_brightness(brightness);
             let reply = json!({
                 "type": "event_status",
                 "event": "masterSettings",
                 "status": "ok",
-                "brightness": f64::from(slot.master_brightness()),
-                "gamma": f64::from(slot.master_gamma())
+                "brightness": f64::from(slot.master_brightness())
             });
             socket.send(Message::Text(reply.to_string().into())).await?;
         }
@@ -1409,7 +1467,12 @@ async fn get_state(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ClipPatchRequest {
-    display_name: String,
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    thumb_frame_index: Option<u32>,
+    #[serde(default)]
+    gamma: Option<f32>,
 }
 
 async fn patch_clip_display(
@@ -1430,7 +1493,7 @@ async fn patch_clip_display(
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: "built-in demo clips cannot be renamed".into(),
+                error: "built-in demo clips cannot be edited".into(),
             }),
         )
             .into_response();
@@ -1445,9 +1508,22 @@ async fn patch_clip_display(
         )
             .into_response();
     }
-    if let Err(e) =
-        media::set_clip_display_name(&app.clips_dir, &clip_id, Some(body.display_name.as_str()))
-    {
+    if body.display_name.is_none() && body.thumb_frame_index.is_none() && body.gamma.is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "at least one of displayName, thumbFrameIndex, or gamma is required".into(),
+            }),
+        )
+            .into_response();
+    }
+    if let Err(e) = media::patch_clip_manifest(
+        &app.clips_dir,
+        &clip_id,
+        body.display_name.as_deref(),
+        body.thumb_frame_index,
+        body.gamma,
+    ) {
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -1456,12 +1532,550 @@ async fn patch_clip_display(
         )
             .into_response();
     }
+    if body.gamma.is_some() {
+        if let Ok(loaded) = clip::load_clip(&app.clips_dir, &clip_id) {
+            let loaded = std::sync::Arc::new(loaded);
+            for slot in app.devices_ordered() {
+                let playing = slot
+                    .selected_clip()
+                    .map(|c| c.id == clip_id)
+                    .unwrap_or(false);
+                if playing {
+                    slot.replace_loaded_clip(std::sync::Arc::clone(&loaded));
+                }
+            }
+        }
+    }
     match media::clip_summary(&app.clips_dir, &clip_id) {
         Ok(s) => (StatusCode::OK, Json(s)).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
                 error: format!("read clip after patch: {e:#}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceUploadResponse {
+    source_id: String,
+    status: &'static str,
+}
+
+async fn post_sources_upload(app: SharedState, mut multipart: Multipart) -> impl IntoResponse {
+    let mut file_bytes: Option<(axum::body::Bytes, Option<String>)> = None;
+    while let Ok(Some(field)) = multipart.next_field().await {
+        if field.name() != Some("file") {
+            continue;
+        }
+        let fname = field.file_name().map(|s| s.to_string());
+        match field.bytes().await {
+            Ok(b) => {
+                file_bytes = Some((b, fname));
+                break;
+            }
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("read upload failed: {e}"),
+                    }),
+                )
+                    .into_response();
+            }
+        }
+    }
+    let Some((data, fname)) = file_bytes else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "multipart field \"file\" is required".into(),
+            }),
+        )
+            .into_response();
+    };
+    let disk_ext = match safe_disk_ext(fname.as_deref()) {
+        Ok(e) => e,
+        Err(msg) => {
+            return (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                Json(ErrorResponse { error: msg.into() }),
+            )
+                .into_response();
+        }
+    };
+    let sources_dir = app.sources_dir.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        crate::source::store_uploaded_source(&sources_dir, &data, disk_ext)
+    })
+    .await;
+    match res {
+        Ok(Ok(summary)) => (
+            StatusCode::OK,
+            Json(SourceUploadResponse {
+                source_id: summary.id,
+                status: "stored",
+            }),
+        )
+            .into_response(),
+        Ok(Err(e)) => (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("upload task: {e}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_sources(app: SharedState) -> impl IntoResponse {
+    let sources_dir = app.sources_dir.clone();
+    match tokio::task::spawn_blocking(move || crate::source::list_sources(&sources_dir)).await {
+        Ok(Ok(list)) => (StatusCode::OK, Json(list)).into_response(),
+        Ok(Err(e)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("list sources task: {e}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_source(app: SharedState, Path(source_id): Path<String>) -> impl IntoResponse {
+    let sources_dir = app.sources_dir.clone();
+    let id = source_id.clone();
+    match tokio::task::spawn_blocking(move || crate::source::source_summary(&sources_dir, &id)).await
+    {
+        Ok(Ok(s)) => (StatusCode::OK, Json(s)).into_response(),
+        Ok(Err(e)) => {
+            let msg = format!("{e:#}");
+            let code = if msg.contains("not found") {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (code, Json(ErrorResponse { error: msg })).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("source task: {e}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SourcePatchRequest {
+    #[serde(default)]
+    display_name: Option<String>,
+}
+
+async fn patch_source(
+    app: SharedState,
+    Path(source_id): Path<String>,
+    Json(body): Json<SourcePatchRequest>,
+) -> impl IntoResponse {
+    if let Err(e) = crate::source::set_source_display_name(
+        &app.sources_dir,
+        &source_id,
+        body.display_name.as_deref(),
+    ) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response();
+    }
+    match crate::source::source_summary(&app.sources_dir, &source_id) {
+        Ok(s) => (StatusCode::OK, Json(s)).into_response(),
+        Err(e) => (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_source_frame(
+    app: SharedState,
+    Path((source_id, frame_index)): Path<(String, u32)>,
+) -> impl IntoResponse {
+    let sources_dir = app.sources_dir.clone();
+    let id = source_id.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        crate::source::export_source_frame_png(&sources_dir, &id, frame_index)
+    })
+    .await;
+    match res {
+        Ok(Ok(bytes)) => match Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "image/png")
+            .body(Body::from(bytes))
+        {
+            Ok(r) => r.into_response(),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("response build: {e}"),
+                }),
+            )
+                .into_response(),
+        },
+        Ok(Err(e)) => (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("source-frame task: {e}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_source(app: SharedState, Path(source_id): Path<String>) -> impl IntoResponse {
+    let sources_dir = app.sources_dir.clone();
+    let clips_dir = app.clips_dir.clone();
+    let id = source_id.clone();
+    let res =
+        tokio::task::spawn_blocking(move || crate::source::delete_source(&sources_dir, &clips_dir, &id))
+            .await;
+    match res {
+        Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Err(e)) => {
+            let msg = format!("{e:#}");
+            let code = if msg.contains("referenced by clips") {
+                StatusCode::CONFLICT
+            } else if msg.contains("not found") {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (code, Json(ErrorResponse { error: msg })).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("delete source task: {e}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipPreviewFrameRequest {
+    source_id: String,
+    frame_index: u32,
+    placement: crate::clip_placement::ClipPlacement,
+    #[serde(default)]
+    width: Option<u32>,
+    #[serde(default)]
+    height: Option<u32>,
+}
+
+async fn post_clips_preview_frame(
+    app: SharedState,
+    Json(body): Json<ClipPreviewFrameRequest>,
+) -> impl IntoResponse {
+    let sources_dir = app.sources_dir.clone();
+    let source_id = body.source_id.clone();
+    let placement = body.placement.clone();
+    let frame_index = body.frame_index;
+    let width = body
+        .width
+        .unwrap_or(crate::equirect::DEFAULT_WIDTH)
+        .max(1);
+    let height = body
+        .height
+        .unwrap_or(crate::equirect::DEFAULT_HEIGHT)
+        .max(1);
+    let res = tokio::task::spawn_blocking(move || {
+        media::preview_placement_frame_png(
+            &sources_dir,
+            &source_id,
+            frame_index,
+            &placement,
+            width,
+            height,
+        )
+    })
+    .await;
+    match res {
+        Ok(Ok(bytes)) => match Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "image/png")
+            .body(Body::from(bytes))
+        {
+            Ok(r) => r.into_response(),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("response build: {e}"),
+                }),
+            )
+                .into_response(),
+        },
+        Ok(Err(e)) => (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("preview task: {e}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipCreateRequest {
+    source_id: String,
+    thumb_frame_index: u32,
+    placement: crate::clip_placement::ClipPlacement,
+    fps: u32,
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    resolution: Option<MediaResolutionRequest>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipJobQueuedResponse {
+    job_id: String,
+    clip_id: String,
+    status: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipJobStatusResponse {
+    job_id: String,
+    status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clip_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    progress: Option<u8>,
+}
+
+async fn post_clips_create(
+    app: SharedState,
+    Json(req): Json<ClipCreateRequest>,
+) -> impl IntoResponse {
+    let fps = req.fps.clamp(1, 120);
+    let display_name = media::sanitize_display_name(req.display_name.as_deref());
+    let (width, height) = req
+        .resolution
+        .map(|r| (r.width.max(1), r.height.max(1)))
+        .unwrap_or((
+            crate::equirect::DEFAULT_WIDTH,
+            crate::equirect::DEFAULT_HEIGHT,
+        ));
+
+    let job_id = Uuid::new_v4().hyphenated().to_string();
+    let clip_id = format!("clip-{}", Uuid::new_v4().hyphenated());
+    let progress = Arc::new(AtomicU8::new(0));
+    let progress_spawn = progress.clone();
+
+    {
+        let mut jobs = app.clip_jobs.write().await;
+        jobs.insert(
+            job_id.clone(),
+            ClipJobPhase::Running {
+                progress: progress.clone(),
+            },
+        );
+    }
+
+    let sources_dir = app.sources_dir.clone();
+    let clips_dir = app.clips_dir.clone();
+    let source_id = req.source_id.clone();
+    let placement = req.placement.clone();
+    let thumb = req.thumb_frame_index;
+    let job_id_spawn = job_id.clone();
+    let clip_id_spawn = clip_id.clone();
+    let app2 = app.clone();
+
+    let clip_id_for_job = clip_id_spawn.clone();
+    tokio::spawn(async move {
+        let display_opt = display_name;
+        let res = tokio::task::spawn_blocking(move || {
+            media::convert_source_to_clip(
+                &sources_dir,
+                &source_id,
+                &clip_id_spawn,
+                &clips_dir,
+                fps,
+                display_opt.as_deref(),
+                thumb,
+                &placement,
+                width,
+                height,
+                Some(&progress_spawn),
+            )
+        })
+        .await;
+
+        let mut jobs = app2.clip_jobs.write().await;
+        match res {
+            Ok(Ok(_)) => {
+                jobs.insert(
+                    job_id_spawn,
+                    ClipJobPhase::Done {
+                        clip_id: clip_id_for_job,
+                    },
+                );
+            }
+            Ok(Err(e)) => {
+                jobs.insert(
+                    job_id_spawn,
+                    ClipJobPhase::Failed {
+                        message: format!("{e:#}"),
+                    },
+                );
+            }
+            Err(e) => {
+                jobs.insert(
+                    job_id_spawn,
+                    ClipJobPhase::Failed {
+                        message: format!("convert task failed: {e}"),
+                    },
+                );
+            }
+        }
+    });
+
+    (
+        StatusCode::OK,
+        Json(ClipJobQueuedResponse {
+            job_id,
+            clip_id,
+            status: "queued",
+        }),
+    )
+        .into_response()
+}
+
+async fn get_clip_job(app: SharedState, Path(job_id): Path<String>) -> impl IntoResponse {
+    let jobs = app.clip_jobs.read().await;
+    let Some(phase) = jobs.get(&job_id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "unknown job".into(),
+            }),
+        )
+            .into_response();
+    };
+    let body = match phase {
+        ClipJobPhase::Running { progress } => ClipJobStatusResponse {
+            job_id: job_id.clone(),
+            status: "running",
+            clip_id: None,
+            error: None,
+            progress: Some(progress.load(Ordering::Relaxed)),
+        },
+        ClipJobPhase::Done { clip_id } => ClipJobStatusResponse {
+            job_id: job_id.clone(),
+            status: "done",
+            clip_id: Some(clip_id.clone()),
+            error: None,
+            progress: Some(100),
+        },
+        ClipJobPhase::Failed { message } => ClipJobStatusResponse {
+            job_id: job_id.clone(),
+            status: "failed",
+            clip_id: None,
+            error: Some(message.clone()),
+            progress: None,
+        },
+    };
+    (StatusCode::OK, Json(body)).into_response()
+}
+
+async fn get_clip_thumbnail(app: SharedState, Path(clip_id): Path<String>) -> impl IntoResponse {
+    if clip::is_demo_id(&clip_id) {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "demo clips have no thumbnail endpoint".into(),
+            }),
+        )
+            .into_response();
+    }
+    let clips_dir = app.clips_dir.clone();
+    let sources_dir = app.sources_dir.clone();
+    let id = clip_id.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        media::export_clip_thumbnail_png(&clips_dir, &sources_dir, &id)
+    })
+    .await;
+    match res {
+        Ok(Ok(bytes)) => match Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "image/png")
+            .body(Body::from(bytes))
+        {
+            Ok(r) => r.into_response(),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("response build: {e}"),
+                }),
+            )
+                .into_response(),
+        },
+        Ok(Err(e)) => (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("{e:#}"),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("thumbnail task: {e}"),
             }),
         )
             .into_response(),
@@ -1817,6 +2431,21 @@ async fn get_layout_uv(app: SharedState, Query(q): Query<DeviceIdQuery>) -> impl
     }
 }
 
+async fn get_layout_uv_by_id(app: SharedState, Path(layout_id): Path<String>) -> impl IntoResponse {
+    match media::load_layout_uv(&app.compiled_dir, &layout_id) {
+        Ok(layout) => (StatusCode::OK, Json(layout)).into_response(),
+        Err(e) => {
+            let msg = format!("{e:#}");
+            let code = if msg.contains("No such file") || msg.contains("read ") {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (code, Json(ErrorResponse { error: msg })).into_response()
+        }
+    }
+}
+
 async fn get_mate_presets(app: SharedState, Query(q): Query<DeviceIdQuery>) -> impl IntoResponse {
     let slot = match resolve_slot(&app, &q) {
         Ok(s) => s,
@@ -1964,14 +2593,14 @@ async fn post_text_config(
     if let Some(v) = req.speed_deg_per_sec {
         params.speed_deg_per_sec = v;
     }
-    if let Some(v) = req.center_lat_deg {
-        params.center_lat_deg = v;
+    if let Some(v) = req.yaw_deg {
+        params.yaw_deg = v;
     }
-    if let Some(v) = req.tilt_deg {
-        params.tilt_deg = v;
+    if let Some(v) = req.pitch_deg {
+        params.pitch_deg = v;
     }
-    if let Some(v) = req.tilt_azimuth_deg {
-        params.tilt_azimuth_deg = v;
+    if let Some(v) = req.roll_deg {
+        params.roll_deg = v;
     }
     if let Some(v) = req.fade_start_deg {
         params.fade_start_deg = v;
@@ -2083,7 +2712,6 @@ fn state_response(slot: &DeviceSlot, s: &RuntimeState) -> StateResponse {
         esp_layout_hash,
         frames_sent: slot.metrics.frames_sent(),
         master_brightness: f64::from(slot.master_brightness()),
-        master_gamma: f64::from(slot.master_gamma()),
         front_yaw_deg: rec.front_yaw_deg,
         loop_source_frame: slot.metrics.loop_source_frame(),
         loop_playback_paused: slot.loop_playback_paused(),
@@ -2159,13 +2787,13 @@ async fn post_master_tone(
         Ok(s) => s,
         Err(e) => return e.into_response(),
     };
-    slot.set_master_tone(req.brightness as f32, req.gamma as f32);
+    slot.set_master_brightness(req.brightness as f32);
     let device_id = slot.id();
     if let Err(e) = app.with_registry_mut(|reg| {
-        reg.update_master_tone(&device_id, req.brightness, req.gamma)?;
+        reg.update_master_brightness(&device_id, req.brightness)?;
         Ok(())
     }) {
-        tracing::warn!(device = %device_id, "persist master tone failed: {e}");
+        tracing::warn!(device = %device_id, "persist master brightness failed: {e}");
     }
     let s = slot.state.read().await;
     (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
@@ -2218,7 +2846,6 @@ async fn post_device(app: SharedState, Json(req): Json<DeviceCreateRequest>) -> 
         layout_id: req.layout_id,
         output_fps: req.output_fps,
         master_brightness: req.master_brightness,
-        master_gamma: req.master_gamma,
         front_yaw_deg: req.front_yaw_deg,
     };
     if let Err(e) = app.with_registry_mut(|reg| {
@@ -2288,7 +2915,6 @@ async fn patch_device(
         layout_id: req.layout_id,
         output_fps: req.output_fps,
         master_brightness: req.master_brightness,
-        master_gamma: req.master_gamma,
         front_yaw_deg: req.front_yaw_deg,
     };
     if let Err(e) = app.with_registry_mut(|reg| {

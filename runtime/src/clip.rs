@@ -20,6 +20,8 @@ enum ClipSource {
 #[derive(Debug)]
 pub struct LoadedClip {
     pub id: String,
+    /// Loop-media gamma from manifest. Demos use 1 (identity).
+    pub gamma: f32,
     source: ClipSource,
 }
 
@@ -116,6 +118,7 @@ pub fn load_clip(clips_dir: &Path, clip_id: &str) -> Result<LoadedClip> {
     if let Some(demo) = DemoId::parse(clip_id) {
         return Ok(LoadedClip {
             id: clip_id.to_string(),
+            gamma: 1.0,
             source: ClipSource::Demo(demo),
         });
     }
@@ -131,6 +134,7 @@ pub fn load_clip(clips_dir: &Path, clip_id: &str) -> Result<LoadedClip> {
     let media = MediaClip::open(&dir, &manifest)?;
     Ok(LoadedClip {
         id: clip_id.to_string(),
+        gamma: crate::master_tone::clamp_clip_gamma_f32(manifest.gamma),
         source: ClipSource::Media(media),
     })
 }

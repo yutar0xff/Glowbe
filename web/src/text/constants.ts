@@ -4,12 +4,12 @@ export const TEXT_SIZE_DEG_MIN = 10
 export const TEXT_SIZE_DEG_MAX = 180
 export const SPEED_DEG_PER_SEC_MIN = -360
 export const SPEED_DEG_PER_SEC_MAX = 360
-export const CENTER_LAT_DEG_MIN = -80
-export const CENTER_LAT_DEG_MAX = 80
-export const TILT_DEG_MIN = -90
-export const TILT_DEG_MAX = 0
-export const TILT_AZIMUTH_DEG_MIN = -180
-export const TILT_AZIMUTH_DEG_MAX = 180
+export const YAW_DEG_MIN = -180
+export const YAW_DEG_MAX = 180
+export const PITCH_DEG_MIN = -80
+export const PITCH_DEG_MAX = 80
+export const ROLL_DEG_MIN = -180
+export const ROLL_DEG_MAX = 180
 export const FADE_ANGLE_DEG_MIN = 0
 export const FADE_ANGLE_DEG_MAX = 180
 export const THICKNESS_MIN = 0
@@ -22,9 +22,9 @@ export const DEFAULT_TEXT_PARAMS: TextModeParams = {
   content: 'Hello, World. This is Glowbe, a spherical display created by Yutar0xff.',
   textSizeDeg: 130,
   speedDegPerSec: 150,
-  centerLatDeg: 15,
-  tiltDeg: -20,
-  tiltAzimuthDeg: 30,
+  yawDeg: 0,
+  pitchDeg: 15,
+  rollDeg: 0,
   fadeStartDeg: 0,
   fadeEndDeg: 120,
   thickness: 1,

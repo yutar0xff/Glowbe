@@ -1,5 +1,6 @@
 mod api;
 mod clip;
+mod clip_placement;
 mod config;
 mod demos;
 mod device_slot;
@@ -15,7 +16,9 @@ mod media;
 mod metrics;
 mod output;
 mod pattern;
+mod orientation;
 mod sphere;
+mod source;
 mod state;
 mod text_api;
 mod text_state;
@@ -60,6 +63,9 @@ async fn main() -> Result<()> {
     let clips_dir = clips_dir(&config)?;
     std::fs::create_dir_all(&clips_dir)
         .with_context(|| format!("create clips dir {}", clips_dir.display()))?;
+    let sources_dir = sources_dir(&config)?;
+    std::fs::create_dir_all(&sources_dir)
+        .with_context(|| format!("create sources dir {}", sources_dir.display()))?;
     let uploads_dir = uploads_dir(&config)?;
     std::fs::create_dir_all(&uploads_dir)
         .with_context(|| format!("create uploads dir {}", uploads_dir.display()))?;
@@ -78,6 +84,7 @@ async fn main() -> Result<()> {
         repo_root,
         compiled_dir.clone(),
         clips_dir,
+        sources_dir,
         uploads_dir,
         mate_assets_dir,
         text_font,
@@ -122,6 +129,17 @@ fn clips_dir(config: &config::Config) -> Result<PathBuf> {
         return Ok(std::env::current_dir().context("cwd")?.join(pb));
     }
     find_repo_root().map(|r| r.join("assets/clips"))
+}
+
+fn sources_dir(config: &config::Config) -> Result<PathBuf> {
+    if let Some(ref p) = config.assets.sources_dir {
+        let pb = PathBuf::from(p);
+        if pb.is_absolute() {
+            return Ok(pb);
+        }
+        return Ok(std::env::current_dir().context("cwd")?.join(pb));
+    }
+    find_repo_root().map(|r| r.join("assets/sources"))
 }
 
 fn uploads_dir(config: &config::Config) -> Result<PathBuf> {

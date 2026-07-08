@@ -51,6 +51,9 @@ pub struct Assets {
     /// Directory containing generated clip directories. Relative paths are from cwd.
     #[serde(default)]
     pub clips_dir: Option<String>,
+    /// Directory containing source media entities. Relative paths are from cwd.
+    #[serde(default)]
+    pub sources_dir: Option<String>,
     /// Staging for `POST /api/v1/media/upload` before convert. Relative paths are from cwd.
     #[serde(default)]
     pub uploads_dir: Option<String>,

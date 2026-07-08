@@ -33,12 +33,12 @@ pub fn equirect_uv_from_unit_dir_y_up(x: f32, y: f32, z: f32) -> (f32, f32) {
 
 /// 正距円筒の経度 `u` を、デバイス正面の yaw（度）ぶん回した値（[0,1) にラップ）。
 ///
-/// `u` は経度なので、鉛直 Y 軸まわりの yaw 回転は水平シフトと等価。全モードが
-/// UV から色を生成するため、サンプリング前に `u` をずらすだけで「正面」を
-/// ロスなく再定義できる（送信直前の RGB 再マップと違い近傍補間が不要）。
+/// **右手系・+Y まわり**: 正の `front_yaw_deg` は +X → −Z（`u' = (u − yaw/360) mod 1`）。
+/// 詳細は `orientation` モジュール。全モードがサンプリング前に `u` をずらすだけで
+/// 「正面」を再定義する。
 #[must_use]
 pub fn apply_front_yaw_u(u: f32, front_yaw_deg: f32) -> f32 {
-    (u + front_yaw_deg / 360.0).rem_euclid(1.0)
+    crate::orientation::apply_yaw_deg_u(u, front_yaw_deg)
 }
 
 /// 単位ベクトル同士のなす角（ラジアン）∈ [0, π]。
@@ -85,5 +85,11 @@ mod tests {
         let b = unit_dir_from_equirect_uv_y_up(0.75, 0.5);
         let th = angle_rad_between_unit(a, b);
         assert!((th - PI).abs() < 0.02);
+    }
+
+    #[test]
+    fn front_yaw_positive_decreases_u() {
+        let u = apply_front_yaw_u(0.5, 90.0);
+        assert!((u - 0.25).abs() < 1e-4);
     }
 }

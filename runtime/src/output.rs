@@ -333,6 +333,7 @@ async fn device_output_loop(
                 try_apply_interactive_overlay(&slot, &mut rgb);
             }
 
+            // Preview: pre-tone RGB (no device brightness / clip gamma).
             if let Ok(mut w) = slot.preview_frame.try_write() {
                 if w.len() == rgb.len() {
                     w.copy_from_slice(&rgb);
@@ -340,7 +341,7 @@ async fn device_output_loop(
                 }
             }
 
-            apply_master_tone(&slot, &mut rgb);
+            apply_output_tone(&slot, output_mode, &mut rgb);
 
             let send_epoch = slot.output_send_epoch();
             if send_epoch != last_send_epoch {
@@ -545,16 +546,16 @@ pub(crate) fn linear_to_srgb_u8(l: f32) -> u8 {
     (s * 255.0).round().clamp(0.0, 255.0) as u8
 }
 
-fn apply_master_tone(slot: &DeviceSlot, rgb: &mut [u8]) {
-    let brightness = slot.master_brightness();
-    let gamma = slot.master_gamma().max(0.001);
-    for chunk in rgb.chunks_exact_mut(3) {
-        for c in chunk.iter_mut() {
-            let x = (*c as f32 / 255.0) * brightness;
-            let y = x.max(0.0).powf(1.0 / gamma);
-            *c = (y * 255.0).round().clamp(0.0, 255.0) as u8;
+fn apply_output_tone(slot: &DeviceSlot, mode: OutputMode, rgb: &mut [u8]) {
+    // Clip gamma: loop + media clip only (demos / other modes skip).
+    if mode == OutputMode::Loop {
+        if let Some(clip) = slot.selected_clip() {
+            if !crate::clip::is_demo_id(&clip.id) {
+                crate::master_tone::apply_clip_gamma_to_rgb(rgb, clip.gamma);
+            }
         }
     }
+    crate::master_tone::apply_brightness_to_rgb(rgb, slot.master_brightness());
 }
 
 fn add_tinted_to_accum(acc: &mut [f32], led_i: usize, wave: f32, pr: u8, pg: u8, pb: u8) {
