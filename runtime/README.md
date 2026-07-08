@@ -22,6 +22,17 @@ cargo run -- ../config.toml
 
 任意 `[assets].compiled_dir` / `[assets].clips_dir` / `[assets].uploads_dir` でパスを上書き可能（リポジトリ外デプロイ）。
 
+### ログと停止（デスクトップ / headless）
+
+バイナリはコンソールアプリです（GUI サブシステムにはしません）。
+
+| 環境 | 起動 | ログ | 停止 |
+|------|------|------|------|
+| Windows / macOS など（端末あり） | `cargo run`、または `deploy/windows/run-runtime.cmd`（リリース exe） | 起動した cmd / PowerShell / Terminal に出力 | 窓を閉じる、または Ctrl+C |
+| Ubuntu Server など（端末なし） | [`deploy/systemd`](../deploy/systemd/) | `journalctl -u glowbe-runtime.service -f` | `systemctl stop`（SIGTERM） |
+
+デスクトップ用に別ウィンドウを強制生成する必要はありません。systemd 経由ではコンソールなしで動き続けます。
+
 ## 静止画 → クリップ
 
 ```bash

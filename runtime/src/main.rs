@@ -104,9 +104,88 @@ async fn main() -> Result<()> {
         }
     });
 
-    axum::serve(listener, router).await.context("http serve")?;
+    // Console (cmd / PowerShell / Terminal) から起動するとログが端末に出る。
+    // 窓を閉じる・Ctrl+C・systemd stop (SIGTERM) でプロセスを止める。
+    // GUI サブシステムにはしない → Ubuntu Server など headless でもそのまま起動できる。
+    axum::serve(listener, router)
+        .with_graceful_shutdown(wait_for_shutdown())
+        .await
+        .context("http serve")?;
     output_handle.abort();
     Ok(())
+}
+
+/// 対話端末の終了・Ctrl+C、および headless (systemd) の SIGTERM で戻る。
+async fn wait_for_shutdown() {
+    let ctrl_c = async {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::error!("failed to listen for Ctrl+C: {e}");
+            return;
+        }
+        info!("received Ctrl+C, shutting down");
+    };
+
+    #[cfg(unix)]
+    let other = async {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        let mut sigterm = match signal(SignalKind::terminate()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("failed to listen for SIGTERM: {e}");
+                std::future::pending::<()>().await;
+                return;
+            }
+        };
+        let mut sighup = match signal(SignalKind::hangup()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("failed to listen for SIGHUP: {e}");
+                std::future::pending::<()>().await;
+                return;
+            }
+        };
+
+        tokio::select! {
+            _ = sigterm.recv() => info!("received SIGTERM, shutting down"),
+            // 端末クローズ（macOS / Linux デスクトップ）でも届くことが多い
+            _ = sighup.recv() => info!("received SIGHUP, shutting down"),
+        }
+    };
+
+    #[cfg(windows)]
+    let other = async {
+        // コンソールウィンドウの × で届く CTRL_CLOSE_EVENT
+        let mut close = match tokio::signal::windows::ctrl_close() {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("failed to listen for console close: {e}");
+                std::future::pending::<()>().await;
+                return;
+            }
+        };
+        let mut break_signal = match tokio::signal::windows::ctrl_break() {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("failed to listen for Ctrl+Break: {e}");
+                std::future::pending::<()>().await;
+                return;
+            }
+        };
+
+        tokio::select! {
+            _ = close.recv() => info!("console closed, shutting down"),
+            _ = break_signal.recv() => info!("received Ctrl+Break, shutting down"),
+        }
+    };
+
+    #[cfg(not(any(unix, windows)))]
+    let other = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = other => {},
+    }
 }
 
 fn compiled_dir(config: &config::Config) -> Result<PathBuf> {
