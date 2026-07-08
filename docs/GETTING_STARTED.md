@@ -31,16 +31,17 @@ uv run pio run -e 60panels -t upload    # 60panels
 
 ```bash
 cp config.example.toml config.toml
-cp assets/devices.json.example assets/devices.json
-# config.toml: device.esp_ip を ESP の IP にするか、省略して mDNS（_glowbe._udp）
-# devices.json: 明るさ・デバイス登録など（Studio からも編集可）。Git には含めない
+# 必要なら [server] bind などを編集
 
 cd runtime && cargo run -- ../config.toml
 ```
 
-- UDP **49152** — FRAME 送信（60 fps、論理 RGB）
-- HTTP **8748**（`config.toml` の `[server] bind` 既定例）— `GET /api/v1/state`
+- 初回起動時、`assets/devices.json` が無ければ **デモ用 15 / 60 panels** 入りで自動作成される（`devices.json.example` と同内容）。以降は Studio または JSON 編集で管理（Git 管理外）。
+- UDP **49152** — FRAME 送信
+- HTTP（`config.toml` の `[server] bind`、例 **8748**）— `GET /api/v1/state`
 - UDP **49153** — ESP から STATUS 受信
+
+接続先は各デバイスの `mdnsHostname`（`_glowbe._udp`）または `espIp`。
 
 ## 4. Web（Glowbe Studio）
 

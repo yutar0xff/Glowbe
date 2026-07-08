@@ -224,27 +224,22 @@ Glowbe/
 **`config.toml` の主要キー**（正本: [`config.example.toml`](../config.example.toml) / `runtime/src/config.rs`）:
 
 ```toml
-[device]
-# esp_ip を省略（または空）→ 同一 LAN で mDNS `_glowbe._udp` を探索
-esp_ip = "192.168.1.10"
-layout_id = "icosahedron-15"
-
 [assets]
-# 省略時: リポジトリルートの `assets/compiled` / `assets/sequences`
+# 省略時: リポジトリルートの `assets/compiled` / `assets/clips` など
 # compiled_dir = "/var/lib/glowbe/compiled"
-# sequences_dir = "/var/lib/glowbe/sequences"
 
 [output]
 udp_port = 49152
 status_port = 49153   # ESP → ランタイム STATUS 受信（既定 49153）
-target_fps = 60
 
 [modes]
-default = "loop"
+default = "idle"
 
 [server]
 bind = "0.0.0.0:8748"
 ```
+
+デバイスは `assets/devices.json`（初回未存在ならランタイムが [`devices.json.example`](../assets/devices.json.example) 相当を自動作成）。各レコードの `mdnsHostname` / `espIp`・レイアウト・輝度を参照する。
 
 ### 6.5 電力・輝度・ガンマ
 

@@ -149,7 +149,7 @@ impl DeviceRegistry {
         &self.devices
     }
 
-    pub fn load_or_seed(path: PathBuf, config: &Config, compiled_dir: &Path) -> Result<Self> {
+    pub fn load_or_seed(path: PathBuf, compiled_dir: &Path) -> Result<Self> {
         if path.exists() {
             let raw =
                 fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
@@ -181,10 +181,13 @@ impl DeviceRegistry {
             return Ok(reg);
         }
 
-        let seeded = seed_from_config(config);
+        tracing::info!(
+            path = %path.display(),
+            "creating devices.json with default demo devices (15 / 60 panels)"
+        );
         let reg = Self {
             path,
-            devices: seeded,
+            devices: default_demo_devices(),
         };
         reg.validate_all(compiled_dir)?;
         reg.save()?;
@@ -324,23 +327,31 @@ impl DeviceRecord {
     }
 }
 
-fn seed_from_config(config: &Config) -> Vec<DeviceRecord> {
-    let mut devices = if !config.devices.is_empty() {
-        config.devices.clone()
-    } else {
-        vec![DeviceRecord {
-            id: new_device_id(),
-            display_name: "Default".into(),
-            esp_ip: config.device.esp_ip.clone(),
-            mdns_hostname: None,
-            layout_id: config.device.layout_id.clone(),
-            output_fps: DEFAULT_OUTPUT_FPS,
+/// Builtin starter devices written on first run when `devices.json` is missing.
+/// Same contents as `assets/devices.json.example` (edit via Studio afterward).
+fn default_demo_devices() -> Vec<DeviceRecord> {
+    vec![
+        DeviceRecord {
+            id: "01900000-0000-7000-8000-000000000001".into(),
+            display_name: "15 panels".into(),
+            esp_ip: None,
+            mdns_hostname: Some("glowbe-15panels".into()),
+            layout_id: "icosahedron-15".into(),
+            output_fps: 60,
             master_brightness: DEFAULT_MASTER_BRIGHTNESS,
             front_yaw_deg: 0.0,
-        }]
-    };
-    migrate_legacy_device_ids(&mut devices);
-    devices
+        },
+        DeviceRecord {
+            id: "01900000-0000-7000-8000-000000000002".into(),
+            display_name: "60 panels".into(),
+            esp_ip: None,
+            mdns_hostname: Some("glowbe-60panels".into()),
+            layout_id: "geodesic-2v-60".into(),
+            output_fps: 120,
+            master_brightness: DEFAULT_MASTER_BRIGHTNESS,
+            front_yaw_deg: 0.0,
+        },
+    ]
 }
 
 fn validate_record(rec: &DeviceRecord, compiled_dir: &Path) -> Result<()> {
@@ -403,6 +414,39 @@ fn find_repo_root() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_demo_devices_have_stable_ids_and_layouts() {
+        let demos = default_demo_devices();
+        assert_eq!(demos.len(), 2);
+        assert_eq!(demos[0].id, "01900000-0000-7000-8000-000000000001");
+        assert_eq!(demos[0].layout_id, "icosahedron-15");
+        assert_eq!(demos[0].mdns_hostname.as_deref(), Some("glowbe-15panels"));
+        assert_eq!(demos[1].id, "01900000-0000-7000-8000-000000000002");
+        assert_eq!(demos[1].layout_id, "geodesic-2v-60");
+        assert_eq!(demos[1].mdns_hostname.as_deref(), Some("glowbe-60panels"));
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets/compiled");
+        for d in &demos {
+            assert!(validate_record(d, &dir).is_ok());
+        }
+    }
+
+    #[test]
+    fn load_or_seed_creates_demo_devices_json() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets/compiled");
+        let tmp = std::env::temp_dir().join(format!(
+            "glowbe-devices-seed-{}.json",
+            Uuid::now_v7().simple()
+        ));
+        let _ = fs::remove_file(&tmp);
+        let reg = DeviceRegistry::load_or_seed(tmp.clone(), &dir).unwrap();
+        assert_eq!(reg.devices().len(), 2);
+        assert_eq!(reg.devices()[0].display_name, "15 panels");
+        assert!(tmp.is_file());
+        let again = DeviceRegistry::load_or_seed(tmp.clone(), &dir).unwrap();
+        assert_eq!(again.devices().len(), 2);
+        let _ = fs::remove_file(&tmp);
+    }
 
     #[test]
     fn normalize_mdns_hostname_strips_local_suffix() {

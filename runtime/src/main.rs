@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
         .with_context(|| format!("create mate assets dir {}", mate_assets_dir.display()))?;
     let devices_path = devices_json_path(&config).context("devices path")?;
     let registry =
-        DeviceRegistry::load_or_seed(devices_path, &config, &compiled_dir).context("devices")?;
+        DeviceRegistry::load_or_seed(devices_path, &compiled_dir).context("devices")?;
 
     let text_font = load_text_font(&config);
 

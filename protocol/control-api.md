@@ -40,7 +40,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 - `frameLoopStaleMs`: 直近のフレームループ tick からの経過時間（ms）。出力タスクが停止すると急増する。
 - `layoutMismatch`: ESP STATUS の `layout_hash` とランタイムの `meta.layoutHash` が食い違うとき `true`（いずれか欠損時は照合しない）。
 - `framesSent`: 完全送信に成功したフレーム数（累計）。
-- `outputTargetAddr`: runtime が FRAME を送信している宛先。`espStatusAddr` と IP が違う場合、`config.toml` の `device.esp_ip` が古い可能性が高い。
+- `outputTargetAddr`: runtime が FRAME を送信している宛先。`espStatusAddr` と IP が違う場合、`devices.json` の `espIp` / `mdnsHostname` が実機と食い違っている可能性が高い。
 - `loopSourceFrame`: **`loop` かつメディアクリップのフレームが実際に出力バッファへサンプルできているとき**、そのソース上のフレーム index（0 始まり）。ビルトインデモは procedural（離散ソースフレームを持たず常にデバイス fps で描画）のため常に `null`。テストパターンへフォールバック中や `idle` / `interactive` でも省略または `null`。
 - `loopPlaybackPaused`: **`loop` でクリップ選択中**にタイムラインが一時停止のとき `true`（`POST /api/v1/loop/pause`）。それ以外は `false`。
 - `espStatusAddr`: ESP STATUS パケットの送信元。

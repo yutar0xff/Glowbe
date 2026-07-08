@@ -15,13 +15,12 @@ cargo build --release
 
 ```bash
 cp ../config.example.toml ../config.toml
-cp ../assets/devices.json.example ../assets/devices.json
-# config.toml: device.esp_ip を ESP の IP にするか、省略して mDNS（`_glowbe._udp`）
-# devices.json: ローカル設定（Git 管理外）。省略時は config.toml から初回生成される
 cargo run -- ../config.toml
 ```
 
-任意 `[assets].compiled_dir` / `[assets].sequences_dir` / `[assets].uploads_dir` で `assets/compiled`・`assets/sequences`・`assets/uploads` の場所を指定可能（リポジトリ外デプロイ）。
+初回で `assets/devices.json` が無ければデモ 2 台（15 / 60 panels）を書いて作成する。接続先・輝度などは同ファイル（Studio からも編集、Git 管理外）。
+
+任意 `[assets].compiled_dir` / `[assets].clips_dir` / `[assets].uploads_dir` でパスを上書き可能（リポジトリ外デプロイ）。
 
 ## 静止画 → クリップ
 
@@ -71,7 +70,7 @@ cargo run --manifest-path runtime/Cargo.toml -- gen-demo-expanding-rings demo-ex
 
 | ファイル | 役割 |
 |----------|------|
-| `config.rs` | `config.toml` 読み込み（`esp_ip` 任意、`[assets]`） |
+| `config.rs` | `config.toml` 読み込み（`[assets]` / `[output]` / `[server]` / `[modes]`） |
 | `wire.rs` | FRAME エンコード / STATUS パース（20 バイト拡張） |
 | `sphere.rs` | 正距円筒 UV →単位球、大円角（リップル波面） |
 | `pattern.rs` | ループ用テストパターン（論理 RGB、`ledmap` の UV に基づく色相） |

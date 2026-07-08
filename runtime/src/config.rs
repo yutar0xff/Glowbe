@@ -4,27 +4,14 @@ use std::path::Path;
 use anyhow::Result;
 use serde::Deserialize;
 
-use crate::devices::DeviceRecord;
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub device: Device,
-    #[serde(default)]
-    pub devices: Vec<DeviceRecord>,
     pub output: Output,
     pub server: Server,
     #[serde(default)]
     pub modes: Modes,
     #[serde(default)]
     pub assets: Assets,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct Device {
-    /// When omitted or empty, runtime discovers `_glowbe._udp` via mDNS.
-    #[serde(default)]
-    pub esp_ip: Option<String>,
-    pub layout_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -87,4 +74,37 @@ pub fn load(path: &Path) -> Result<Config> {
     let raw = fs::read_to_string(path)?;
     let cfg: Config = toml::from_str(&raw)?;
     Ok(cfg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn minimal_config_ok() {
+        let raw = r#"
+[output]
+udp_port = 49152
+[server]
+bind = "0.0.0.0:8748"
+"#;
+        let cfg: Config = toml::from_str(raw).unwrap();
+        assert_eq!(cfg.output.udp_port, 49152);
+        assert_eq!(cfg.modes.default, "idle");
+    }
+
+    #[test]
+    fn unknown_device_section_is_ignored() {
+        // Old configs may still contain [device]; serde ignores unknown tables.
+        let raw = r#"
+[device]
+esp_ip = "192.168.0.1"
+layout_id = "geodesic-2v-60"
+[output]
+udp_port = 49152
+[server]
+bind = "0.0.0.0:8748"
+"#;
+        assert!(toml::from_str::<Config>(raw).is_ok());
+    }
 }
