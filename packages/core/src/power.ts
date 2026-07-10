@@ -27,6 +27,28 @@ export const DEFAULT_POWER_MODEL: PowerModel = {
 };
 
 /**
+ * Firmware global white cap (`firmware/esp32/include/glowbe_brightness.h`).
+ * Linear model: all-white draw ≈ ledCount × ledWhiteMa.
+ */
+export const FIRMWARE_BRIGHTNESS_MODEL = {
+  ledWhiteMa: 16,
+  defaultMaxCurrentMa: 3200,
+} as const;
+
+/** Same formula as `kGlowbeLedBrightness` in firmware. */
+export const firmwareLedBrightnessByte = (
+  ledCount: number,
+  maxCurrentMa: number = FIRMWARE_BRIGHTNESS_MODEL.defaultMaxCurrentMa,
+): number => {
+  if (ledCount <= 0 || maxCurrentMa <= 0) return 0;
+  const denom = ledCount * FIRMWARE_BRIGHTNESS_MODEL.ledWhiteMa;
+  const b = (255 * maxCurrentMa) / denom;
+  if (b <= 0) return 0;
+  if (b >= 255) return 255;
+  return Math.round(b);
+};
+
+/**
  * ESP32 limits (`firmware/esp32/include/glowbe_power_limits.h`).
  * Used to derive the device brightness ceiling — not the Studio preview budget.
  */

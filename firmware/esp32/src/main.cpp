@@ -44,8 +44,8 @@ void setup() {
   delay(500);
   Serial.printf("Glowbe layout=%s leds=%d lines=%d driver=%s\n", GLOWBE_LAYOUT_ID, GLOWBE_LED_COUNT,
                 GLOWBE_DATA_LINES, glowbe_led_driver_name());
-  Serial.printf("brightness: 4A x %u%% -> %umA budget, led scale %u/255 (~%u%%)\n",
-                kGlowbeSupplyUtilizationPercent, kGlowbeSupplyBudgetMa, kGlowbeLedBrightness,
+  Serial.printf("brightness: max %umA, %umA/LED white, scale %u/255 (~%u%%)\n",
+                kGlowbeMaxCurrentMa, kGlowbeLedWhiteMa, kGlowbeLedBrightness,
                 static_cast<unsigned>((static_cast<uint32_t>(kGlowbeLedBrightness) * 100u) / 255u));
 #if GLOWBE_PLAYOUT_LAG_FRAMES > 0
   Serial.printf("playout: lag_frames=%d ring_cap=%d queue_depth=%d\n", GLOWBE_PLAYOUT_LAG_FRAMES,

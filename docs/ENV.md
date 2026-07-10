@@ -18,3 +18,20 @@ Vite: `.env.development`、`.env.production`、および gitignore される `.e
 ## ランタイム
 
 HTTP ポートは `config.toml` の `[server] bind` のみ。
+
+## ファームウェア（ビルド時）
+
+`firmware/esp32/glowbe.firmware.env`（雛形: `glowbe.firmware.env.example`）を `pio run` / `pio upload` の前に自動読み込みします。同じキーがシェルに既にある場合はシェル側が優先します。
+
+| 変数 | 説明 |
+|------|------|
+| `GLOWBE_MAX_CURRENT_MA` | 全白時の電流上限（mA）。`glowbe_brightness.h` の `kGlowbeLedBrightness` 計算に使う。既定 **3200**。 |
+
+```bash
+cd firmware/esp32
+cp glowbe.firmware.env.example glowbe.firmware.env
+# 編集後、そのままビルド
+uv run pio run -e 60panels -t upload
+```
+
+LED 白は **16 mA/個** 想定。式: `scale = min(255, 255 × maxMa / (ledCount × 16))`。

@@ -12,9 +12,12 @@ UDP で RGB フレームを受信し、NeoPixelBus **I2S0 並列**で WS2812 系
 ```bash
 cd firmware/esp32
 cp include/wifi_config.h.example include/wifi_config.h
-# edit wifi_config.h
+cp glowbe.firmware.env.example glowbe.firmware.env
+# edit wifi_config.h and glowbe.firmware.env
 uv sync
 ```
+
+`glowbe.firmware.env` は `pio run` / `pio upload` のたびに自動読み込み（シェルで export 済みの変数が優先）。
 
 `uv sync` で PlatformIO と esptool 依存（`intelhex`）を venv に入れます。
 
@@ -33,6 +36,10 @@ uv run pio run -e 60panels -t upload
 uv run pio run -e 15panels-rainbow -t upload
 uv run pio run -e 60panels-rainbow -t upload
 ```
+
+Optional: cap all-white current in `glowbe.firmware.env` (default **3200 mA**, **16 mA/LED** white). The file is loaded on every build; override per session with `export GLOWBE_MAX_CURRENT_MA=...` if needed.
+
+See [`docs/ENV.md`](../../docs/ENV.md).
 
 ## LED driver
 

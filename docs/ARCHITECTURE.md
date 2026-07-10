@@ -243,7 +243,7 @@ bind = "0.0.0.0:8748"
 
 ### 6.5 電力・輝度・ガンマ
 
-- **ファーム:** `kGlowbeLedBrightness` でグローバル輝度を抑える。全白時のブラウンアウトは電源・配線で確保。
+- **ファーム:** `kGlowbeLedBrightness` でグローバル輝度を抑える。全白時の電流は `ledCount × 16 mA` を上限 `GLOWBE_MAX_CURRENT_MA`（ビルド時環境変数、既定 3200 mA）で頭打ちにする。
 - **ランタイム:** `POST /api/v1/master-tone` で全モード共通の輝度。ガンマはクリップ `manifest.gamma`（loop＋メディア時のみ。[`protocol/control-api.md`](../protocol/control-api.md)）。
 
 ---

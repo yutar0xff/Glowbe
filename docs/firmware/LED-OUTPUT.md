@@ -15,6 +15,16 @@ I2S0 ペリフェラル + DMA で、8〜16 本規模の GPIO から同時にビ�
 
 ランタイム → UDP のペイロードは **論理 RGB**（R, G, B）。ファームは `NeoGrbFeature` でストリップ RAM に書き込む（SK6805 等 GRB 系）。
 
+## 輝度上限（電流キャップ）
+
+`include/glowbe_brightness.h` で、全白フレーム時の電流を頭打ちにするグローバル係数 `kGlowbeLedBrightness`（0–255）をコンパイル時に決める。
+
+- LED 白: **16 mA/個**
+- 上限電流: `firmware/esp32/glowbe.firmware.env` の **`GLOWBE_MAX_CURRENT_MA`**（ビルド時自動読み込み、既定 3200 mA）
+- 式: `scale = min(255, 255 × maxMa / (GLOWBE_LED_COUNT × 16))`
+
+ランタイムの `masterBrightness` はこの係数にさらに乗算される。
+
 ## ビルド例
 
 ```bash

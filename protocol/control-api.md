@@ -34,7 +34,7 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 }
 ```
 
-- `masterBrightness`: 全モード共通の最終輝度係数（0–1、1 = 100% が既定）。UDP / プレビュー直前に各チャンネルへ乗算。Studio UI では 0–100% 表示。ファーム側では layout の LED 総数と 4 A 電源の 80%（3.2 A）・LED 白 15 mA を前提にした上限（`kGlowbeLedBrightness`）を別途適用。
+- `masterBrightness`: 全モード共通の最終輝度係数（0–1、1 = 100% が既定）。UDP / プレビュー直前に各チャンネルへ乗算。Studio UI では 0–100% 表示。ファーム側では layout の LED 総数と **最大電流上限**（ビルド時環境変数 `GLOWBE_MAX_CURRENT_MA`、既定 3200 mA）・**LED 白 16 mA** を前提にした上限（`kGlowbeLedBrightness`）を別途適用。
 - **クリップ `gamma`**: デバイスではなく **クリップの `manifest.json`** に保存（デバイス間共通）。**loop ＋メディアクリップ**のときだけ適用（デモ・idle / interactive / mate / text では未適用）。`out = clamp( ((in/255)^gamma) × 255 )`。1 が既定。**> 1** で中間調が暗く（濃く）なる。
 - `frontYawDeg`: デバイス正面の yaw（度、−180〜180、0 が既定）。右手系・鉛直 +Y まわり（+X → −Z が正）。全モードのサンプリング UV の経度を `u' = (u − frontYawDeg/360) mod 1` で回す。既定正面は equirect `u = 0.5`（ワールド +X）。`GET /api/v1/layout/uv` と WS `layoutUv` も同じシフトを適用する。デバイスごとに `devices.json` へ保存。
 - `frameLoopStaleMs`: 直近のフレームループ tick からの経過時間（ms）。出力タスクが停止すると急増する。

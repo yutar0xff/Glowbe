@@ -22,6 +22,7 @@ assets/devices.json.tmp
 # dotenv: リポジトリに載せない個人用・機密用
 .env
 .env.local
+firmware/esp32/glowbe.firmware.env
 # 例: web/.env.development.local, web/.env.production.local
 .env.*.local
 
