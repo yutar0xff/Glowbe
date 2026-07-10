@@ -10,6 +10,7 @@ assets/uploads/
 assets/clips/
 assets/sequences/
 assets/layouts/user/
+assets/sources/
 assets/compiled/custom-*
 firmware/esp32/include/generated/custom-*/
 

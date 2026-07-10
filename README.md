@@ -12,6 +12,7 @@
 
 - [What is Glowbe?](#what-is-glowbe)
 - [制作動機](#制作動機)
+- [制作手順](#制作手順)
 - [機能](#機能)
   - [リアルタイム制御](#リアルタイム制御)
   - [モード](#モード)
@@ -43,6 +44,12 @@
 - 卓上に相棒みたいなのがいたらいいな
 - モノづくりしてます感のある DIY インテリアみたいなのがあったらいいな
 - 就職先の電子部品メーカーの製品を使った何かを作ってみたい
+
+## 制作手順
+
+以下の記事にて写真付きで解説しています。質問等は気兼ねなくお尋ねください！
+
+[![卓上球体ディスプレイ "Glowbe" 制作記 — Zenn](./docs/images/zenn-hero.png)](https://zenn.dev/yutar0xff/articles/5795aef5f19e7f)
 
 ## 機能
 
@@ -141,7 +148,8 @@ Issue や Pull Request、フィードバックを歓迎します。使ってみ�
 [![GitHub Sponsors](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ea4aaa)](https://github.com/sponsors/yutar0xff)
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/yutar0xff)
 
-**今後も開発を続ける保証はありません。** 現公開に対するチップとしてのみ受け付けます。返礼や特典、開発スケジュールの約束はありません。
+Ko-fiやGitHub Sponsorsもはじめてみました（小声）
+現在は修士論文に追われ、来年からは社会人なのもあり、今後の開発を保証はできないのですが、確実にモチベーションにはなると思います、、！
 
 ---
 
@@ -149,6 +157,7 @@ Issue や Pull Request、フィードバックを歓迎します。使ってみ�
 
 - [What is Glowbe?](#what-is-glowbe-1)
 - [Why I built it](#why-i-built-it)
+- [Build guide](#build-guide)
 - [Features](#features)
   - [Real-time control](#real-time-control)
   - [Modes](#modes)
@@ -177,6 +186,12 @@ I benefit from open source projects every day, so I open-sourced this one too. *
 - I wanted a little companion on my desk
 - I wanted DIY-style decor that feels handmade
 - I wanted to build something using products from the electronic-components maker I will join
+
+## Build guide
+
+Step-by-step build notes with photos are in this article. Questions welcome!
+
+[![Build guide: desktop LED spherical display "Glowbe" — Zenn](./docs/images/zenn-hero.png)](https://zenn.dev/yutar0xff/articles/5795aef5f19e7f)
 
 ## Features
 
@@ -275,4 +290,4 @@ Issues, pull requests, and feedback are welcome. We'd also love to hear how you 
 [![GitHub Sponsors](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=ea4aaa)](https://github.com/sponsors/yutar0xff)
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/yutar0xff)
 
-**There is no guarantee of continued development.** Donations are accepted only as tips for the currently published release. No perks, rewards, or development schedule is promised.
+I just started Ko-fi and GitHub Sponsors (quietly). I'm swamped with my master's thesis right now, and I'll be working full-time starting next year, so I can't promise continued development—but support would definitely be motivating!
