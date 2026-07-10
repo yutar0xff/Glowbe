@@ -70,11 +70,8 @@ pub fn read_source_manifest(dir: &Path) -> Result<SourceManifest> {
 
 fn write_source_manifest(dir: &Path, manifest: &SourceManifest) -> Result<()> {
     let json = serde_json::to_vec_pretty(manifest).context("serialize source manifest")?;
-    fs::write(
-        dir.join("manifest.json"),
-        [json, b"\n".to_vec()].concat(),
-    )
-    .with_context(|| format!("write {}", dir.join("manifest.json").display()))?;
+    fs::write(dir.join("manifest.json"), [json, b"\n".to_vec()].concat())
+        .with_context(|| format!("write {}", dir.join("manifest.json").display()))?;
     Ok(())
 }
 
@@ -96,8 +93,8 @@ pub fn list_sources(sources_dir: &Path) -> Result<Vec<SourceSummary>> {
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
-    for entry in fs::read_dir(sources_dir)
-        .with_context(|| format!("read {}", sources_dir.display()))?
+    for entry in
+        fs::read_dir(sources_dir).with_context(|| format!("read {}", sources_dir.display()))?
     {
         let entry = entry?;
         if !entry.file_type()?.is_dir() {
@@ -154,13 +151,7 @@ pub fn store_uploaded_source(
 fn probe_source(path: &Path) -> Result<(String, u32, u32, u32, Option<u32>)> {
     if media::is_zip_file_public(path)? {
         let (w, h, n) = media::probe_zip_image_sequence(path)?;
-        Ok((
-            "equirectangular-image-sequence".into(),
-            n,
-            w,
-            h,
-            None,
-        ))
+        Ok(("equirectangular-image-sequence".into(), n, w, h, None))
     } else if media::is_video_file_public(path) {
         let (w, h) = media::probe_video_dimensions(path)?;
         Ok(("equirectangular-video".into(), 0, w, h, Some(30)))

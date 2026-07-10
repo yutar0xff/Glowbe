@@ -130,6 +130,16 @@ LAN 上で **Glowbe Studio**、**Runtime**、**Glowbe 本体の ESP** が連携�
 
 同一 LAN 内の信頼できるネットワーク向けです。HTTP / WebSocket / UDP に認証はありません。インターネットに公開しないでください。
 
+## ハードウェアの安全（制作する場合）
+
+Glowbe を自作・改造する場合は、**電源・配線・発熱**のリスクを理解したうえで、**自己責任**で行ってください。
+
+- 1260 LED 級の構成では、理論上 **20 A 近い電流**が流れ得ます。適切な電源容量・配線・電流分散が必要です。
+- 本リポジトリのファームウェアは **最大消費電流の上限**（既定 3.2 A、`GLOWBE_MAX_CURRENT_MA`）を設けていますが、**安全性を保証するものではありません**。
+- 配線・はんだ・基板設計は作者の素人作業です。制作前に [Zenn 制作記の「設計時に考慮したこと・しきれなかったこと」](https://zenn.dev/yutar0xff/articles/5795aef5f19e7f#設計時に考慮したこと・しきれなかったこと必読) を必ず読んでください。
+
+詳細: [`hardware/README.md`](hardware/README.md#safety--electrical-hazards)
+
 ## ライセンス
 
 あまり詳しくないので、一旦は以下で公開します。ライセンスについてご相談等ありましたら、お気軽にお問い合わせください。
@@ -273,6 +283,16 @@ I'm **yutar0xff** (Yutaro).
 ## Security
 
 Intended for a trusted LAN. HTTP, WebSocket, and UDP have no authentication. Do not expose to the internet.
+
+## Hardware safety (if you build one)
+
+If you build or modify a Glowbe unit, understand **power, wiring, and heat** risks and proceed **at your own risk**.
+
+- A 1260-LED rig can draw **up to ~20 A** in theory. You need an adequate supply, wiring, and current distribution.
+- Firmware sets a **maximum current cap** (default 3.2 A, `GLOWBE_MAX_CURRENT_MA`), but this **does not guarantee safety**.
+- Wiring, soldering, and PCB choices are hobby work by the author. Before building, read the [Zenn build guide — design trade-offs & limitations](https://zenn.dev/yutar0xff/articles/5795aef5f19e7f#設計時に考慮したこと・しきれなかったこと必読).
+
+Details: [`hardware/README.md`](hardware/README.md#safety--electrical-hazards)
 
 ## License
 

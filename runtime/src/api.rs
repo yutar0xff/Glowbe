@@ -322,7 +322,6 @@ fn default_master_brightness() -> f64 {
     crate::devices::DEFAULT_MASTER_BRIGHTNESS
 }
 
-
 type ApiError = (StatusCode, Json<ErrorResponse>);
 
 fn resolve_slot(app: &SharedState, q: &DeviceIdQuery) -> Result<Arc<DeviceSlot>, ApiError> {
@@ -1662,7 +1661,8 @@ async fn get_sources(app: SharedState) -> impl IntoResponse {
 async fn get_source(app: SharedState, Path(source_id): Path<String>) -> impl IntoResponse {
     let sources_dir = app.sources_dir.clone();
     let id = source_id.clone();
-    match tokio::task::spawn_blocking(move || crate::source::source_summary(&sources_dir, &id)).await
+    match tokio::task::spawn_blocking(move || crate::source::source_summary(&sources_dir, &id))
+        .await
     {
         Ok(Ok(s)) => (StatusCode::OK, Json(s)).into_response(),
         Ok(Err(e)) => {
@@ -1767,9 +1767,10 @@ async fn delete_source(app: SharedState, Path(source_id): Path<String>) -> impl 
     let sources_dir = app.sources_dir.clone();
     let clips_dir = app.clips_dir.clone();
     let id = source_id.clone();
-    let res =
-        tokio::task::spawn_blocking(move || crate::source::delete_source(&sources_dir, &clips_dir, &id))
-            .await;
+    let res = tokio::task::spawn_blocking(move || {
+        crate::source::delete_source(&sources_dir, &clips_dir, &id)
+    })
+    .await;
     match res {
         Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
         Ok(Err(e)) => {
@@ -1813,10 +1814,7 @@ async fn post_clips_preview_frame(
     let source_id = body.source_id.clone();
     let placement = body.placement.clone();
     let frame_index = body.frame_index;
-    let width = body
-        .width
-        .unwrap_or(crate::equirect::DEFAULT_WIDTH)
-        .max(1);
+    let width = body.width.unwrap_or(crate::equirect::DEFAULT_WIDTH).max(1);
     let height = body
         .height
         .unwrap_or(crate::equirect::DEFAULT_HEIGHT)

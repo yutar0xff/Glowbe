@@ -105,7 +105,6 @@ fn default_master_brightness() -> f64 {
     DEFAULT_MASTER_BRIGHTNESS
 }
 
-
 fn clamp_master_tone(rec: &mut DeviceRecord) {
     rec.master_brightness = clamp_brightness(rec.master_brightness);
     rec.front_yaw_deg = clamp_front_yaw_deg(rec.front_yaw_deg);

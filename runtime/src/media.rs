@@ -160,8 +160,7 @@ fn set_prog(progress: Option<&Arc<AtomicU8>>, v: u8) {
             if v <= cur {
                 break;
             }
-            if p
-                .compare_exchange_weak(cur, v, Ordering::Relaxed, Ordering::Relaxed)
+            if p.compare_exchange_weak(cur, v, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
             {
                 break;
@@ -605,10 +604,19 @@ pub fn export_clip_source_frame_png(
     }
     let import_path = resolve_stored_import_path(
         &dir,
-        manifest.source.as_ref().context("clip has no source metadata")?,
+        manifest
+            .source
+            .as_ref()
+            .context("clip has no source metadata")?,
     )?;
     let idx = frame_index as usize;
-    match manifest.source.as_ref().context("clip has no source metadata")?.kind.as_str() {
+    match manifest
+        .source
+        .as_ref()
+        .context("clip has no source metadata")?
+        .kind
+        .as_str()
+    {
         "equirectangular-image" => {
             if idx != 0 {
                 anyhow::bail!("single-image clip only has frame 0");
@@ -841,11 +849,7 @@ fn write_clip_manifest(dir: &Path, manifest: &ClipManifest) -> Result<()> {
 
 fn summary_from_manifest(manifest: &ClipManifest) -> ClipSummary {
     let (source_kind, source_width, source_height) = if let Some(ref s) = manifest.source {
-        (
-            Some(s.kind.clone()),
-            s.orig_width,
-            s.orig_height,
-        )
+        (Some(s.kind.clone()), s.orig_width, s.orig_height)
     } else {
         (None, 0, 0)
     };
@@ -915,24 +919,14 @@ pub fn convert_source_to_clip(
     let frame_count = match source_manifest.kind.as_str() {
         "equirectangular-video" => {
             let frames = bake_all_frames_from_video_source(
-                &original,
-                &placement,
-                width,
-                height,
-                fps,
-                progress,
+                &original, &placement, width, height, fps, progress,
             )?;
             write_equirect_bin(&clips_dir.join(clip_id), &frames)?;
             frames.1
         }
         "equirectangular-image-sequence" => {
-            let frames = bake_all_frames_from_zip_source(
-                &original,
-                &placement,
-                width,
-                height,
-                progress,
-            )?;
+            let frames =
+                bake_all_frames_from_zip_source(&original, &placement, width, height, progress)?;
             write_equirect_bin(&clips_dir.join(clip_id), &frames)?;
             frames.1
         }
@@ -1091,11 +1085,7 @@ pub fn export_clip_thumbnail_png(
         .source_id
         .as_deref()
         .context("clip has no sourceId")?;
-    crate::source::export_source_frame_png(
-        sources_dir,
-        source_id,
-        manifest.thumb_frame_index,
-    )
+    crate::source::export_source_frame_png(sources_dir, source_id, manifest.thumb_frame_index)
 }
 
 /// 配置プレビュー: Source の 1 フレームを配置適用して PNG 返却。

@@ -51,11 +51,38 @@ cd web && npm install && npm run dev
 
 既定では `http://127.0.0.1:8748` へプロキシします（`web/.env.development`）。
 
-## 5. メディアクリップ（任意）
+## 5. Loop クリップ
+
+### ビルトインデモ（追加ファイル不要）
+
+ランタイム同梱の手続きデモをそのまま Loop で再生できます（Studio のクリップ一覧に表示）。
+
+| clip id | 表示名 |
+|---------|--------|
+| `demo/expanding-rings` | Expanding rings |
+| `demo/rainbow-sweep` | Rainbow sweep |
+| `demo/twinkle` | Twinkle |
+| `demo/mate-moods` | Mate moods |
+| `demo/rainbow-rings` | Rainbow + rings |
+
+モードを Loop にし、上記 id を選択してください。
+
+### 同梱サンプル（静止画クリップ）
+
+```bash
+mkdir -p assets/clips
+cp -r assets/clips.example/sample-gradient assets/clips/
+```
+
+`sample-gradient` が Studio に現れます。`assets/clips/` は Git 管理外です。
+
+### 自作クリップ（任意）
+
+正距円筒（equirectangular）画像から生成:
 
 ```bash
 cargo run --manifest-path runtime/Cargo.toml -- \
-  convert-image /path/to/equirectangular.png clip-id config.toml
+  convert-image docs/samples/sample-equirect.png my-clip-id config.toml
 ```
 
 Studio の Loop タブ、または `POST /api/v1/loop/select` で再生します。

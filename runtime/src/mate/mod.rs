@@ -70,7 +70,8 @@ pub struct FaceFrame {
 
 impl FaceFrame {
     pub fn from_params(params: FaceFrameParams) -> Self {
-        let forward = crate::orientation::unit_dir_from_yaw_pitch_deg(params.yaw_deg, params.pitch_deg);
+        let forward =
+            crate::orientation::unit_dir_from_yaw_pitch_deg(params.yaw_deg, params.pitch_deg);
         let world_up = [0.0f32, 1.0, 0.0];
         let dot = world_up[0] * forward[0] + world_up[1] * forward[1] + world_up[2] * forward[2];
         let mut up = [

@@ -14,11 +14,11 @@ mod mate_api;
 mod mate_state;
 mod media;
 mod metrics;
+mod orientation;
 mod output;
 mod pattern;
-mod orientation;
-mod sphere;
 mod source;
+mod sphere;
 mod state;
 mod text_api;
 mod text_state;
@@ -73,8 +73,7 @@ async fn main() -> Result<()> {
     std::fs::create_dir_all(&mate_assets_dir)
         .with_context(|| format!("create mate assets dir {}", mate_assets_dir.display()))?;
     let devices_path = devices_json_path(&config).context("devices path")?;
-    let registry =
-        DeviceRegistry::load_or_seed(devices_path, &compiled_dir).context("devices")?;
+    let registry = DeviceRegistry::load_or_seed(devices_path, &compiled_dir).context("devices")?;
 
     let text_font = load_text_font(&config);
 

@@ -193,11 +193,7 @@ fn patch_basis_at(center_u: f32, center_v: f32) -> PatchBasis {
     let up = unit_dir_from_equirect_uv_y_up(center_u, center_v);
     let eps = 1e-4;
     let u_plus = unit_dir_from_equirect_uv_y_up(center_u + eps, center_v);
-    let mut east = [
-        u_plus[0] - up[0],
-        u_plus[1] - up[1],
-        u_plus[2] - up[2],
-    ];
+    let mut east = [u_plus[0] - up[0], u_plus[1] - up[1], u_plus[2] - up[2]];
     let dot_e = east[0] * up[0] + east[1] * up[1] + east[2] * up[2];
     east[0] -= dot_e * up[0];
     east[1] -= dot_e * up[1];
@@ -233,11 +229,7 @@ fn world_to_patch_local(d: [f32; 3], b: &PatchBasis) -> [f32; 3] {
 fn rotate_local_y(d: [f32; 3], angle: f32) -> [f32; 3] {
     let c = angle.cos();
     let s = angle.sin();
-    [
-        d[0] * c - d[2] * s,
-        d[1],
-        d[0] * s + d[2] * c,
-    ]
+    [d[0] * c - d[2] * s, d[1], d[0] * s + d[2] * c]
 }
 
 /// Stereographic plane (X,Y) → unit dir in patch-local coords (+Y = outward).
@@ -329,7 +321,11 @@ mod tests {
     fn stereographic_plane_y_aligns_with_south_at_equator() {
         let (cu, cv) = uv_from_yaw_pitch_deg(0.0, 0.0);
         let basis = patch_basis_at(cu, cv);
-        assert!(basis.south[1] < -0.9, "south tangent should be −Y, got {:?}", basis.south);
+        assert!(
+            basis.south[1] < -0.9,
+            "south tangent should be −Y, got {:?}",
+            basis.south
+        );
         let d_local = stereographic_plane_to_local_dir(0.0, 0.2);
         assert!(d_local[2] > d_local[0].abs());
         let d_world = [

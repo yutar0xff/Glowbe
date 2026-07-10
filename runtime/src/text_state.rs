@@ -595,10 +595,7 @@ mod tests {
     #[test]
     fn back_stays_on_flow_seam() {
         let b = compute_samples(&[(0.0, 0.5)], 0.0, 0.0, 0.0)[0].0;
-        assert!(
-            b.min(1.0 - b) < 1e-3,
-            "back s should stay at seam, got {b}"
-        );
+        assert!(b.min(1.0 - b) < 1e-3, "back s should stay at seam, got {b}");
     }
 
     #[test]
@@ -616,7 +613,10 @@ mod tests {
         // Content at u matching yaw-shifted front still maps to s=0.5.
         let (u, _) = orientation::uv_from_yaw_pitch_deg(45.0, 0.0);
         let (s, t) = compute_samples(&[(u, 0.5)], 45.0, 0.0, 0.0)[0];
-        assert!((s - 0.5).abs() < 1e-3, "yawed front s should be 0.5, got {s}");
+        assert!(
+            (s - 0.5).abs() < 1e-3,
+            "yawed front s should be 0.5, got {s}"
+        );
         assert!(t.abs() < 1e-2, "yawed front t should be ~0, got {t}");
     }
 

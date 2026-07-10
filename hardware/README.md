@@ -4,6 +4,14 @@ PCB and 3D print files for Glowbe rigs.
 
 **License:** [CERN-OHL-P-2.0](../LICENSE.hardware) (see also [LICENSES.md](../LICENSES.md)).
 
+## Safety / electrical hazards
+
+Glowbe hardware can draw **large currents** when many LEDs are on. Improper power supplies, thin wires, or poor distribution can cause **overheating or fire**.
+
+- Read the [Zenn build guide — design trade-offs & limitations](https://zenn.dev/yutar0xff/articles/5795aef5f19e7f#設計時に考慮したこと・しきれなかったこと必読) before ordering boards or soldering.
+- Use a supply rated for your target current; the author’s 60-panel build uses **5 V / 4 A** with firmware limiting peak draw (default **3.2 A** via `GLOWBE_MAX_CURRENT_MA`).
+- PCB layouts and assembly notes in this repo are **not professionally reviewed**. Build and operate **at your own risk**.
+
 ## Layout variants
 
 | Variant | Layout id | PCB | 3D print |

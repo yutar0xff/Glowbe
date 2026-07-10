@@ -76,11 +76,7 @@ pub fn tangent_east_north(dir: [f32; 3]) -> ([f32; 3], [f32; 3]) {
 
 /// Apply roll (deg, RH about `dir`) to the east/north tangent basis.
 #[must_use]
-pub fn roll_tangent_basis(
-    east: [f32; 3],
-    north: [f32; 3],
-    roll_deg: f32,
-) -> ([f32; 3], [f32; 3]) {
+pub fn roll_tangent_basis(east: [f32; 3], north: [f32; 3], roll_deg: f32) -> ([f32; 3], [f32; 3]) {
     let r = roll_deg.to_radians();
     let (s, c) = r.sin_cos();
     let east_r = [
