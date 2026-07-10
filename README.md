@@ -51,6 +51,8 @@
 
 [![卓上球体ディスプレイ "Glowbe" 制作記 — Zenn](./docs/images/zenn-hero.png)](https://zenn.dev/yutar0xff/articles/5795aef5f19e7f)
 
+https://zenn.dev/yutar0xff/articles/5795aef5f19e7f
+
 ## 機能
 
 ### リアルタイム制御
@@ -192,6 +194,8 @@ I benefit from open source projects every day, so I open-sourced this one too. *
 Step-by-step build notes with photos are in this article. Questions welcome!
 
 [![Build guide: desktop LED spherical display "Glowbe" — Zenn](./docs/images/zenn-hero.png)](https://zenn.dev/yutar0xff/articles/5795aef5f19e7f)
+
+https://zenn.dev/yutar0xff/articles/5795aef5f19e7f
 
 ## Features
 
