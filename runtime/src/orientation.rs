@@ -33,6 +33,7 @@ pub fn unit_dir_from_yaw_pitch_deg(yaw_deg: f32, pitch_deg: f32) -> [f32; 3] {
 
 /// Yaw/pitch degrees from a unit direction.
 #[must_use]
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn yaw_pitch_deg_from_unit_dir(x: f32, y: f32, z: f32) -> (f32, f32) {
     let len = (x * x + y * y + z * z).sqrt().max(1e-8);
     let nx = x / len;
@@ -53,6 +54,7 @@ pub fn uv_from_yaw_pitch_deg(yaw_deg: f32, pitch_deg: f32) -> (f32, f32) {
 
 /// Yaw/pitch degrees from equirect `(u, v)`.
 #[must_use]
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn yaw_pitch_deg_from_uv(u: f32, v: f32) -> (f32, f32) {
     let d = unit_dir_from_equirect_uv_y_up(u, v);
     yaw_pitch_deg_from_unit_dir(d[0], d[1], d[2])

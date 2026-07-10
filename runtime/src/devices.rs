@@ -346,7 +346,7 @@ fn default_demo_devices() -> Vec<DeviceRecord> {
             esp_ip: None,
             mdns_hostname: Some("glowbe-60panels".into()),
             layout_id: "geodesic-2v-60".into(),
-            output_fps: 120,
+            output_fps: DEFAULT_OUTPUT_FPS,
             master_brightness: DEFAULT_MASTER_BRIGHTNESS,
             front_yaw_deg: 0.0,
         },

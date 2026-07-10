@@ -104,7 +104,7 @@ pub fn list_sources(sources_dir: &Path) -> Result<Vec<SourceSummary>> {
             out.push(summary_from_manifest(&m));
         }
     }
-    out.sort_by(|a, b| b.created_at_unix_sec.cmp(&a.created_at_unix_sec));
+    out.sort_by_key(|s| std::cmp::Reverse(s.created_at_unix_sec));
     Ok(out)
 }
 

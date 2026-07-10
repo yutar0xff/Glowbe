@@ -234,6 +234,7 @@ fn rotate_local_y(d: [f32; 3], angle: f32) -> [f32; 3] {
 
 /// Stereographic plane (X,Y) → unit dir in patch-local coords (+Y = outward).
 /// Plane +X → east, plane +Y → south (same sense as equirect v↑ / planar ly).
+#[cfg_attr(not(test), allow(dead_code))]
 fn stereographic_plane_to_local_dir(x: f32, y: f32) -> [f32; 3] {
     let denom = x * x + y * y + 1.0;
     if denom < 1e-8 {
