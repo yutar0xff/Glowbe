@@ -56,10 +56,10 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 ### `POST /api/v1/mode`
 
 ```json
-{ "mode": "idle" | "loop" | "interactive" | "mate" | "text" }
+{ "mode": "idle" | "loop" | "interactive" | "mate" | "text" | "audio-visualizer" }
 ```
 
-→ 実装済み: **`idle`**（全消灯・**選択クリップ解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択クリップ）、**`interactive`**（既定は全消灯ベース。WebSocket の **`setSolid`** で全 LED を同一 RGB にしたうえで、インタラクティブ・パルスを UDP 出力に合成。クリップ選択は保持）、**`text`**（任意の文章を球面の周りに流す。パラメータは `POST /api/v1/text/config` で設定）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
+→ 実装済み: **`idle`**（全消灯・**選択クリップ解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択クリップ）、**`interactive`**（既定は全消灯ベース。WebSocket の **`setSolid`** で全 LED を同一 RGB にしたうえで、インタラクティブ・パルスを UDP 出力に合成。クリップ選択は保持）、**`text`**（任意の文章を球面の周りに流す。パラメータは `POST /api/v1/text/config` で設定）、**`audio-visualizer`**（PipeWire 入力のスペクトル／ビート描画。入力は `POST /api/v1/audio/input`、描画設定は `POST /api/v1/audio/visualizer`）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
 
 ### `POST /api/v1/loop/select`
 
@@ -134,6 +134,58 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 | `textColor` | `#rrggbb` | — | `#3b82f6` | 文字色。 |
 
 → 実装済み: 各 LED の正面 yaw 適用済み UV から色を生成する。正面（`u=0.5`）を中心に文章が流れ、デバイスの真裏（`u=0.0/1.0` の継ぎ目）から出現・消失する。真裏付近は `fadeStartDeg`〜`fadeEndDeg` の範囲で明るさが 0→最大に線形グラデーションし背景色へフェードする。`frontYawDeg` を変更すると正面・真裏の位置も追従する。文字列が周長（360°）を超える場合は全長をスクロール周期とし、全文字が流れ切ってから先頭が再登場する（自身との重なりは生じない）。`loopIntervalSec` を指定すると全長のあとに空白帯（`loopIntervalSec × |speedDegPerSec|` 度）を挟んでから次ループを開始する。他モードから text へ切り替えた直後は、スクロール原点をリセットして必ず文章の先頭から表示し直す（モード維持のままパラメータを更新した場合はリセットしない）。グリフは同梱 TTF（`assets/text/NotoSansJP.ttf`、`[assets].text_font_path` で変更可）を実行時にラスタライズし、`thickness` でリボン被覆をダイレーションして太らせる。フォント読み込みに失敗した場合は背景色のみを描画する。
+
+### `GET /api/v1/audio/inputs`
+
+PipeWire 入力一覧（Linux）。`pw-cli` / `pw-record` が無い、または非 Linux の場合は `platform.available = false` と理由を返す。
+
+```json
+{
+  "platform": { "available": true, "reason": null, "backend": "pipewire" },
+  "inputs": [
+    { "id": "alsa_input.usb-mic", "name": "USB Mic", "kind": "source" },
+    { "id": "alsa_output.speakers", "name": "Speakers (monitor)", "kind": "monitor" }
+  ],
+  "selectedInputId": "alsa_input.usb-mic"
+}
+```
+
+- `kind: "source"` … `Audio/Source`（マイク等）
+- `kind: "monitor"` … `Audio/Sink`（再生モニター）
+
+### `POST /api/v1/audio/input`
+
+```json
+{ "inputId": "alsa_output.speakers" }
+```
+
+`inputId` を `null` または省略で切断。成功時は `GET /api/v1/audio/inputs` と同じボディ。未知 id や起動失敗は `400`。ブラウザ ingest 中は `400`。
+
+### `GET /api/v1/audio/visualizer`
+
+`?deviceId=` で対象デバイス。現在の描画設定と解析スナップショット（`bands` / `rms` / `peak` / `bass` / `beat` / `low` / `mid` / `high` / `centroid` / `flux` / `onset`）。ブラウザ ingest 中は `inputId` が `browser-ingest` になる。
+
+### `POST /api/v1/audio/visualizer`
+
+部分更新。1 つでも送ると出力モードを **`audio-visualizer`** に切替。`200` + スナップショット。
+
+| フィールド | 型 | 範囲 | 既定 | 説明 |
+| --- | --- | --- | --- | --- |
+| `pattern` | string | `radial-spectrum` / `aurora-globe` / `orbital-spectrum` / `impact-constellation` / `spectrum-bars` / `wobbly-ring` | `radial-spectrum` | 球体シーン（alias: `spectrum-rings`→aurora、`wave-ribbon`→orbital、`bass-pulse`→impact） |
+| `palette` | string | `rainbow` / `aurora` / `nebula` / `solar` / `ice` | `rainbow` | 配色（虹は連続スペクトル、他は3色＋アクセント） |
+| `intensity` | number | 0.25–2 | 1 | 輝度スケール（alias: `sensitivity`） |
+| `motion` | number | 0–2 | 1 | 回転・流れの速さ |
+| `persistence` | number | 0–1 | 0.55 | 残光・波紋の減衰 |
+| `gamma` | number | 1.0–2.6 | 1.75 | 表示ガンマ（大きいほどコントラスト強） |
+| `attack` | number | 0.01–1 | 0.35 | 解析の立ち上がり平滑化 |
+| `release` | number | 0.01–1 | 0.12 | 解析の立ち下がり平滑化 |
+
+### `GET /api/v1/ws/audio-ingest`
+
+Studio からのブラウザ PCM ingest（タブ音声キャプチャ等）。接続時に PipeWire キャプチャを止め、切断で解除（可能なら以前のホスト入力を復元）。
+
+- テキスト: 任意の hello（例 `{ "sampleRate": 48000 }`）。サーバは `{ "ok": true, "sampleRate": 48000 }` を返す
+- バイナリ: mono `f32` little-endian（想定 48 kHz）
 
 ### `GET /api/v1/layout/uv`
 
@@ -447,9 +499,12 @@ WebSocket の **Binary** メッセージ。ビッグエンディアン。
 |----------------|------|
 | `GET /api/v1/state` | 状態・fps・レイアウト |
 | `GET /health` | 出力ループ死活 |
-| `POST /api/v1/mode` | `idle` / `loop` / `interactive` / `mate` / `text` |
+| `POST /api/v1/mode` | `idle` / `loop` / `interactive` / `mate` / `text` / `audio-visualizer` |
 | `POST /api/v1/master-tone` | 全モード共通の輝度 |
 | `GET` / `POST /api/v1/text/config` | Text モード設定 |
+| `GET /api/v1/audio/inputs` · `POST /api/v1/audio/input` | PipeWire ホスト入力一覧・選択（任意） |
+| `GET` / `POST /api/v1/audio/visualizer` | Audio Visualizer 設定・解析スナップショット |
+| `GET /api/v1/ws/audio-ingest` | ブラウザ PCM → Visualizer |
 | `POST /api/v1/loop/select` · `clear-selection` · `pause` | ループクリップ |
 | `GET /api/v1/layout/uv` | LED UV マップ |
 | `GET/PUT/POST/DELETE /api/v1/layouts/*` | レイアウト catalog・CRUD・コンパイル |

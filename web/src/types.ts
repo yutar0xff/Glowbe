@@ -117,7 +117,7 @@ export type LoadState =
   | { kind: 'ready'; state: RuntimeState; health: Health; clips: ClipSummary[]; fetchedAt: Date }
   | { kind: 'error'; message: string; health?: Health; fetchedAt?: Date }
 
-export type OutputMode = 'idle' | 'loop' | 'interactive' | 'mate' | 'text'
+export type OutputMode = 'idle' | 'loop' | 'interactive' | 'mate' | 'text' | 'audio-visualizer'
 
 export { MATE_MIN_LED_COUNT, mateSupportedForLedCount } from '@/layout-ids'
 export type {

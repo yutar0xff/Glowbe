@@ -19,10 +19,14 @@ pub fn fill_loop_rgb(t_ms: u32, rgb: &mut [u8], uv: Option<&[(f32, f32)]>) {
     }
 }
 
+/// Longitude-periodic hue. `u=0` and `u=1` are the same meridian, so the phase
+/// must depend on `fract(u + …)` — never on a bare `u * k` term (that jumps ~¾ turn).
 fn hue_from_uv_time(u: f32, v: f32, t_ms: u32) -> u8 {
-    let u = u.clamp(0.0, 1.0);
+    let u = u.rem_euclid(1.0);
     let v = v.clamp(0.0, 1.0);
-    let space = (u * 200.0 + v * 130.0) as u32;
+    // Mild v tilt keeps a diagonal wash without breaking the u-wrap.
+    let phase = (u + 0.35 * v).rem_euclid(1.0);
+    let space = (phase * 256.0) as u32;
     ((t_ms / 6).wrapping_add(space)) as u8
 }
 
@@ -84,5 +88,28 @@ mod tests {
         let mut rgb = [0u8; 6];
         fill_loop_rgb(t, &mut rgb, None);
         assert_ne!(rgb[0..3], rgb[3..6]);
+    }
+
+    #[test]
+    fn rainbow_hue_is_continuous_across_u_seam() {
+        let t = 1200u32;
+        let mut near0 = [0u8; 3];
+        let mut near1 = [0u8; 3];
+        fill_loop_rgb(t, &mut near0, Some(&[(0.02, 0.5)]));
+        fill_loop_rgb(t, &mut near1, Some(&[(0.98, 0.5)]));
+        let dr = near0[0] as i32 - near1[0] as i32;
+        let dg = near0[1] as i32 - near1[1] as i32;
+        let db = near0[2] as i32 - near1[2] as i32;
+        let dist2 = dr * dr + dg * dg + db * db;
+        assert!(
+            dist2 < 70 * 70,
+            "u-seam color jump too large: dist2={dist2} near0={near0:?} near1={near1:?}"
+        );
+        // Exact wrap: u=0 and u=1 are the same meridian.
+        let mut a = [0u8; 3];
+        let mut b = [0u8; 3];
+        fill_loop_rgb(t, &mut a, Some(&[(0.0, 0.4)]));
+        fill_loop_rgb(t, &mut b, Some(&[(1.0, 0.4)]));
+        assert_eq!(a, b, "u=0 and u=1 must match");
     }
 }

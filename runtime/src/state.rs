@@ -84,6 +84,8 @@ pub enum OutputMode {
     Mate,
     /// 任意の文章を球面の周りに流すテキストモード。
     Text,
+    /// PipeWire 入力のオーディオビジュアライザー。
+    AudioVisualizer,
 }
 
 impl OutputMode {
@@ -92,6 +94,7 @@ impl OutputMode {
     const INTERACTIVE: u8 = 2;
     const MATE: u8 = 3;
     const TEXT: u8 = 4;
+    const AUDIO_VISUALIZER: u8 = 5;
 
     pub fn parse(id: &str) -> Option<Self> {
         match id {
@@ -100,6 +103,7 @@ impl OutputMode {
             "interactive" => Some(Self::Interactive),
             "mate" => Some(Self::Mate),
             "text" => Some(Self::Text),
+            "audio-visualizer" => Some(Self::AudioVisualizer),
             _ => None,
         }
     }
@@ -111,6 +115,7 @@ impl OutputMode {
             Self::Interactive => "interactive",
             Self::Mate => "mate",
             Self::Text => "text",
+            Self::AudioVisualizer => "audio-visualizer",
         }
     }
 
@@ -121,6 +126,7 @@ impl OutputMode {
             Self::Interactive => Self::INTERACTIVE,
             Self::Mate => Self::MATE,
             Self::Text => Self::TEXT,
+            Self::AudioVisualizer => Self::AUDIO_VISUALIZER,
         }
     }
 
@@ -131,6 +137,7 @@ impl OutputMode {
             Self::INTERACTIVE => Self::Interactive,
             Self::MATE => Self::Mate,
             Self::TEXT => Self::Text,
+            Self::AUDIO_VISUALIZER => Self::AudioVisualizer,
             _ => Self::Loop,
         }
     }
@@ -241,6 +248,8 @@ pub struct SharedApp {
     pub mate_presets: StdRwLock<crate::mate::PresetRegistry>,
     /// text モードのグリフラスタライズに使うフォント。読み込み失敗時は `None`（背景色のみ描画）。
     pub text_font: Option<Arc<fontdue::Font>>,
+    /// PipeWire 入力の共有オーディオエンジン（プロセス全体で1つ）。
+    pub audio: Arc<crate::audio::AudioEngine>,
 }
 
 pub type SharedState = Arc<SharedApp>;
@@ -256,6 +265,7 @@ pub fn new_shared(
     uploads_dir: std::path::PathBuf,
     mate_assets_dir: std::path::PathBuf,
     text_font: Option<Arc<fontdue::Font>>,
+    audio: Arc<crate::audio::AudioEngine>,
 ) -> anyhow::Result<SharedState> {
     let default_device_id = registry
         .devices()
@@ -286,6 +296,7 @@ pub fn new_shared(
         clip_jobs: RwLock::new(HashMap::new()),
         mate_presets: StdRwLock::new(mate_presets),
         text_font,
+        audio,
     }))
 }
 

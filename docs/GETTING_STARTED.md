@@ -51,7 +51,11 @@ cd web && npm install && npm run dev
 
 既定では `http://127.0.0.1:8748` へプロキシします（`web/.env.development`）。
 
-## 5. メディアクリップ（任意）
+## 5. Audio Visualizer（任意）
+
+Studio の **Audio** タブでタブ音声キャプチャ（PC）またはホスト PipeWire マイクを選びます。既定シーンは **Radial Spectrum**（北極から伸びる虹色バー）。詳細は [`../deploy/systemd/README.md`](../deploy/systemd/README.md#audio-visualizer)。
+
+## 6. メディアクリップ（任意）
 
 ランタイムに `demo/expanding-rings` などのビルトインデモが同梱されています（Studio のクリップ一覧）。追加ファイルなしで Loop 再生できます。
 
@@ -62,7 +66,7 @@ cargo run --manifest-path runtime/Cargo.toml -- \
 
 Studio の Loop タブ、または `POST /api/v1/loop/select` で再生します。
 
-## 6. ベンチマーク
+## 7. ベンチマーク
 
 [`BENCHMARK.md`](BENCHMARK.md) — 15panels / 60panels で 60 fps × 5 分の目安。
 

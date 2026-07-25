@@ -91,3 +91,40 @@ journalctl -u glowbe-runtime.service -f
 ```
 
 LAN 側のブラウザでは `http://<サーバIP>:8090` を開き、ランタイムだけ試す場合は `http://<サーバIP>:8748/health` などで確認できます。
+
+## Audio Visualizer
+
+Studio の Audio タブでは次の入力を使えます。
+
+1. **タブ音声キャプチャ（PC）** — `getDisplayMedia` で別タブ（YouTube Music 等）の音声を取り込み、解析のみ（二重再生しない）。デスクトップ Chrome 向け。
+2. **ホスト PipeWire マイク（任意）** — ブラウザ ingest をしていないときだけ選択可能。
+
+Studio が PCM を **`/api/v1/ws/audio-ingest`** へ送り、Runtime の Visualizer が LED を駆動します。
+
+### 任意: ホスト PipeWire
+
+```bash
+# Ubuntu / Debian 例（ホストマイク用）
+sudo apt install pipewire pipewire-bin pipewire-audio
+```
+
+ランタイムの実行ユーザー（unit の `User=`、既定 `main`）がログインセッションの PipeWire に届く必要があります。`glowbe-runtime.service` は `XDG_RUNTIME_DIR=/run/user/%U` を設定します。
+
+```toml
+[audio]
+default_input = "alsa_input.usb-example.mono-fallback"
+```
+
+### 流れ（タブキャプチャ）
+
+1. Studio Audio で Capture tab audio
+2. 共有ダイアログで対象タブを選び、タブ音声をオン
+
+### 権限・トラブル
+
+| 症状 | 確認 |
+|------|------|
+| タブに音声がない | 「タブの音声も共有」にチェック（Chrome） |
+| スマホでタブキャプチャ不可 | ホストマイクを使うか、PC ブラウザから操作 |
+| ホストマイク unavailable | `pw-cli` / `XDG_RUNTIME_DIR` |
+| Windows ホスト | PipeWire マイクは利用不可。タブキャプチャはクライアント側 |

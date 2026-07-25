@@ -76,7 +76,7 @@ Glowbe は **サーバ権威型のリアルタイム LED 球体プラットフ�
 | G2 | Ubuntu Server と展示用 Windows の両方でランタイムが動く |
 | G3 | ファーム・PCB を同一リポジトリで版管理する |
 | G4 | 自前 UDP で最大パフォーマンス（60 fps 以上を維持） |
-| G5 | モード: ループ再生、インタラクティブ、**mate**、**text**、idle |
+| G5 | モード: ループ再生、インタラクティブ、**mate**、**text**、**audio-visualizer**、idle |
 | G6 | 正距円筒メディアのアップロードとサーバ側アニメーション資産化 |
 | G7 | Web：UV プレビュー、タブ型統合ボード、プレビュー配信 |
 
@@ -201,7 +201,7 @@ Glowbe/
 | **制御サーバ** | HTTP + WebSocket |
 | **メディアワーカー** | アップロード受付後、正距円筒→LED シーケンス変換（CPU、ffmpeg 等） |
 | **プレビュー** | 縮小・JPEG、WS 配信 |
-| **オーディオ** | サーバマイク（cpal） |
+| **オーディオ** | PipeWire（`pw-record` / `pw-cli`）。マイクと sink monitor |
 
 ### 6.2 マスタークロック
 
@@ -215,7 +215,7 @@ Glowbe/
 ```
 優先度（高 → 低）:
   1. 手動オーバーライド（ブラックアウト / テストパターン）
-  2. アクティブモード（loop / interactive / mate / text）
+  2. アクティブモード（loop / interactive / mate / text / audio-visualizer）
   3. IDLE（フェードアウトまたは最終フレーム保持）
 ```
 
@@ -237,6 +237,10 @@ default = "idle"
 
 [server]
 bind = "0.0.0.0:8748"
+
+# [audio]
+# default_input = "alsa_input.usb-example.mono-fallback"
+# analysis_hz = 60
 ```
 
 デバイスは `assets/devices.json`（初回未存在ならランタイムが [`devices.json.example`](../assets/devices.json.example) 相当を自動作成）。各レコードの `mdnsHostname` / `espIp`・レイアウト・輝度を参照する。
@@ -356,11 +360,18 @@ trait Mode {
 
 - 球面 UV 上をテキストが流れるモード。
 
-### 9.5 モード切替 API
+### 9.5 Audio Visualizer（`audio-visualizer`）
+
+- ランタイムホストの **PipeWire** からマイク（`Audio/Source`）または sink monitor（`Audio/Sink`）を `pw-record` でキャプチャ。Studio からのタブ音声 ingest（WebSocket）も可。
+- FFT・知覚特徴（low/mid/high・centroid・flux・onset）は Runtime。シーン: `radial-spectrum`（既定） / `aurora-globe` / `orbital-spectrum` / `impact-constellation` / `spectrum-bars` / `wobbly-ring`。
+- 描画は球面方向ベース（大円距離・線形 RGB 合成）。Studio は Scene / Palette / Intensity / Motion / Persistence を操作。
+- 運用手順は [`deploy/systemd/README.md`](../deploy/systemd/README.md)。
+
+### 9.6 モード切替 API
 
 ```json
 POST /api/v1/mode
-{ "mode": "loop" | "interactive" | "mate" | "text" | "idle" }
+{ "mode": "loop" | "interactive" | "mate" | "text" | "audio-visualizer" | "idle" }
 ```
 
 ---
@@ -375,6 +386,7 @@ POST /api/v1/mode
 | **Interactive** | UV マップ・タップでリップル |
 | **Mate** | 表情プリセット・呼吸 |
 | **Text** | 球面テキスト |
+| **Audio** | PipeWire 入力・ビジュアライザー |
 | **Devices** | ESP・レイアウト・Chain profile |
 
 ### 10.2 プレビュー

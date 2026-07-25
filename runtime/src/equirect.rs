@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn bilinear_wraps_horizontally() {
-        let mut frame = vec![0u8; 2 * 1 * 3];
+        let mut frame = vec![0u8; 2 * 3];
         frame[0..3].copy_from_slice(&[255, 0, 0]);
         frame[3..6].copy_from_slice(&[0, 0, 255]);
         assert_eq!(sample_bilinear_rgb(&frame, 2, 1, 0.0, 0.0), [255, 0, 0]);

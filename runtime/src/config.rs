@@ -12,6 +12,23 @@ pub struct Config {
     pub modes: Modes,
     #[serde(default)]
     pub assets: Assets,
+    #[serde(default)]
+    pub audio: Audio,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct Audio {
+    /// Optional PipeWire node.name to capture on startup.
+    #[serde(default)]
+    pub default_input: Option<String>,
+    /// Analysis / visualizer update hint (Hz). Reserved for future throttling.
+    #[allow(dead_code)]
+    #[serde(default = "default_analysis_hz")]
+    pub analysis_hz: u32,
+}
+
+fn default_analysis_hz() -> u32 {
+    60
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -66,6 +66,7 @@ https://zenn.dev/yutar0xff/articles/5795aef5f19e7f
 - Interactive : Glowbe Studio 上でインタラクティブに操作できるエフェクト
 - Mate : 相棒のように表情を表示
 - Text : 電光掲示板のように任意のテキストを表示
+- Audio Visualizer : タブ音声キャプチャ（またはホストマイク）を Runtime に送り、球面シーン（Aurora / Orbital / Impact）で LED 連動
 
 ### Chain profile エディタ
 
@@ -220,6 +221,7 @@ From **Glowbe Studio** (web UI), you can control Glowbe from a **phone or tablet
 - Interactive: effects you control interactively in Glowbe Studio
 - Mate: companion-style facial expressions
 - Text: display arbitrary text like an LED ticker
+- Audio Visualizer: tab-audio capture (or optional host mic) feeds spherical LED scenes
 
 ### Chain profile editor
 

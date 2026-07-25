@@ -327,6 +327,19 @@ async fn device_output_loop(
                         rgb.fill(0);
                     }
                 }
+                OutputMode::AudioVisualizer => {
+                    slot.metrics.set_loop_source_frame(None);
+                    if let Some(ref uv) = layout_uv {
+                        slot.render_audio_visualizer(
+                            &app.audio,
+                            uv,
+                            raw_elapsed.as_secs_f32(),
+                            &mut rgb,
+                        );
+                    } else {
+                        rgb.fill(0);
+                    }
+                }
             }
 
             if output_mode == OutputMode::Interactive {
