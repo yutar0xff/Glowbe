@@ -209,6 +209,46 @@ fn text_config_response(params: &crate::text_state::TextParams) -> TextConfigRes
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioInputSelectRequest {
+    /// PipeWire `node.name`, or null/omit to disconnect.
+    #[serde(default)]
+    input_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioVisualizerConfigRequest {
+    #[serde(default)]
+    pattern: Option<String>,
+    #[serde(default)]
+    palette: Option<String>,
+    #[serde(default)]
+    intensity: Option<f32>,
+    /// Alias for `intensity`.
+    #[serde(default)]
+    sensitivity: Option<f32>,
+    #[serde(default)]
+    motion: Option<f32>,
+    #[serde(default)]
+    persistence: Option<f32>,
+    #[serde(default)]
+    gamma: Option<f32>,
+    #[serde(default)]
+    attack: Option<f32>,
+    #[serde(default)]
+    release: Option<f32>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioInputsResponse {
+    platform: crate::audio::AudioPlatformInfo,
+    inputs: Vec<crate::audio::AudioInputDevice>,
+    selected_input_id: Option<String>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ErrorResponse {
@@ -725,6 +765,31 @@ pub fn router(app: SharedState) -> Router {
             }),
         )
         .route(
+            "/api/v1/audio/inputs",
+            get({
+                let app = app.clone();
+                move || get_audio_inputs(app.clone())
+            }),
+        )
+        .route(
+            "/api/v1/audio/input",
+            post({
+                let app = app.clone();
+                move |body| post_audio_input(app.clone(), body)
+            }),
+        )
+        .route(
+            "/api/v1/audio/visualizer",
+            get({
+                let app = app.clone();
+                move |q| get_audio_visualizer(app.clone(), q)
+            })
+            .post({
+                let app = app.clone();
+                move |q, body| post_audio_visualizer(app.clone(), q, body)
+            }),
+        )
+        .route(
             "/api/v1/mode",
             post({
                 let app = app.clone();
@@ -930,6 +995,13 @@ pub fn router(app: SharedState) -> Router {
             get({
                 let app = app.clone();
                 move |ws, q| ws_handler(ws, q, app.clone())
+            }),
+        )
+        .route(
+            "/api/v1/ws/audio-ingest",
+            get({
+                let app = app.clone();
+                move |ws| audio_ingest_ws(ws, app.clone())
             }),
         )
         .route(
@@ -2630,6 +2702,174 @@ async fn post_text_config(
     slot.set_output_mode(OutputMode::Text).await;
     let s = slot.state.read().await;
     (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
+}
+
+async fn get_audio_inputs(app: SharedState) -> impl IntoResponse {
+    let platform = app.audio.platform();
+    let inputs = match app.audio.list_inputs() {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::OK,
+                Json(AudioInputsResponse {
+                    platform: crate::audio::AudioPlatformInfo {
+                        available: false,
+                        reason: Some(e),
+                        backend: platform.backend,
+                    },
+                    inputs: vec![],
+                    selected_input_id: app.audio.selected_input().map(|d| d.id),
+                }),
+            )
+                .into_response();
+        }
+    };
+    (
+        StatusCode::OK,
+        Json(AudioInputsResponse {
+            platform,
+            inputs,
+            selected_input_id: app.audio.selected_input().map(|d| d.id),
+        }),
+    )
+        .into_response()
+}
+
+async fn post_audio_input(
+    app: SharedState,
+    Json(req): Json<AudioInputSelectRequest>,
+) -> impl IntoResponse {
+    let id = req
+        .input_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    match app.audio.select_input(id) {
+        Ok(_) => get_audio_inputs(app).await.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(ErrorResponse { error })).into_response(),
+    }
+}
+
+async fn audio_ingest_ws(ws: WebSocketUpgrade, app: SharedState) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| audio_ingest_loop(socket, app))
+}
+
+async fn audio_ingest_loop(mut socket: WebSocket, app: SharedState) {
+    if let Err(e) = app.audio.begin_ingest() {
+        let _ = socket
+            .send(Message::Text(
+                json!({ "error": e }).to_string().into(),
+            ))
+            .await;
+        let _ = socket.send(Message::Close(None)).await;
+        return;
+    }
+    let _ = socket
+        .send(Message::Text(
+            json!({ "ok": true, "sampleRate": 48000 }).to_string().into(),
+        ))
+        .await;
+
+    while let Some(msg) = socket.recv().await {
+        let Ok(msg) = msg else {
+            break;
+        };
+        match msg {
+            Message::Binary(bin) => {
+                if bin.len() % 4 != 0 {
+                    continue;
+                }
+                let mut samples = Vec::with_capacity(bin.len() / 4);
+                for chunk in bin.chunks_exact(4) {
+                    let bits = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                    samples.push(f32::from_bits(bits));
+                }
+                app.audio.push_ingest_samples(&samples);
+            }
+            Message::Text(t) => {
+                // Optional hello: {"sampleRate":48000} — currently informative only.
+                let _ = t;
+            }
+            Message::Close(_) => break,
+            Message::Ping(p) => {
+                let _ = socket.send(Message::Pong(p)).await;
+            }
+            Message::Pong(_) => {}
+        }
+    }
+    app.audio.end_ingest();
+}
+
+async fn get_audio_visualizer(
+    app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
+) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    let params = slot.audio_visualizer_params();
+    let snap: crate::audio::AudioVisualizerSnapshot = app.audio.snapshot(&params);
+    (StatusCode::OK, Json(snap)).into_response()
+}
+
+async fn post_audio_visualizer(
+    app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
+    Json(req): Json<AudioVisualizerConfigRequest>,
+) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    let mut params = slot.audio_visualizer_params();
+    if let Some(p) = req.pattern {
+        let Some(parsed) = crate::audio::AudioVisualizerPattern::parse(&p) else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("unsupported pattern: {p}"),
+                }),
+            )
+                .into_response();
+        };
+        params.pattern = parsed;
+    }
+    if let Some(p) = req.palette {
+        let Some(parsed) = crate::audio::AudioVisualizerPalette::parse(&p) else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("unsupported palette: {p}"),
+                }),
+            )
+                .into_response();
+        };
+        params.palette = parsed;
+    }
+    if let Some(v) = req.intensity.or(req.sensitivity) {
+        params.intensity = v;
+    }
+    if let Some(v) = req.motion {
+        params.motion = v;
+    }
+    if let Some(v) = req.persistence {
+        params.persistence = v;
+    }
+    if let Some(v) = req.gamma {
+        params.gamma = v;
+    }
+    if let Some(v) = req.attack {
+        params.attack = v;
+    }
+    if let Some(v) = req.release {
+        params.release = v;
+    }
+    slot.set_audio_visualizer_params(params);
+    slot.set_output_mode(OutputMode::AudioVisualizer).await;
+    let params = slot.audio_visualizer_params();
+    let snap: crate::audio::AudioVisualizerSnapshot = app.audio.snapshot(&params);
+    (StatusCode::OK, Json(snap)).into_response()
 }
 
 async fn post_mode(

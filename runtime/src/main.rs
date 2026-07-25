@@ -1,4 +1,5 @@
 mod api;
+mod audio;
 mod clip;
 mod clip_placement;
 mod config;
@@ -76,6 +77,12 @@ async fn main() -> Result<()> {
     let registry = DeviceRegistry::load_or_seed(devices_path, &compiled_dir).context("devices")?;
 
     let text_font = load_text_font(&config);
+    let audio = crate::audio::AudioEngine::new();
+    if let Some(ref id) = config.audio.default_input {
+        if let Err(e) = audio.select_input(Some(id.as_str())) {
+            tracing::warn!("audio default_input '{id}': {e}");
+        }
+    }
 
     let app = new_shared(
         registry,
@@ -87,6 +94,7 @@ async fn main() -> Result<()> {
         uploads_dir,
         mate_assets_dir,
         text_font,
+        audio,
     )
     .context("init shared state")?;
 

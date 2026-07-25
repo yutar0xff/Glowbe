@@ -8,6 +8,8 @@ Type=simple
 User=main
 Group=main
 EnvironmentFile=/etc/glowbe/glowbe.env
+# PipeWire user session (mic / sink monitor capture for Audio Visualizer)
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 # WorkingDirectory / ExecStart の先頭は絶対パス必須のため、GLOWBE_ROOT は bash 側で展開する
 ExecStart=/bin/bash -c 'cd -- "$GLOWBE_ROOT" && exec "$GLOWBE_ROOT/runtime/target/release/glowbe-runtime" "$GLOWBE_ROOT/config.toml"'
 Restart=on-failure

@@ -9,6 +9,11 @@ import type {
   ClipSummary,
   TextModeParams,
 } from './types'
+import type {
+  AudioInputsResponse,
+  AudioVisualizerConfig,
+  AudioVisualizerSnapshot,
+} from './audio/types'
 
 export const API_BASE = import.meta.env.VITE_GLOWBE_API_BASE ?? ''
 export const POLL_MS = 1000
@@ -34,16 +39,19 @@ export function apiDeviceQuery(deviceId: string | null | undefined): string {
   return `?deviceId=${encodeURIComponent(deviceId)}`
 }
 
-export function resolveGlowbeWsUrl(deviceId?: string | null): string {
+export function resolveGlowbeWsUrl(
+  deviceId?: string | null,
+  pathname = '/api/v1/ws',
+): string {
   const base = import.meta.env.VITE_GLOWBE_API_BASE ?? ''
   let url: URL
   if (!base) {
     const p = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    url = new URL(`${p}//${location.host}/api/v1/ws`)
+    url = new URL(`${p}//${location.host}${pathname}`)
   } else {
     const u = new URL(base.startsWith('http') ? base : `http://${base}`)
     u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
-    u.pathname = '/api/v1/ws'
+    u.pathname = pathname
     u.search = ''
     u.hash = ''
     url = u
@@ -188,6 +196,76 @@ export async function postTextConfig(
     throw new Error(msg || `Could not set text config (error ${res.status}).`)
   }
   return (await res.json()) as RuntimeState
+}
+
+export async function fetchAudioInputs(signal: AbortSignal): Promise<AudioInputsResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/audio/inputs`, { signal })
+  if (!res.ok) {
+    const msg = await res.text()
+    throw new Error(msg || `Could not list audio inputs (error ${res.status}).`)
+  }
+  return (await res.json()) as AudioInputsResponse
+}
+
+export async function postAudioInput(
+  signal: AbortSignal,
+  inputId: string | null,
+): Promise<AudioInputsResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/audio/input`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ inputId }),
+    signal,
+  })
+  if (!res.ok) {
+    const msg = await res.text()
+    try {
+      const j = JSON.parse(msg) as { error?: string }
+      if (j.error) throw new Error(j.error)
+    } catch (e) {
+      if (e instanceof Error && e.message !== msg) throw e
+    }
+    throw new Error(msg || `Could not select audio input (error ${res.status}).`)
+  }
+  return (await res.json()) as AudioInputsResponse
+}
+
+export async function fetchAudioVisualizer(
+  signal: AbortSignal,
+  deviceId: string | null,
+): Promise<AudioVisualizerSnapshot> {
+  const q = apiDeviceQuery(deviceId)
+  const res = await fetch(`${API_BASE}/api/v1/audio/visualizer${q}`, { signal })
+  if (!res.ok) {
+    const msg = await res.text()
+    throw new Error(msg || `Could not load audio visualizer (error ${res.status}).`)
+  }
+  return (await res.json()) as AudioVisualizerSnapshot
+}
+
+export async function postAudioVisualizer(
+  signal: AbortSignal,
+  deviceId: string | null,
+  params: Partial<AudioVisualizerConfig>,
+): Promise<AudioVisualizerSnapshot> {
+  const q = apiDeviceQuery(deviceId)
+  const res = await fetch(`${API_BASE}/api/v1/audio/visualizer${q}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(params),
+    signal,
+  })
+  if (!res.ok) {
+    const msg = await res.text()
+    try {
+      const j = JSON.parse(msg) as { error?: string }
+      if (j.error) throw new Error(j.error)
+    } catch (e) {
+      if (e instanceof Error && e.message !== msg) throw e
+    }
+    throw new Error(msg || `Could not set audio visualizer (error ${res.status}).`)
+  }
+  return (await res.json()) as AudioVisualizerSnapshot
 }
 
 export async function fetchDevices(signal: AbortSignal): Promise<DeviceListResponse> {

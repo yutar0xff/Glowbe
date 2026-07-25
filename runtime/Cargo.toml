@@ -20,3 +20,4 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "v7"] }
 fontdue = "0.9.3"
+rustfft = "6.4.1"

@@ -20,3 +20,9 @@ default = "idle"
 
 [server]
 bind = "0.0.0.0:8748"
+
+# Optional PipeWire capture on the runtime host (Linux). Leave unset to select in Studio.
+# Unused while browser tab-audio ingest is active.
+# [audio]
+# default_input = "alsa_input.usb-example.mono-fallback"
+# analysis_hz = 60

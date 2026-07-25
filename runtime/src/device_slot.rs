@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use tokio::sync::RwLock;
 
+use crate::audio::{AudioVisualizerParams, VisualizerSceneState};
 use crate::clip::LoadedClip;
 use crate::devices::DeviceRecord;
 use crate::mate::{self, BreathingParams};
@@ -41,6 +42,8 @@ pub struct DeviceSlot {
     pub(crate) loop_playback_timing: StdRwLock<LoopPlaybackTiming>,
     mate: MateRuntimeState,
     text: TextRuntimeState,
+    audio_viz: StdRwLock<AudioVisualizerParams>,
+    audio_viz_scene: StdRwLock<VisualizerSceneState>,
 }
 
 impl DeviceSlot {
@@ -98,6 +101,8 @@ impl DeviceSlot {
             loop_playback_timing: StdRwLock::new(LoopPlaybackTiming::default()),
             mate: MateRuntimeState::new(anim_origin),
             text: TextRuntimeState::new(),
+            audio_viz: StdRwLock::new(AudioVisualizerParams::default()),
+            audio_viz_scene: StdRwLock::new(VisualizerSceneState::default()),
         }))
     }
 
@@ -142,6 +147,11 @@ impl DeviceSlot {
         // text へ切り替わったら必ず先頭の文字から表示し直す。
         if mode == OutputMode::Text && prev != OutputMode::Text {
             self.text.restart(Instant::now());
+        }
+        if mode == OutputMode::AudioVisualizer && prev != OutputMode::AudioVisualizer {
+            if let Ok(mut g) = self.audio_viz_scene.write() {
+                g.reset();
+            }
         }
         self.bump_output_send_epoch();
         let mut state = self.state.write().await;
@@ -565,5 +575,63 @@ impl DeviceSlot {
     ) {
         self.text
             .render(font, layout_uv, layout_id, self.front_yaw_deg(), now, rgb);
+    }
+
+    pub fn audio_visualizer_params(&self) -> AudioVisualizerParams {
+        self.audio_viz
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn set_audio_visualizer_params(&self, mut params: AudioVisualizerParams) {
+        params.clamp_mut();
+        let pattern_changed = self
+            .audio_viz
+            .read()
+            .map(|g| g.pattern != params.pattern)
+            .unwrap_or(true);
+        if let Ok(mut g) = self.audio_viz.write() {
+            *g = params;
+        }
+        if pattern_changed {
+            if let Ok(mut g) = self.audio_viz_scene.write() {
+                g.reset();
+            }
+        }
+        self.bump_output_send_epoch();
+    }
+
+    pub fn render_audio_visualizer(
+        &self,
+        audio: &crate::audio::AudioEngine,
+        layout_uv: &[(f32, f32)],
+        time_sec: f32,
+        rgb: &mut [u8],
+    ) {
+        let params = self.audio_visualizer_params();
+        audio.tick_analyze(params.attack, params.release);
+        let (frame, bands) = audio.analysis_levels();
+        let Ok(mut scene) = self.audio_viz_scene.write() else {
+            rgb.fill(0);
+            return;
+        };
+        crate::audio::render_visualizer(
+            rgb,
+            &crate::audio::RenderInput {
+                params: &params,
+                rms: frame.rms,
+                low: frame.low,
+                mid: frame.mid,
+                high: frame.high,
+                centroid: frame.centroid,
+                flux: frame.flux,
+                onset: frame.onset,
+                bands: &bands,
+                uv: layout_uv,
+                time_sec,
+            },
+            &mut scene,
+        );
     }
 }

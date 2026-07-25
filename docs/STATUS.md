@@ -40,6 +40,7 @@
 | インタラクティブ | `interactive` | WS タップでリップル等 |
 | Mate | `mate` | 60panels 向け SDF 顔（[`MATE.md`](MATE.md)） |
 | Text | `text` | 球面テキストフロー |
+| Audio Visualizer | `audio-visualizer` | PipeWire／タブ ingest → 球面シーン（Radial / Aurora / Orbital / Impact / Bars / Wobbly） |
 
 ---
 
@@ -53,6 +54,7 @@
 | `GET /api/v1/clips` · `POST /api/v1/loop/select` | クリップ一覧・再生選択 |
 | `POST /api/v1/media/*` | 画像/ZIP/動画 → クリップ変換 |
 | `GET /api/v1/mate/*` · WS `mate` | 表情・呼吸・ライブ制御 |
+| `GET/POST /api/v1/audio/*` | PipeWire 入力・ビジュアライザー |
 | `GET /api/v1/ws` | state · interactive · preview · layout UV |
 
 詳細: [`protocol/control-api.md`](../protocol/control-api.md)
