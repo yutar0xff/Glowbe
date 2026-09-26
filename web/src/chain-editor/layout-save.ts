@@ -1,5 +1,6 @@
 import { API_BASE } from '@/api'
 import type { GlowbeLayout } from '@/chain-editor/glowbe-layout-io'
+import { newClientId } from '@/lib/client-id'
 import type { CompiledLayoutSummary } from '@/types'
 
 export type SaveLayoutResponse = {
@@ -11,8 +12,7 @@ export type SaveLayoutResponse = {
 }
 
 export function newCustomLayoutId(): string {
-  const hex = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
-  return `custom-${hex}`
+  return `custom-${newClientId().replace(/-/g, '').slice(-8)}`
 }
 
 export async function fetchLayoutCatalog(): Promise<CompiledLayoutSummary[]> {

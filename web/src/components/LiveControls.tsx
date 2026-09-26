@@ -12,6 +12,7 @@ import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { useLayoutUv } from '@/hooks/use-layout-uv'
 import { LayoutUvSheet, type TapUvHighlight } from '@/components/LayoutUvMap'
 import { LayoutUvSphereCanvas } from '@/components/LayoutUvSphereCanvas'
+import { newClientId } from '@/lib/client-id'
 import { TAP_HIGHLIGHT_DECAY_MS } from '@/lib/layout-uv-geometry'
 import { DEFAULT_INTERACTIVE_SETTINGS } from '@/interactive/constants'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -256,7 +257,8 @@ export function LiveControls({
 
   const handleInteractiveTapUv = (u: number, v: number, uSphere?: number) => {
     if (!canInteractive) return
-    const id = crypto.randomUUID()
+    // LAN HTTP is not a secure context; crypto.randomUUID() throws there.
+    const id = newClientId('tap')
     const t0 = performance.now()
     setPulseHighlights((prev) => {
       const now = t0
