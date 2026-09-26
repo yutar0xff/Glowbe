@@ -331,22 +331,22 @@ impl DeviceRecord {
 fn default_demo_devices() -> Vec<DeviceRecord> {
     vec![
         DeviceRecord {
-            id: "01900000-0000-7000-8000-000000000001".into(),
-            display_name: "15 panels".into(),
-            esp_ip: None,
-            mdns_hostname: Some("glowbe-15panels".into()),
-            layout_id: "icosahedron-15".into(),
-            output_fps: 60,
-            master_brightness: DEFAULT_MASTER_BRIGHTNESS,
-            front_yaw_deg: 0.0,
-        },
-        DeviceRecord {
             id: "01900000-0000-7000-8000-000000000002".into(),
             display_name: "60 panels".into(),
             esp_ip: None,
             mdns_hostname: Some("glowbe-60panels".into()),
             layout_id: "geodesic-2v-60".into(),
             output_fps: DEFAULT_OUTPUT_FPS,
+            master_brightness: DEFAULT_MASTER_BRIGHTNESS,
+            front_yaw_deg: 0.0,
+        },
+        DeviceRecord {
+            id: "01900000-0000-7000-8000-000000000001".into(),
+            display_name: "15 panels".into(),
+            esp_ip: None,
+            mdns_hostname: Some("glowbe-15panels".into()),
+            layout_id: "icosahedron-15".into(),
+            output_fps: 60,
             master_brightness: DEFAULT_MASTER_BRIGHTNESS,
             front_yaw_deg: 0.0,
         },
@@ -440,7 +440,8 @@ mod tests {
         let _ = fs::remove_file(&tmp);
         let reg = DeviceRegistry::load_or_seed(tmp.clone(), &dir).unwrap();
         assert_eq!(reg.devices().len(), 2);
-        assert_eq!(reg.devices()[0].display_name, "15 panels");
+        assert_eq!(reg.devices()[0].display_name, "60 panels");
+        assert_eq!(reg.devices()[1].display_name, "15 panels");
         assert!(tmp.is_file());
         let again = DeviceRegistry::load_or_seed(tmp.clone(), &dir).unwrap();
         assert_eq!(again.devices().len(), 2);

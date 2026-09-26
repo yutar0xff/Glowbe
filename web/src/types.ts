@@ -29,6 +29,8 @@ export type RuntimeState = {
   loopSourceFrame: number | null
   /** When true, loop timeline is frozen (clip frame does not advance). */
   loopPlaybackPaused: boolean
+  /** Current presence phase when mode is `presence`: wake | wait | down. */
+  presenceEffect?: string | null
   uptimeSec: number
   frameLoopStaleMs: number
   layoutMismatch: boolean
@@ -117,7 +119,14 @@ export type LoadState =
   | { kind: 'ready'; state: RuntimeState; health: Health; clips: ClipSummary[]; fetchedAt: Date }
   | { kind: 'error'; message: string; health?: Health; fetchedAt?: Date }
 
-export type OutputMode = 'idle' | 'loop' | 'interactive' | 'mate' | 'text' | 'audio-visualizer'
+export type OutputMode =
+  | 'idle'
+  | 'loop'
+  | 'interactive'
+  | 'mate'
+  | 'text'
+  | 'audio-visualizer'
+  | 'presence'
 
 export { MATE_MIN_LED_COUNT, mateSupportedForLedCount } from '@/layout-ids'
 export type {

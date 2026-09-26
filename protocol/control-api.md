@@ -56,10 +56,25 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 ### `POST /api/v1/mode`
 
 ```json
-{ "mode": "idle" | "loop" | "interactive" | "mate" | "text" | "audio-visualizer" }
+{ "mode": "idle" | "loop" | "interactive" | "mate" | "text" | "audio-visualizer" | "presence" }
 ```
 
-→ 実装済み: **`idle`**（全消灯・**選択クリップ解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択クリップ）、**`interactive`**（既定は全消灯ベース。WebSocket の **`setSolid`** で全 LED を同一 RGB にしたうえで、インタラクティブ・パルスを UDP 出力に合成。クリップ選択は保持）、**`text`**（任意の文章を球面の周りに流す。パラメータは `POST /api/v1/text/config` で設定）、**`audio-visualizer`**（PipeWire 入力のスペクトル／ビート描画。入力は `POST /api/v1/audio/input`、描画設定は `POST /api/v1/audio/visualizer`）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
+→ 実装済み: **`idle`**（全消灯・**選択クリップ解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択クリップ）、**`interactive`**（既定は全消灯ベース。WebSocket の **`setSolid`** で全 LED を同一 RGB にしたうえで、インタラクティブ・パルスを UDP 出力に合成。クリップ選択は保持）、**`text`**（任意の文章を球面の周りに流す。パラメータは `POST /api/v1/text/config` で設定）、**`audio-visualizer`**（PipeWire 入力のスペクトル／ビート描画。入力は `POST /api/v1/audio/input`、描画設定は `POST /api/v1/audio/visualizer`）、**`presence`**（HTTP の wake / down 演出。入室時は消灯寄り hold。Studio UI なし）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
+
+### `POST /api/v1/presence/effect`
+
+```json
+{ "effect": "wake" | "down" }
+```
+
+`?deviceId=` で対象デバイス。出力モードを **`presence`** に切替。
+
+| effect | 挙動 |
+| --- | --- |
+| `wake` | 北極からランダム色 expanding ring。波面が赤道通過後に mate `neutral` を約 0.1s でフェードイン → 内部 **`wait`**（mate 呼吸） |
+| `down` | 南極からランダム色 expanding ring。波面通過後に mate を約 0.1s でフェードアウト。ring が消えるまで描画を続け、完了後に **wake 前の出力モード**へ復帰。すでに down / hold 中なら no-op |
+
+`wait` は HTTP では指定できない（内部のみ）。`state.presenceEffect` は現在フェーズ `wake` / `wait` / `down`。`200` + 更新後 `state`。不明な effect は `400`。
 
 ### `POST /api/v1/loop/select`
 
@@ -499,7 +514,8 @@ WebSocket の **Binary** メッセージ。ビッグエンディアン。
 |----------------|------|
 | `GET /api/v1/state` | 状態・fps・レイアウト |
 | `GET /health` | 出力ループ死活 |
-| `POST /api/v1/mode` | `idle` / `loop` / `interactive` / `mate` / `text` / `audio-visualizer` |
+| `POST /api/v1/mode` | `idle` / `loop` / `interactive` / `mate` / `text` / `audio-visualizer` / `presence` |
+| `POST /api/v1/presence/effect` | `wake` / `down`（`presence` へ切替） |
 | `POST /api/v1/master-tone` | 全モード共通の輝度 |
 | `GET` / `POST /api/v1/text/config` | Text モード設定 |
 | `GET /api/v1/audio/inputs` · `POST /api/v1/audio/input` | PipeWire ホスト入力一覧・選択（任意） |

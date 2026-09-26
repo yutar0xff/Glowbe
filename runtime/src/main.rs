@@ -18,6 +18,7 @@ mod metrics;
 mod orientation;
 mod output;
 mod pattern;
+mod presence;
 mod source;
 mod sphere;
 mod state;
