@@ -76,7 +76,7 @@ Glowbe は **サーバ権威型のリアルタイム LED 球体プラットフ�
 | G2 | Ubuntu Server と展示用 Windows の両方でランタイムが動く |
 | G3 | ファーム・PCB を同一リポジトリで版管理する |
 | G4 | 自前 UDP で最大パフォーマンス（60 fps 以上を維持） |
-| G5 | モード: ループ再生、インタラクティブ、**mate**、**text**、**audio-visualizer**、idle |
+| G5 | モード: ループ再生、インタラクティブ、**mate**、**text**、**audio-visualizer**、**presence**、idle |
 | G6 | 正距円筒メディアのアップロードとサーバ側アニメーション資産化 |
 | G7 | Web：UV プレビュー、タブ型統合ボード、プレビュー配信 |
 
@@ -215,7 +215,7 @@ Glowbe/
 ```
 優先度（高 → 低）:
   1. 手動オーバーライド（ブラックアウト / テストパターン）
-  2. アクティブモード（loop / interactive / mate / text / audio-visualizer）
+  2. アクティブモード（loop / interactive / mate / text / audio-visualizer / presence）
   3. IDLE（フェードアウトまたは最終フレーム保持）
 ```
 
@@ -367,11 +367,18 @@ trait Mode {
 - 描画は球面方向ベース（大円距離・線形 RGB 合成）。Studio は Scene / Palette / Intensity / Motion / Persistence を操作。
 - 運用手順は [`deploy/systemd/README.md`](../deploy/systemd/README.md)。
 
-### 9.6 モード切替 API
+### 9.6 Presence（`presence`）
+
+- Studio UI なし。`POST /api/v1/presence/effect` で `wake` / `down` のみ指令。
+- **wake**: 北極からランダム色の expanding ring を発火。波面が赤道を通過してから mate `neutral` を約 0.1s でフェードイン → 呼吸付き **wait**。
+- **down**: 南極からランダム色 ring。波面通過後に mate を約 0.1s でフェードアウト。ring 寿命まで描画を続け、完了後に wake 前の出力モードへ復帰。
+- mate は 60panels（`geodesic-2v-60`）向け。未対応レイアウトでは ring のみ。
+
+### 9.7 モード切替 API
 
 ```json
 POST /api/v1/mode
-{ "mode": "loop" | "interactive" | "mate" | "text" | "audio-visualizer" | "idle" }
+{ "mode": "loop" | "interactive" | "mate" | "text" | "audio-visualizer" | "presence" | "idle" }
 ```
 
 ---

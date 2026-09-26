@@ -340,6 +340,26 @@ async fn device_output_loop(
                         rgb.fill(0);
                     }
                 }
+                OutputMode::Presence => {
+                    slot.metrics.set_loop_source_frame(None);
+                    let now = loop_start + raw_elapsed;
+                    let resume = if let Some(ref uv) = layout_uv {
+                        slot.render_presence(
+                            &app.compiled_dir,
+                            &layout_id,
+                            uv,
+                            now,
+                            &mut rgb,
+                        )
+                    } else {
+                        rgb.fill(0);
+                        slot.tick_presence(now);
+                        slot.take_presence_resume()
+                    };
+                    if let Some(mode) = resume {
+                        slot.set_output_mode(mode).await;
+                    }
+                }
             }
 
             if output_mode == OutputMode::Interactive {
@@ -502,6 +522,21 @@ fn try_apply_interactive_overlay(slot: &DeviceSlot, rgb: &mut [u8]) {
             }
         }
     }
+    blend_interactive_accum(rgb, &acc);
+}
+
+/// Overlay a single expanding-ring pulse onto an existing sRGB frame (mate / black base).
+pub fn overlay_expanding_ring(
+    rgb: &mut [u8],
+    uv: &[(f32, f32)],
+    pulse: &InteractivePulse,
+    now: Instant,
+) {
+    if rgb.len() != uv.len() * 3 {
+        return;
+    }
+    let mut acc = vec![0.0f32; rgb.len()];
+    apply_interactive_expanding_ring_diagonal(&mut acc, uv, pulse, now);
     blend_interactive_accum(rgb, &acc);
 }
 

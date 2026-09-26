@@ -61,6 +61,8 @@ struct StateResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     loop_source_frame: Option<u32>,
     loop_playback_paused: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    presence_effect: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -87,6 +89,12 @@ struct LoopSelectRequest {
 #[serde(rename_all = "camelCase")]
 struct LoopPauseRequest {
     paused: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PresenceEffectRequest {
+    effect: String,
 }
 
 #[derive(Deserialize)]
@@ -794,6 +802,13 @@ pub fn router(app: SharedState) -> Router {
             post({
                 let app = app.clone();
                 move |q, body| post_mode(app.clone(), q, body)
+            }),
+        )
+        .route(
+            "/api/v1/presence/effect",
+            post({
+                let app = app.clone();
+                move |q, body| post_presence_effect(app.clone(), q, body)
             }),
         )
         .route(
@@ -2924,11 +2939,50 @@ async fn post_mode(
     (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
 }
 
+async fn post_presence_effect(
+    app: SharedState,
+    Query(q): Query<DeviceIdQuery>,
+    Json(req): Json<PresenceEffectRequest>,
+) -> impl IntoResponse {
+    let slot = match resolve_slot(&app, &q) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+    let Some(cmd) = crate::presence::PresencePhase::parse_command(req.effect.as_str()) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!(
+                    "unsupported presence effect: {} (use wake or down)",
+                    req.effect
+                ),
+            }),
+        )
+            .into_response();
+    };
+    slot.set_output_mode(OutputMode::Presence).await;
+    let applied = {
+        let registry = match mate_api::read_mate_registry(&app) {
+            Ok(g) => g,
+            Err(resp) => return resp.into_response(),
+        };
+        slot.apply_presence_command(cmd, Instant::now(), &registry)
+    };
+    let _ = applied;
+    let s = slot.state.read().await;
+    (StatusCode::OK, Json(state_response(&slot, &s))).into_response()
+}
+
 fn state_response(slot: &DeviceSlot, s: &RuntimeState) -> StateResponse {
     let rec = slot.record_snapshot();
     let expected_layout_hash = slot.expected_layout_hash.read().ok().and_then(|g| *g);
     let esp_layout_hash = s.esp_layout_hash;
     let layout_mismatch = wire::layout_hash_mismatch(expected_layout_hash, esp_layout_hash);
+    let presence_effect = if s.mode == OutputMode::Presence.as_str() {
+        Some(slot.presence_phase().as_str().to_string())
+    } else {
+        None
+    };
     StateResponse {
         device_id: slot.id(),
         layout_id: s.layout_id.clone(),
@@ -2953,6 +3007,7 @@ fn state_response(slot: &DeviceSlot, s: &RuntimeState) -> StateResponse {
         front_yaw_deg: rec.front_yaw_deg,
         loop_source_frame: slot.metrics.loop_source_frame(),
         loop_playback_paused: slot.loop_playback_paused(),
+        presence_effect,
     }
 }
 

@@ -41,6 +41,7 @@
 | Mate | `mate` | 60panels 向け SDF 顔（[`MATE.md`](MATE.md)） |
 | Text | `text` | 球面テキストフロー |
 | Audio Visualizer | `audio-visualizer` | PipeWire／タブ ingest → 球面シーン（Radial / Aurora / Orbital / Impact / Bars / Wobbly） |
+| Presence | `presence` | HTTP `wake` / `down`：北極／南極 random ring + mate neutral フェード。down 完了後は wake 前モードへ復帰。Studio UI なし |
 
 ---
 
@@ -50,6 +51,7 @@
 |----------------|------|
 | `GET /api/v1/state` | 状態・fps・レイアウト |
 | `POST /api/v1/mode` | モード切替 |
+| `POST /api/v1/presence/effect` | presence の wake / down |
 | `GET/POST /api/v1/layouts/*` | レイアウト catalog・CRUD・コンパイル |
 | `GET /api/v1/clips` · `POST /api/v1/loop/select` | クリップ一覧・再生選択 |
 | `POST /api/v1/media/*` | 画像/ZIP/動画 → クリップ変換 |

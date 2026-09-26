@@ -13,7 +13,9 @@ import { MateModePanel } from './MateModePanel'
 import { StatusSection } from './StatusSection'
 import { TextModePanel } from './TextModePanel'
 
-const ALL_MODES: OutputMode[] = [
+type StudioMode = Exclude<OutputMode, 'presence'>
+
+const ALL_MODES: StudioMode[] = [
   'idle',
   'loop',
   'interactive',
@@ -23,7 +25,7 @@ const ALL_MODES: OutputMode[] = [
 ]
 
 const modeMeta: Record<
-  OutputMode,
+  StudioMode,
   { label: string; description: string; icon: typeof Repeat }
 > = {
   loop: {
@@ -59,13 +61,13 @@ const modeMeta: Record<
   },
 }
 
-function panelMode(mode: string): OutputMode {
-  return (ALL_MODES as readonly string[]).includes(mode) ? (mode as OutputMode) : 'idle'
+function panelMode(mode: string): StudioMode {
+  return (ALL_MODES as readonly string[]).includes(mode) ? (mode as StudioMode) : 'idle'
 }
 
 export function StudioPage() {
   const { load, modeBusy, layoutBusy, setMode } = useGlowbeRuntime()
-  const [studioTab, setStudioTab] = useState<OutputMode | null>(null)
+  const [studioTab, setStudioTab] = useState<StudioMode | null>(null)
 
   const stateMode = load.kind === 'ready' ? load.state.mode : null
   const layoutId = load.kind === 'ready' ? load.state.layoutId : null
@@ -83,7 +85,7 @@ export function StudioPage() {
 
   const pickMode = (next: string) => {
     if (modeBusy !== null) return
-    const nextMode = next as OutputMode
+    const nextMode = next as StudioMode
     if (nextMode === modeKey) return
     if (nextMode === 'mate' && !mateSupported) {
       setStudioTab('mate')
@@ -122,7 +124,7 @@ export function StudioPage() {
           </p>
           {modeBusy !== null ? (
             <p className="text-xs text-muted-foreground">
-              Switching to {modeMeta[modeBusy as OutputMode]?.label ?? modeBusy}…
+              Switching to {modeMeta[modeBusy as StudioMode]?.label ?? modeBusy}…
             </p>
           ) : null}
         </div>

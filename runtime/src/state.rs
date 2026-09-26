@@ -86,6 +86,8 @@ pub enum OutputMode {
     Text,
     /// PipeWire 入力のオーディオビジュアライザー。
     AudioVisualizer,
+    /// HTTP 指令の wake / down（内部 wait）プレゼンス演出。
+    Presence,
 }
 
 impl OutputMode {
@@ -95,6 +97,7 @@ impl OutputMode {
     const MATE: u8 = 3;
     const TEXT: u8 = 4;
     const AUDIO_VISUALIZER: u8 = 5;
+    const PRESENCE: u8 = 6;
 
     pub fn parse(id: &str) -> Option<Self> {
         match id {
@@ -104,6 +107,7 @@ impl OutputMode {
             "mate" => Some(Self::Mate),
             "text" => Some(Self::Text),
             "audio-visualizer" => Some(Self::AudioVisualizer),
+            "presence" => Some(Self::Presence),
             _ => None,
         }
     }
@@ -116,6 +120,7 @@ impl OutputMode {
             Self::Mate => "mate",
             Self::Text => "text",
             Self::AudioVisualizer => "audio-visualizer",
+            Self::Presence => "presence",
         }
     }
 
@@ -127,6 +132,7 @@ impl OutputMode {
             Self::Mate => Self::MATE,
             Self::Text => Self::TEXT,
             Self::AudioVisualizer => Self::AUDIO_VISUALIZER,
+            Self::Presence => Self::PRESENCE,
         }
     }
 
@@ -138,6 +144,7 @@ impl OutputMode {
             Self::MATE => Self::Mate,
             Self::TEXT => Self::Text,
             Self::AUDIO_VISUALIZER => Self::AudioVisualizer,
+            Self::PRESENCE => Self::Presence,
             _ => Self::Loop,
         }
     }

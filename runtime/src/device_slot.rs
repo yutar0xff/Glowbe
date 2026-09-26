@@ -15,6 +15,7 @@ use crate::mate::{self, BreathingParams};
 use crate::mate_state::MateRuntimeState;
 use crate::media;
 use crate::metrics::OutputMetrics;
+use crate::presence::{self, PresencePhase, PresenceState};
 use crate::state::{
     InteractiveEffectKind, InteractivePulse, LoopPlaybackTiming, OutputMode, RuntimeState,
     MAX_INTERACTIVE_PULSES,
@@ -44,6 +45,11 @@ pub struct DeviceSlot {
     text: TextRuntimeState,
     audio_viz: StdRwLock<AudioVisualizerParams>,
     audio_viz_scene: StdRwLock<VisualizerSceneState>,
+    presence: StdRwLock<PresenceState>,
+    /// Mode to restore after an active presence down finishes.
+    presence_resume_mode: AtomicU8,
+    /// Pending restore code (`0xFF` = none) set when active down completes.
+    presence_pending_resume: AtomicU8,
 }
 
 impl DeviceSlot {
@@ -103,6 +109,9 @@ impl DeviceSlot {
             text: TextRuntimeState::new(),
             audio_viz: StdRwLock::new(AudioVisualizerParams::default()),
             audio_viz_scene: StdRwLock::new(VisualizerSceneState::default()),
+            presence: StdRwLock::new(PresenceState::down_hold(anim_origin)),
+            presence_resume_mode: AtomicU8::new(OutputMode::Idle.code()),
+            presence_pending_resume: AtomicU8::new(0xFF),
         }))
     }
 
@@ -152,6 +161,11 @@ impl DeviceSlot {
             if let Ok(mut g) = self.audio_viz_scene.write() {
                 g.reset();
             }
+        }
+        if mode == OutputMode::Presence && prev != OutputMode::Presence {
+            self.presence_resume_mode
+                .store(prev.code(), Ordering::Relaxed);
+            self.reset_presence_down_hold(Instant::now());
         }
         self.bump_output_send_epoch();
         let mut state = self.state.write().await;
@@ -633,5 +647,144 @@ impl DeviceSlot {
             },
             &mut scene,
         );
+    }
+
+    fn reset_presence_down_hold(&self, now: Instant) {
+        if let Ok(mut g) = self.presence.write() {
+            *g = PresenceState::down_hold(now);
+        }
+        self.bump_output_send_epoch();
+    }
+
+    pub fn presence_phase(&self) -> PresencePhase {
+        self.tick_presence(Instant::now());
+        self.presence
+            .read()
+            .map(|g| g.phase)
+            .unwrap_or(PresencePhase::Down)
+    }
+
+    /// Apply HTTP wake/down. Returns false when `down` is a no-op in DownHold / active down.
+    pub fn apply_presence_command(
+        &self,
+        cmd: PresencePhase,
+        now: Instant,
+        registry: &mate::PresetRegistry,
+    ) -> bool {
+        match cmd {
+            PresencePhase::Wake => {
+                let seed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos() as u64)
+                    .unwrap_or(1)
+                    ^ (now.elapsed().as_nanos() as u64);
+                let ring = presence::make_pole_ring(0.0, now, seed);
+                if let Ok(mut g) = self.presence.write() {
+                    *g = PresenceState {
+                        phase: PresencePhase::Wake,
+                        started: now,
+                        ring: Some(ring),
+                        resume_after_down: false,
+                    };
+                }
+                self.presence_pending_resume.store(0xFF, Ordering::Relaxed);
+                let _ = self.set_mate_expression("neutral", registry, 0);
+                self.set_mate_breathing(BreathingParams { enabled: true });
+                self.bump_output_send_epoch();
+                true
+            }
+            PresencePhase::Down => {
+                let already_down = self
+                    .presence
+                    .read()
+                    .map(|g| g.phase == PresencePhase::Down)
+                    .unwrap_or(true);
+                if already_down {
+                    return false;
+                }
+                let seed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos() as u64)
+                    .unwrap_or(2)
+                    ^ !(now.elapsed().as_nanos() as u64);
+                let ring = presence::make_pole_ring(1.0, now, seed);
+                if let Ok(mut g) = self.presence.write() {
+                    *g = PresenceState {
+                        phase: PresencePhase::Down,
+                        started: now,
+                        ring: Some(ring),
+                        resume_after_down: true,
+                    };
+                }
+                self.bump_output_send_epoch();
+                true
+            }
+            PresencePhase::Wait => false,
+        }
+    }
+
+    /// Tick presence; if an active down finished, stash the mode to restore.
+    pub fn tick_presence(&self, now: Instant) {
+        let Ok(mut g) = self.presence.write() else {
+            return;
+        };
+        if presence::tick_phase(&mut g, now) {
+            let code = self.presence_resume_mode.load(Ordering::Relaxed);
+            self.presence_pending_resume
+                .store(code, Ordering::Relaxed);
+        }
+    }
+
+    /// Take a pending post-down mode restore, if any.
+    pub fn take_presence_resume(&self) -> Option<OutputMode> {
+        let code = self.presence_pending_resume.swap(0xFF, Ordering::Relaxed);
+        if code == 0xFF {
+            None
+        } else {
+            Some(OutputMode::from_code(code))
+        }
+    }
+
+    pub fn render_presence(
+        &self,
+        compiled_dir: &std::path::Path,
+        layout_id: &str,
+        layout_uv: &[(f32, f32)],
+        now: Instant,
+        rgb: &mut [u8],
+    ) -> Option<OutputMode> {
+        self.tick_presence(now);
+        let (phase, started, ring) = self
+            .presence
+            .read()
+            .map(|g| (g.phase, g.started, g.ring))
+            .unwrap_or((PresencePhase::Down, now, None));
+        let elapsed = (now - started).as_secs_f32().max(0.0);
+        let fade = presence::mate_fade(phase, elapsed);
+
+        if phase == PresencePhase::Down && fade <= 1e-5 && ring.is_none() {
+            rgb.fill(0);
+            return self.take_presence_resume();
+        }
+
+        if fade > 1e-5 {
+            if let Err(e) = self.ensure_mate_samples(compiled_dir, layout_id) {
+                tracing::warn!("presence mate samples: {e:#}");
+                rgb.fill(0);
+            } else {
+                self.render_mate(rgb);
+                presence::scale_rgb(rgb, fade);
+            }
+        } else {
+            rgb.fill(0);
+        }
+
+        if matches!(
+            phase,
+            PresencePhase::Wake | PresencePhase::Down | PresencePhase::Wait
+        ) {
+            presence::overlay_ring(rgb, layout_uv, ring.as_ref(), now);
+        }
+        self.take_presence_resume()
     }
 }
