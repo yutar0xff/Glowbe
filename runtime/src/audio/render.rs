@@ -146,9 +146,8 @@ fn update_bar_display(
     env: BarEnvelope,
 ) {
     let rise = (1.0 - (-dt * env.rise_rate).exp()).clamp(0.05, 1.0);
-    let fall = (1.0
-        - (-dt * (env.fall_base + (1.0 - persistence) * env.fall_persist_scale)).exp())
-    .clamp(0.02, 1.0);
+    let fall = (1.0 - (-dt * (env.fall_base + (1.0 - persistence) * env.fall_persist_scale)).exp())
+        .clamp(0.02, 1.0);
     for (i, cur) in bars.iter_mut().enumerate() {
         let target = bands.get(i).copied().unwrap_or(0.0).clamp(0.0, 1.0) * intensity;
         let a = if target > *cur { rise } else { fall };
@@ -383,8 +382,7 @@ fn render_aurora(
 
         let mut acc = [0.0f32; 3];
         let energy = mid * 0.78 + low * 0.28;
-        let main_level =
-            curtain * lat_envelope * energy * 0.82 * (0.82 + persistence * 0.18);
+        let main_level = curtain * lat_envelope * energy * 0.82 * (0.82 + persistence * 0.18);
         let veil_level = veil * lat_envelope * mid * 0.28;
         let color_t = (0.30 + 0.22 * phase.cos() + input.centroid * 0.28).clamp(0.0, 1.0);
         accumulate_linear(
@@ -594,15 +592,8 @@ fn render_spectrum_bars(
             let progress = ((lat - base_lat) / span).clamp(0.0, 1.0);
             let tick = (progress * tick_count).fract();
             let gap = if tick > 0.86 { 0.18 } else { 1.0 };
-            let level = fill
-                * gap
-                * (0.36 + visual_energy * 0.44)
-                * (0.78 + 0.22 * persistence);
-            accumulate_linear(
-                &mut acc,
-                input.params.palette.sample_at(color_t),
-                level,
-            );
+            let level = fill * gap * (0.36 + visual_energy * 0.44) * (0.78 + 0.22 * persistence);
+            accumulate_linear(&mut acc, input.params.palette.sample_at(color_t), level);
             let tip = smoothstep(top_lat - span / tick_count, top_lat + 0.02, lat)
                 * (1.0 - smoothstep(top_lat, top_lat + 0.05, lat));
             accumulate_linear(&mut acc, accent, tip * TIP_ACCENT_GAIN * visual_energy);
@@ -1359,7 +1350,10 @@ mod tests {
             &mut state,
         );
         let sum: u32 = out.iter().map(|&x| x as u32).sum();
-        assert_eq!(sum, 0, "spectrum bars should stay black on silence, sum={sum}");
+        assert_eq!(
+            sum, 0,
+            "spectrum bars should stay black on silence, sum={sum}"
+        );
     }
 
     #[test]

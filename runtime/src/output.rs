@@ -320,7 +320,8 @@ async fn device_output_loop(
                     last_sent_rgb = None;
                     idle_link_economy_sent = false;
                 }
-            } else if local_playout_active && last_local_refresh.elapsed() >= LOCAL_REFRESH_INTERVAL {
+            } else if local_playout_active && last_local_refresh.elapsed() >= LOCAL_REFRESH_INTERVAL
+            {
                 // Keep radio awake and push current master brightness.
                 send_link_mode(&sock, true).await;
                 send_local_playout(&sock, true, local_brightness).await;
@@ -405,13 +406,7 @@ async fn device_output_loop(
                     slot.metrics.set_loop_source_frame(None);
                     let now = loop_start + raw_elapsed;
                     let resume = if let Some(ref uv) = layout_uv {
-                        slot.render_presence(
-                            &app.compiled_dir,
-                            &layout_id,
-                            uv,
-                            now,
-                            &mut rgb,
-                        )
+                        slot.render_presence(&app.compiled_dir, &layout_id, uv, now, &mut rgb)
                     } else {
                         rgb.fill(0);
                         slot.tick_presence(now);

@@ -2772,16 +2772,16 @@ async fn audio_ingest_ws(ws: WebSocketUpgrade, app: SharedState) -> impl IntoRes
 async fn audio_ingest_loop(mut socket: WebSocket, app: SharedState) {
     if let Err(e) = app.audio.begin_ingest() {
         let _ = socket
-            .send(Message::Text(
-                json!({ "error": e }).to_string().into(),
-            ))
+            .send(Message::Text(json!({ "error": e }).to_string().into()))
             .await;
         let _ = socket.send(Message::Close(None)).await;
         return;
     }
     let _ = socket
         .send(Message::Text(
-            json!({ "ok": true, "sampleRate": 48000 }).to_string().into(),
+            json!({ "ok": true, "sampleRate": 48000 })
+                .to_string()
+                .into(),
         ))
         .await;
 

@@ -592,10 +592,7 @@ impl DeviceSlot {
     }
 
     pub fn audio_visualizer_params(&self) -> AudioVisualizerParams {
-        self.audio_viz
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_default()
+        self.audio_viz.read().map(|g| g.clone()).unwrap_or_default()
     }
 
     pub fn set_audio_visualizer_params(&self, mut params: AudioVisualizerParams) {
@@ -730,8 +727,7 @@ impl DeviceSlot {
         };
         if presence::tick_phase(&mut g, now) {
             let code = self.presence_resume_mode.load(Ordering::Relaxed);
-            self.presence_pending_resume
-                .store(code, Ordering::Relaxed);
+            self.presence_pending_resume.store(code, Ordering::Relaxed);
         }
     }
 

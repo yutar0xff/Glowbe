@@ -108,9 +108,7 @@ fn bake_layout(compiled_dir: &Path, layout_id: &str, out_path: &Path) -> Result<
     body.push_str("  for (size_t i = 0; i < bytes; i++) {\n");
     body.push_str("    const uint8_t f = pgm_read_byte(kFrames[from] + i);\n");
     body.push_str("    const uint8_t t = pgm_read_byte(kFrames[to] + i);\n");
-    body.push_str(
-        "    dst[i] = static_cast<uint8_t>(f * a + t * w + 0.5f);\n",
-    );
+    body.push_str("    dst[i] = static_cast<uint8_t>(f * a + t * w + 0.5f);\n");
     body.push_str("  }\n");
     body.push_str("}\n\n");
     body.push_str("}  // namespace glowbe::local_mate\n");
