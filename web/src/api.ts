@@ -19,6 +19,21 @@ export const API_BASE = import.meta.env.VITE_GLOWBE_API_BASE ?? ''
 export const POLL_MS = 1000
 export const DEVICE_URL_PARAM = 'device'
 
+/** Human-readable message for fetch/AbortController failures (UI English). */
+export function formatRuntimeError(err: unknown): string {
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return 'Timed out waiting for the runtime. It may be busy or unreachable — retry in a moment.'
+  }
+  if (err instanceof Error) {
+    const msg = err.message.trim()
+    if (!msg || /aborted without reason/i.test(msg) || msg === 'The user aborted a request.') {
+      return 'Timed out waiting for the runtime. It may be busy or unreachable — retry in a moment.'
+    }
+    return msg
+  }
+  return String(err)
+}
+
 export function readActiveDeviceFromUrl(): string | null {
   const id = new URLSearchParams(location.search).get(DEVICE_URL_PARAM)
   return id && id.trim() ? id.trim() : null
