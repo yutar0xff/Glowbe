@@ -127,6 +127,7 @@ export type OutputMode =
   | 'text'
   | 'audio-visualizer'
   | 'presence'
+  | 'offline'
 
 export { MATE_MIN_LED_COUNT, mateSupportedForLedCount } from '@/layout-ids'
 export type {

@@ -76,7 +76,7 @@ Glowbe は **サーバ権威型のリアルタイム LED 球体プラットフ�
 | G2 | Ubuntu Server と展示用 Windows の両方でランタイムが動く |
 | G3 | ファーム・PCB を同一リポジトリで版管理する |
 | G4 | 自前 UDP で最大パフォーマンス（60 fps 以上を維持） |
-| G5 | モード: ループ再生、インタラクティブ、**mate**、**text**、**audio-visualizer**、**presence**、idle |
+| G5 | モード: ループ再生、インタラクティブ、**mate**、**text**、**audio-visualizer**、**presence**、**offline**、idle |
 | G6 | 正距円筒メディアのアップロードとサーバ側アニメーション資産化 |
 | G7 | Web：UV プレビュー、タブ型統合ボード、プレビュー配信 |
 
@@ -215,9 +215,11 @@ Glowbe/
 ```
 優先度（高 → 低）:
   1. 手動オーバーライド（ブラックアウト / テストパターン）
-  2. アクティブモード（loop / interactive / mate / text / audio-visualizer / presence）
+  2. アクティブモード（loop / interactive / mate / text / audio-visualizer / presence / offline）
   3. IDLE（フェードアウトまたは最終フレーム保持）
 ```
+
+`offline` 時はランタイムが FRAME を送らず、ESP がオンボードプレイリストを描画する（§11.3）。
 
 ### 6.4 設定（`config.toml`）
 
@@ -378,7 +380,7 @@ trait Mode {
 
 ```json
 POST /api/v1/mode
-{ "mode": "loop" | "interactive" | "mate" | "text" | "audio-visualizer" | "presence" | "idle" }
+{ "mode": "loop" | "interactive" | "mate" | "text" | "audio-visualizer" | "presence" | "offline" | "idle" }
 ```
 
 ---
@@ -428,13 +430,19 @@ POST /api/v1/mode
 
 ```
 main
-├── glowbe_wire.h         # FRAME パーサ・再構成
+├── glowbe_wire.h         # FRAME / LINK / LOCAL パーサ・再構成
 ├── include/generated/<layout-id>/glowbe_layout.h   # layout-compile 自動生成（env の -I で選択）
+├── include/generated/geodesic-2v-60/glowbe_local_geom.h  # esp-local-tables（offline 用）
+├── local_playout.cpp     # offline オンボードプレイリスト
 ├── led_driver.cpp          # NeoPixelBus I2S0 並列
 ├── main.cpp              # Wi-Fi + UDP + LED ドライバ
 ```
 
-### 11.3 その他
+### 11.3 Offline（オンボードプレイリスト）
+
+Studio / Runtime のモード **`offline`**（`geodesic-2v-60` / `icosahedron-15`）は、UDP **LOCAL**（`msg_type=5`）で ESP にオンボード再生を指示する。再生中は FRAME を送らず、ESP がオンボードプレイリストを描画する。マスター輝度は LOCAL の `brightness`（Studio の Brightness と同じ）を反映する。**60panels:** (1) **`demo/rainbow-rings`** の rainbow→rings（末尾の rings→rainbow ブレンドアウトは省略）、(2) mate ツアー **happy → surprised → sad → love**（入り/出フェード付き）。**15panels:** **`demo/rainbow-rings`** のみをループ。幾何テーブルは `npx tsx tools/esp-local-tables.ts`、mate キーフレームは `cargo run -p glowbe-runtime -- bake-offline-mate`。他モードへ戻すと LOCAL stop の後、通常ストリームに復帰する。Wi-Fi STA は維持する（切替用）。
+
+### 11.4 その他
 
 - **Wi-Fi 2.4 GHz STA のみ**。
 - プロビジョニングはホスト USB ツール（Web からは行わない）。

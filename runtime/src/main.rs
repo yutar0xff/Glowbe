@@ -15,6 +15,7 @@ mod mate_api;
 mod mate_state;
 mod media;
 mod metrics;
+mod offline_mate_bake;
 mod orientation;
 mod output;
 mod pattern;
@@ -51,6 +52,9 @@ async fn main() -> Result<()> {
     }
     if args.first().is_some_and(|arg| arg == "mate-import-stamp") {
         return mate_import_stamp_command(&args[1..]);
+    }
+    if args.first().is_some_and(|arg| arg == "bake-offline-mate") {
+        return offline_mate_bake::bake_all();
     }
 
     let config_path = args

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { AudioLines, Moon, MousePointer2, Repeat, Smile, Type } from 'lucide-react'
+import { AudioLines, HardDrive, Moon, MousePointer2, Repeat, Smile, Type } from 'lucide-react'
 import type { OutputMode } from '@/types'
 import { mateSupportedForLedCount } from '@/types'
+import { offlineSupportedForLayout } from '@/layout-ids'
 import { useGlowbeRuntime } from '@/GlowbeRuntimeContext'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -22,6 +23,7 @@ const ALL_MODES: StudioMode[] = [
   'mate',
   'text',
   'audio-visualizer',
+  'offline',
 ]
 
 const modeMeta: Record<
@@ -54,6 +56,12 @@ const modeMeta: Record<
       'Tab audio capture or a host mic drives spherical spectrum scenes on the selected device.',
     icon: AudioLines,
   },
+  offline: {
+    label: 'Offline',
+    description:
+      'On-device playlist (60: rainbow→rings→mate; 15: rainbow→rings). No FRAME stream.',
+    icon: HardDrive,
+  },
   idle: {
     label: 'Idle',
     description: 'Lights off; loop selection is cleared.',
@@ -80,6 +88,7 @@ export function StudioPage() {
   const { state, clips } = load
 
   const mateSupported = mateSupportedForLedCount(state.ledCount)
+  const offlineSupported = offlineSupportedForLayout(state.layoutId)
   const serverModeKey = panelMode(state.mode)
   const modeKey = studioTab ?? serverModeKey
 
@@ -89,6 +98,10 @@ export function StudioPage() {
     if (nextMode === modeKey) return
     if (nextMode === 'mate' && !mateSupported) {
       setStudioTab('mate')
+      return
+    }
+    if (nextMode === 'offline' && !offlineSupported) {
+      setStudioTab('offline')
       return
     }
     setStudioTab(null)
@@ -105,11 +118,12 @@ export function StudioPage() {
           <TabsList variant="segmented" className="max-w-full">
             {ALL_MODES.map((mode) => {
               const { label, icon: Icon } = modeMeta[mode]
+              const unsupportedOffline = mode === 'offline' && !offlineSupported
               return (
                 <TabsTrigger
                   key={mode}
                   value={mode}
-                  disabled={modeBusy !== null || layoutBusy}
+                  disabled={modeBusy !== null || layoutBusy || unsupportedOffline}
                   className="box-border flex h-full min-h-12 w-full min-w-0 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-xs font-medium after:hidden sm:min-h-12 sm:py-2.5 sm:text-sm"
                   aria-label={label}
                 >
@@ -122,6 +136,11 @@ export function StudioPage() {
           <p className="relative z-10 mt-1 text-pretty border-t border-border/40 pt-3 text-sm leading-relaxed text-muted-foreground">
             {modeMeta[modeKey].description}
           </p>
+          {modeKey === 'offline' && !offlineSupported ? (
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              Offline mode requires geodesic-2v-60 or icosahedron-15.
+            </p>
+          ) : null}
           {modeBusy !== null ? (
             <p className="text-xs text-muted-foreground">
               Switching to {modeMeta[modeBusy as StudioMode]?.label ?? modeBusy}…
@@ -147,6 +166,25 @@ export function StudioPage() {
           className="mt-6 space-y-6 outline-none focus-visible:outline-none sm:mt-10"
         >
           <AudioVisualizerModePanel state={state} />
+        </TabsContent>
+        <TabsContent value="offline" className="mt-6 space-y-6 outline-none focus-visible:outline-none sm:mt-10">
+          {offlineSupported ? (
+            <p className="text-sm text-muted-foreground">
+              {state.layoutId === 'geodesic-2v-60' ? (
+                <>
+                  Playing on the ESP: <code>demo/rainbow-rings</code> (rainbow then rings), then
+                  mate presets happy → surprised → sad → love (~2s each with a short morph).
+                </>
+              ) : (
+                <>
+                  Playing on the ESP: <code>demo/rainbow-rings</code> (rainbow then expanding
+                  rings), looping on-device.
+                </>
+              )}{' '}
+              Uses the device Brightness control. Studio preview stays dark while FRAME streaming
+              is paused.
+            </p>
+          ) : null}
         </TabsContent>
       </Tabs>
 

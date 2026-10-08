@@ -88,6 +88,8 @@ pub enum OutputMode {
     AudioVisualizer,
     /// HTTP 指令の wake / down（内部 wait）プレゼンス演出。
     Presence,
+    /// ESP オンボード固定プレイリスト（FRAME 送信なし）。
+    Offline,
 }
 
 impl OutputMode {
@@ -98,6 +100,7 @@ impl OutputMode {
     const TEXT: u8 = 4;
     const AUDIO_VISUALIZER: u8 = 5;
     const PRESENCE: u8 = 6;
+    const OFFLINE: u8 = 7;
 
     pub fn parse(id: &str) -> Option<Self> {
         match id {
@@ -108,6 +111,7 @@ impl OutputMode {
             "text" => Some(Self::Text),
             "audio-visualizer" => Some(Self::AudioVisualizer),
             "presence" => Some(Self::Presence),
+            "offline" => Some(Self::Offline),
             _ => None,
         }
     }
@@ -121,6 +125,7 @@ impl OutputMode {
             Self::Text => "text",
             Self::AudioVisualizer => "audio-visualizer",
             Self::Presence => "presence",
+            Self::Offline => "offline",
         }
     }
 
@@ -133,6 +138,7 @@ impl OutputMode {
             Self::Text => Self::TEXT,
             Self::AudioVisualizer => Self::AUDIO_VISUALIZER,
             Self::Presence => Self::PRESENCE,
+            Self::Offline => Self::OFFLINE,
         }
     }
 
@@ -145,6 +151,7 @@ impl OutputMode {
             Self::TEXT => Self::Text,
             Self::AUDIO_VISUALIZER => Self::AudioVisualizer,
             Self::PRESENCE => Self::Presence,
+            Self::OFFLINE => Self::Offline,
             _ => Self::Loop,
         }
     }

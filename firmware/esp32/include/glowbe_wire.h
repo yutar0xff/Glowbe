@@ -11,6 +11,7 @@ constexpr uint8_t kMagic1 = 0x42;
 constexpr uint8_t kVersion = 1;
 constexpr uint8_t kMsgFrame = 1;
 constexpr uint8_t kMsgLink = 4;
+constexpr uint8_t kMsgLocal = 5;
 constexpr uint8_t kHeaderSize = 16;
 // Datagram = kHeaderSize + chunk; IPv4 UDP payload max 1472 → chunk ≤ 1456 (use 1440).
 // Must match runtime `MAX_CHUNK_PAYLOAD`.
@@ -50,6 +51,20 @@ inline bool parseLink(const uint8_t* data, size_t len, bool& active_out) {
     return false;
   }
   active_out = data[4] != 0;
+  return true;
+}
+
+/// LOCAL (16 B): byte 4 — `0` = stream FRAME, non-zero = onboard playlist.
+/// byte 5 — master brightness 0–255 (linear, same scale as Runtime masterBrightness).
+inline bool parseLocal(const uint8_t* data, size_t len, bool& playout_out, uint8_t& brightness_u8_out) {
+  if (len < kHeaderSize) {
+    return false;
+  }
+  if (data[0] != kMagic0 || data[1] != kMagic1 || data[2] != kVersion || data[3] != kMsgLocal) {
+    return false;
+  }
+  playout_out = data[4] != 0;
+  brightness_u8_out = data[5];
   return true;
 }
 

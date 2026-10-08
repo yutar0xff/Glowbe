@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "glowbe_frame_queue.h"
+#include "glowbe_local_playout.h"
 #include "glowbe_playout.h"
 #include "glowbe_udp.h"
 #include "glowbe_wire.h"
@@ -155,10 +156,46 @@ void processUdpPacket(const uint8_t* buf, int n, const IPAddress& from) {
       buf[3] == glowbe::wire::kMsgLink) {
     bool active = true;
     if (glowbe::wire::parseLink(buf, static_cast<size_t>(n), active)) {
-      requestLinkEconomy(!active);
+      // Onboard offline playout needs a wake radio; ignore economy hints while local is on.
+      if (glowbe::local::active()) {
+        requestLinkEconomy(false);
+      } else {
+        requestLinkEconomy(!active);
+      }
     } else {
       drops++;
     }
+    return;
+  }
+
+  if (n >= static_cast<int>(glowbe::wire::kHeaderSize) && buf[0] == glowbe::wire::kMagic0 &&
+      buf[1] == glowbe::wire::kMagic1 && buf[2] == glowbe::wire::kVersion &&
+      buf[3] == glowbe::wire::kMsgLocal) {
+    bool playout = false;
+    uint8_t brightness_u8 = 255;
+    if (glowbe::wire::parseLocal(buf, static_cast<size_t>(n), playout, brightness_u8)) {
+      // Brightness applies even when playout flag is unchanged (slider while Offline).
+      glowbe::local::setBrightnessU8(brightness_u8);
+      const bool was = glowbe::local::active();
+      if (playout == was) {
+        return;
+      }
+      Serial.printf("LOCAL rx playout=%u (was=%u) bright=%u\n", playout ? 1u : 0u, was ? 1u : 0u,
+                    static_cast<unsigned>(brightness_u8));
+      glowbe::local::setActive(playout);
+      if (playout) {
+        glowbe::local::resetPlaylist(millis());
+        g_playout.reset();
+        assembler.reset();
+      }
+    } else {
+      drops++;
+    }
+    return;
+  }
+
+  // While onboard playlist runs, ignore FRAME traffic (LOCAL/STATUS still handled).
+  if (glowbe::local::active()) {
     return;
   }
 
@@ -207,9 +244,30 @@ void udpRecvTask(void*) {
 void ledDisplayTask(void*) {
   uint8_t* const rgb = led_task_rgb;
   const size_t n = glowbe::playout::Ring::kRgbBytes;
+  // Target 120 fps onboard. Use micros — FreeRTOS ticks are too coarse for 8ms pacing.
+  // WS2812 show alone is ~4.4ms on 60panels (147 LEDs/line).
+  constexpr uint32_t kLocalFramePeriodUs = 8333;
 
   for (;;) {
-    if (!g_frame_queue.pop(rgb, portMAX_DELAY)) {
+    if (glowbe::local::active()) {
+      const uint32_t frame_start_us = micros();
+      const uint32_t now_ms = millis();
+      glowbe::local::renderFrame(rgb, GLOWBE_LED_COUNT, now_ms);
+      glowbe_led_set_rgb(rgb);
+      glowbe_led_show();
+      memcpy(last_applied_rgb, rgb, n);
+      have_last_applied = true;
+      frames_applied++;
+      const uint32_t spent_us = micros() - frame_start_us;
+      if (spent_us < kLocalFramePeriodUs) {
+        delayMicroseconds(kLocalFramePeriodUs - spent_us);
+      } else {
+        taskYIELD();
+      }
+      continue;
+    }
+
+    if (!g_frame_queue.pop(rgb, pdMS_TO_TICKS(20))) {
       continue;
     }
     if (have_last_applied && memcmp(rgb, last_applied_rgb, n) == 0) {
@@ -307,6 +365,17 @@ void onWifiDisconnected() {
 
 void service(uint32_t now_ms) {
   flushFpsWindow(now_ms);
+
+  if (glowbe::local::active()) {
+    // Keep modem awake for LOCAL refresh / mode exit while ESP renders onboard.
+    if (link_mode_request >= 0) {
+      link_mode_request = -1;
+    }
+    if (link_economy) {
+      applyLinkEconomy(false);
+    }
+    return;
+  }
 
   if (link_mode_request >= 0) {
     const bool economy = link_mode_request != 0;

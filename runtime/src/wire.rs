@@ -6,8 +6,9 @@ pub const MAGIC0: u8 = 0x47;
 pub const MAGIC1: u8 = 0x42;
 pub const VERSION: u8 = 1;
 pub const MSG_FRAME: u8 = 1;
-pub const MSG_LINK: u8 = 4;
 pub const MSG_STATUS: u8 = 3;
+pub const MSG_LINK: u8 = 4;
+pub const MSG_LOCAL: u8 = 5;
 pub const HEADER_SIZE: usize = 16;
 /// Max RGB bytes per chunk. One datagram is 16-byte header + chunk; IPv4 UDP payload max is
 /// 1472, so chunk ≤ 1456. Use 1440 with margin; must match firmware `kMaxChunkPayload`.
@@ -54,6 +55,21 @@ pub fn encode_link(active: bool) -> Vec<u8> {
     pkt[2] = VERSION;
     pkt[3] = MSG_LINK;
     pkt[4] = u8::from(active);
+    pkt
+}
+
+/// Onboard playout control (16-byte datagram).
+/// `playout: true` = ESP fixed playlist; `false` = stream FRAME.
+/// `brightness` is linear 0.0–1.0 (same as device masterBrightness); encoded as u8 0–255.
+pub fn encode_local(playout: bool, brightness: f32) -> Vec<u8> {
+    let mut pkt = vec![0u8; HEADER_SIZE];
+    pkt[0] = MAGIC0;
+    pkt[1] = MAGIC1;
+    pkt[2] = VERSION;
+    pkt[3] = MSG_LOCAL;
+    pkt[4] = u8::from(playout);
+    let b = brightness.clamp(0.0, 1.0);
+    pkt[5] = (b * 255.0).round() as u8;
     pkt
 }
 
@@ -111,6 +127,18 @@ mod tests {
         assert_eq!(on[4], 1);
         let off = encode_link(false);
         assert_eq!(off[4], 0);
+    }
+
+    #[test]
+    fn encode_local_playout_and_stream() {
+        let on = encode_local(true, 0.46);
+        assert_eq!(on.len(), HEADER_SIZE);
+        assert_eq!(&on[0..4], &[MAGIC0, MAGIC1, VERSION, MSG_LOCAL]);
+        assert_eq!(on[4], 1);
+        assert_eq!(on[5], (0.46 * 255.0_f32).round() as u8);
+        let off = encode_local(false, 1.0);
+        assert_eq!(off[4], 0);
+        assert_eq!(off[5], 255);
     }
 
     #[test]

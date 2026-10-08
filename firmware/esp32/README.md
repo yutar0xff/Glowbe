@@ -28,6 +28,13 @@ npx tsx tools/layout-compile.ts config/layouts/presets/icosahedron-15.layout.jso
 npx tsx tools/layout-compile.ts config/layouts/presets/geodesic-2v-60.layout.json
 ```
 
+Offline playout tables (after ledmap exists):
+
+```bash
+npx tsx tools/esp-local-tables.ts
+cargo run -p glowbe-runtime -- bake-offline-mate   # 60panels mate keyframes
+```
+
 ## Build & flash
 
 ```bash

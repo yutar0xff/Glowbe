@@ -56,10 +56,10 @@ JSON フィールド名は外部 API として **camelCase** に統一する。
 ### `POST /api/v1/mode`
 
 ```json
-{ "mode": "idle" | "loop" | "interactive" | "mate" | "text" | "audio-visualizer" | "presence" }
+{ "mode": "idle" | "loop" | "interactive" | "mate" | "text" | "audio-visualizer" | "presence" | "offline" }
 ```
 
-→ 実装済み: **`idle`**（全消灯・**選択クリップ解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択クリップ）、**`interactive`**（既定は全消灯ベース。WebSocket の **`setSolid`** で全 LED を同一 RGB にしたうえで、インタラクティブ・パルスを UDP 出力に合成。クリップ選択は保持）、**`text`**（任意の文章を球面の周りに流す。パラメータは `POST /api/v1/text/config` で設定）、**`audio-visualizer`**（PipeWire 入力のスペクトル／ビート描画。入力は `POST /api/v1/audio/input`、描画設定は `POST /api/v1/audio/visualizer`）、**`presence`**（HTTP の wake / down 演出。入室時は消灯寄り hold。Studio UI なし）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
+→ 実装済み: **`idle`**（全消灯・**選択クリップ解除**・WS インタラクティブ合成は無視）、**`loop`**（テストパターンまたは選択クリップ）、**`interactive`**（既定は全消灯ベース。WebSocket の **`setSolid`** で全 LED を同一 RGB にしたうえで、インタラクティブ・パルスを UDP 出力に合成。クリップ選択は保持）、**`text`**（任意の文章を球面の周りに流す。パラメータは `POST /api/v1/text/config` で設定）、**`audio-visualizer`**（PipeWire 入力のスペクトル／ビート描画。入力は `POST /api/v1/audio/input`、描画設定は `POST /api/v1/audio/visualizer`）、**`presence`**（HTTP の wake / down 演出。入室時は消灯寄り hold。Studio UI なし）、**`offline`**（ESP オンボード `demo/rainbow-rings`。ランタイムは LOCAL UDP を送り FRAME を止める。レイアウト **`geodesic-2v-60` / `icosahedron-15`**、他は `400`）。`200` + 更新後 `state` オブジェクト。その他のモードは `400`。
 
 ### `POST /api/v1/presence/effect`
 
@@ -514,7 +514,7 @@ WebSocket の **Binary** メッセージ。ビッグエンディアン。
 |----------------|------|
 | `GET /api/v1/state` | 状態・fps・レイアウト |
 | `GET /health` | 出力ループ死活 |
-| `POST /api/v1/mode` | `idle` / `loop` / `interactive` / `mate` / `text` / `audio-visualizer` / `presence` |
+| `POST /api/v1/mode` | `idle` / `loop` / `interactive` / `mate` / `text` / `audio-visualizer` / `presence` / `offline` |
 | `POST /api/v1/presence/effect` | `wake` / `down`（`presence` へ切替） |
 | `POST /api/v1/master-tone` | 全モード共通の輝度 |
 | `GET` / `POST /api/v1/text/config` | Text モード設定 |

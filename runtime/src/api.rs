@@ -2909,6 +2909,20 @@ async fn post_mode(
     if mode == OutputMode::Idle {
         slot.clear_clip().await;
     }
+    if mode == OutputMode::Offline {
+        let layout_id = slot.state.read().await.layout_id.clone();
+        if !layouts::offline_supported_for_layout(&layout_id) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!(
+                        "offline mode requires geodesic-2v-60 or icosahedron-15 (got {layout_id})"
+                    ),
+                }),
+            )
+                .into_response();
+        }
+    }
     if mode == OutputMode::Mate {
         let layout_id = slot.state.read().await.layout_id.clone();
         if let Err(resp) = mate_api::guard_mate_layout(&app.compiled_dir, &layout_id) {

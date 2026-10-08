@@ -11,6 +11,11 @@ export function mateSupportedForLedCount(ledCount: number): boolean {
   return ledCount >= MATE_MIN_LED_COUNT
 }
 
+/** Offline onboard rainbow-rings is supported on product layouts. */
+export function offlineSupportedForLayout(layoutId: string): boolean {
+  return layoutId === LAYOUT_ID_GEODESIC_2V_60 || layoutId === LAYOUT_ID_ICOSAHEDRON_15
+}
+
 export function formatLayoutHash(hash: number | null | undefined): string {
   if (hash == null) return '—'
   return `0x${hash.toString(16).padStart(8, '0')}`
