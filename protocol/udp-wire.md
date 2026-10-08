@@ -97,6 +97,23 @@ Wi-Fi 省電力のヒント。16 バイト固定（ペイロードなし）。
 - **idle 以外へ遷移時:** フレーム送信の直前に `link_active=1` を送り、ラジオを即時起こす。
 - LINK 非対応ファームはメッセージを破棄する。トラフィック無し **約 2.5 秒**後にファーム側タイムアウトでも economy に入れる。
 
+## メッセージ: LOCAL（ランタイム → ESP、任意）
+
+オンボード再生（固定プレイリスト）の切替。16 バイト固定。
+
+| オフセット | 型 | 名前 | 値 |
+|-----------|-----|------|-----|
+| 0 | u8[2] | magic | `0x47 0x42` |
+| 2 | u8 | version | `1` |
+| 3 | u8 | msg_type | `5` = LOCAL |
+| 4 | u8 | playout | `0` = stream（通常 FRAME 受信）、`1` = onboard playlist |
+| 5 | u8 | brightness | `0`–`255` = master brightness（Studio / Runtime と同じ線形スケール） |
+| 6 | u8[10] | reserved | `0` |
+
+- **`playout=1`:** ESP は FRAME を無視し、内蔵プレイリストをローカル生成して LED を駆動する。Wi-Fi / STATUS / LOCAL 受信は維持する。`brightness` をオンボード描画のマスター輝度に反映する（Offline 中のスライダ変更は LOCAL 再送で追従）。
+- **`playout=0`:** 通常の FRAME ストリーム受信に戻る（`brightness` は無視してよい）。
+- LOCAL 非対応ファームはメッセージを破棄する。
+
 ## 実装ノート
 
 - ESP は `led_count` がコンパイル時定数と一致しないパケットを無視する。

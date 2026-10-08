@@ -8,6 +8,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+/// Layouts that ship ESP onboard offline playout tables (`glowbe_local_geom.h`).
+pub const OFFLINE_LAYOUT_IDS: &[&str] = &["geodesic-2v-60", "icosahedron-15"];
+
+pub fn offline_supported_for_layout(layout_id: &str) -> bool {
+    OFFLINE_LAYOUT_IDS.contains(&layout_id)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum LayoutSourceKind {

@@ -111,10 +111,7 @@ impl AudioEngine {
 
     #[cfg(test)]
     pub fn ingest_active(&self) -> bool {
-        self.inner
-            .lock()
-            .map(|g| g.ingest_active)
-            .unwrap_or(false)
+        self.inner.lock().map(|g| g.ingest_active).unwrap_or(false)
     }
 
     fn clear_ring_and_analyzer(g: &mut EngineInner) {

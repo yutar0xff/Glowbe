@@ -418,12 +418,12 @@ mod tests {
     fn default_demo_devices_have_stable_ids_and_layouts() {
         let demos = default_demo_devices();
         assert_eq!(demos.len(), 2);
-        assert_eq!(demos[0].id, "01900000-0000-7000-8000-000000000001");
-        assert_eq!(demos[0].layout_id, "icosahedron-15");
-        assert_eq!(demos[0].mdns_hostname.as_deref(), Some("glowbe-15panels"));
-        assert_eq!(demos[1].id, "01900000-0000-7000-8000-000000000002");
-        assert_eq!(demos[1].layout_id, "geodesic-2v-60");
-        assert_eq!(demos[1].mdns_hostname.as_deref(), Some("glowbe-60panels"));
+        assert_eq!(demos[0].id, "01900000-0000-7000-8000-000000000002");
+        assert_eq!(demos[0].layout_id, "geodesic-2v-60");
+        assert_eq!(demos[0].mdns_hostname.as_deref(), Some("glowbe-60panels"));
+        assert_eq!(demos[1].id, "01900000-0000-7000-8000-000000000001");
+        assert_eq!(demos[1].layout_id, "icosahedron-15");
+        assert_eq!(demos[1].mdns_hostname.as_deref(), Some("glowbe-15panels"));
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets/compiled");
         for d in &demos {
             assert!(validate_record(d, &dir).is_ok());

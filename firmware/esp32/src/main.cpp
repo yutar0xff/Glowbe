@@ -7,6 +7,7 @@
 #include "glowbe_brightness.h"
 #include "glowbe_frame_queue.h"
 #include "glowbe_layout.h"
+#include "glowbe_local_playout.h"
 #include "glowbe_playout.h"
 #include "glowbe_stream_workers.h"
 #include "led_driver.h"
@@ -91,11 +92,13 @@ void loop() {
     last_diag = now;
     Serial.printf(
         "diag: ip=%s frames=%lu applied=%lu drops=%lu frame_aborts=%lu queue_drops=%lu "
-        "udp_err=%lu fps_x10=%u rssi=%d%s%s\n",
+        "udp_err=%lu fps_x10=%u rssi=%d local=%u local_frames=%lu%s%s\n",
         WiFi.localIP().toString().c_str(), static_cast<unsigned long>(d.frames_rx),
         static_cast<unsigned long>(d.frames_applied), static_cast<unsigned long>(d.drops),
         static_cast<unsigned long>(d.frame_aborts), static_cast<unsigned long>(d.queue_drops),
         static_cast<unsigned long>(d.udp_errors), d.fps_rx_x10, WiFi.RSSI(),
+        glowbe::local::active() ? 1u : 0u,
+        static_cast<unsigned long>(glowbe::local::framesRendered()),
         d.link_economy ? " economy" : "", d.link_stale ? " link_stale(hold_last)" : "");
   }
 

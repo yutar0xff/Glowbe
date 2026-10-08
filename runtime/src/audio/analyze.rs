@@ -151,11 +151,7 @@ impl Analyzer {
             self.bands_smooth[i] = cur + (target - cur) * a;
         }
         // Suppress side-lobes / empty-band AGC boost so a single tone stays a thin peak.
-        let frame_peak = self
-            .bands_smooth
-            .iter()
-            .copied()
-            .fold(0.0f32, f32::max);
+        let frame_peak = self.bands_smooth.iter().copied().fold(0.0f32, f32::max);
         for i in 0..BAND_COUNT {
             let mut x = self.bands_smooth[i];
             if frame_peak > 1e-5 && x < frame_peak * RELATIVE_BAND_FLOOR {

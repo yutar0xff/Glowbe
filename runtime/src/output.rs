@@ -104,6 +104,24 @@ async fn send_link_mode(sock: &UdpSocket, active: bool) {
     }
 }
 
+/// LOCAL refresh while Offline (must stay under ESP link-economy timeout ≈ 2.5s).
+const LOCAL_REFRESH_INTERVAL: Duration = Duration::from_millis(500);
+
+async fn send_local_playout(sock: &UdpSocket, playout: bool, brightness: f32) {
+    let pkt = wire::encode_local(playout, brightness);
+    if let Err(e) = sock.send(&pkt).await {
+        warn!("udp local playout send failed: {e}");
+    }
+}
+
+/// UDP is lossy on 2.4 GHz — burst a few identical LOCAL datagrams on mode edges.
+async fn burst_local_playout(sock: &UdpSocket, playout: bool, brightness: f32) {
+    for _ in 0..3 {
+        send_local_playout(sock, playout, brightness).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
 pub async fn run(config: Config, app: SharedState) -> Result<()> {
     let _ = OUTPUT_CONFIG.set(config.clone());
     let status_port = config.output.status_port;
@@ -197,6 +215,8 @@ async fn device_output_loop(
         let mut last_send_epoch = slot.output_send_epoch();
         let mut force_sends_after_epoch: u8 = 0;
         let mut idle_link_economy_sent = false;
+        let mut local_playout_active = false;
+        let mut last_local_refresh = Instant::now() - Duration::from_secs(10);
 
         let mut sent_window = 0u64;
         let mut window_start = Instant::now();
@@ -228,6 +248,10 @@ async fn device_output_loop(
                 last_sent_rgb = None;
                 force_sends_after_epoch = 4;
                 idle_link_economy_sent = false;
+                if local_playout_active {
+                    send_local_playout(&sock, false, slot.master_brightness()).await;
+                    local_playout_active = false;
+                }
                 send_link_mode(&sock, true).await;
                 continue;
             }
@@ -268,11 +292,49 @@ async fn device_output_loop(
             let clip_elapsed = slot.clip_elapsed_for_loop(raw_elapsed);
             let t_ms = raw_elapsed.as_millis() as u32;
             let output_mode = slot.output_mode();
-            if output_mode != OutputMode::Idle {
+            if output_mode != OutputMode::Idle && output_mode != OutputMode::Offline {
                 idle_link_economy_sent = false;
             }
+
+            // Enter/leave ESP onboard playlist before composing RGB.
+            let want_local = output_mode == OutputMode::Offline;
+            let local_brightness = slot.master_brightness();
+            if want_local != local_playout_active {
+                if want_local {
+                    send_link_mode(&sock, true).await;
+                    tokio::time::sleep(Duration::from_millis(30)).await;
+                    burst_local_playout(&sock, true, local_brightness).await;
+                    info!(
+                        "device {device_id}: offline LOCAL playout requested (brightness={local_brightness:.3})"
+                    );
+                    local_playout_active = true;
+                    last_local_refresh = Instant::now();
+                    idle_link_economy_sent = false;
+                    last_sent_rgb = None;
+                } else {
+                    burst_local_playout(&sock, false, local_brightness).await;
+                    local_playout_active = false;
+                    send_link_mode(&sock, true).await;
+                    info!("device {device_id}: offline LOCAL playout cleared");
+                    force_sends_after_epoch = 4;
+                    last_sent_rgb = None;
+                    idle_link_economy_sent = false;
+                }
+            } else if local_playout_active && last_local_refresh.elapsed() >= LOCAL_REFRESH_INTERVAL
+            {
+                // Keep radio awake and push current master brightness.
+                send_link_mode(&sock, true).await;
+                send_local_playout(&sock, true, local_brightness).await;
+                last_local_refresh = Instant::now();
+            }
+
             match output_mode {
                 OutputMode::Idle => {
+                    slot.metrics.set_loop_source_frame(None);
+                    rgb.fill(0);
+                }
+                OutputMode::Offline => {
+                    // Device renders onboard; preview stays black (no FRAME stream).
                     slot.metrics.set_loop_source_frame(None);
                     rgb.fill(0);
                 }
@@ -344,13 +406,7 @@ async fn device_output_loop(
                     slot.metrics.set_loop_source_frame(None);
                     let now = loop_start + raw_elapsed;
                     let resume = if let Some(ref uv) = layout_uv {
-                        slot.render_presence(
-                            &app.compiled_dir,
-                            &layout_id,
-                            uv,
-                            now,
-                            &mut rgb,
-                        )
+                        slot.render_presence(&app.compiled_dir, &layout_id, uv, now, &mut rgb)
                     } else {
                         rgb.fill(0);
                         slot.tick_presence(now);
@@ -382,43 +438,52 @@ async fn device_output_loop(
                 last_sent_rgb = None;
                 force_sends_after_epoch = 4;
                 idle_link_economy_sent = false;
-                send_link_mode(&sock, true).await;
+                if local_playout_active {
+                    // Brightness / device edits bump epoch — push LOCAL immediately.
+                    send_link_mode(&sock, true).await;
+                    send_local_playout(&sock, true, slot.master_brightness()).await;
+                    last_local_refresh = Instant::now();
+                } else {
+                    send_link_mode(&sock, true).await;
+                }
             }
 
-            let unchanged = last_sent_rgb.as_deref() == Some(rgb.as_slice());
-            if !unchanged || force_sends_after_epoch > 0 {
-                let mut full_send_ok = true;
-                for pkt in wire::encode_frame(led_count, frame_id, &rgb) {
-                    if let Err(e) = sock.send(&pkt).await {
-                        warn!("device {device_id}: udp send failed: {e}");
-                        full_send_ok = false;
-                        break;
+            if !local_playout_active {
+                let unchanged = last_sent_rgb.as_deref() == Some(rgb.as_slice());
+                if !unchanged || force_sends_after_epoch > 0 {
+                    let mut full_send_ok = true;
+                    for pkt in wire::encode_frame(led_count, frame_id, &rgb) {
+                        if let Err(e) = sock.send(&pkt).await {
+                            warn!("device {device_id}: udp send failed: {e}");
+                            full_send_ok = false;
+                            break;
+                        }
                     }
-                }
 
-                if full_send_ok {
-                    consecutive_frame_failures = 0;
-                    reconnect_backoff = Duration::from_millis(500);
-                    slot.metrics.increment_frames_sent();
-                    sent_window += 1;
-                    match &mut last_sent_rgb {
-                        Some(buf) if buf.len() == rgb.len() => buf.copy_from_slice(&rgb),
-                        _ => last_sent_rgb = Some(rgb.clone()),
+                    if full_send_ok {
+                        consecutive_frame_failures = 0;
+                        reconnect_backoff = Duration::from_millis(500);
+                        slot.metrics.increment_frames_sent();
+                        sent_window += 1;
+                        match &mut last_sent_rgb {
+                            Some(buf) if buf.len() == rgb.len() => buf.copy_from_slice(&rgb),
+                            _ => last_sent_rgb = Some(rgb.clone()),
+                        }
+                        frame_id = frame_id.wrapping_add(1);
+                        if force_sends_after_epoch > 0 {
+                            force_sends_after_epoch = force_sends_after_epoch.saturating_sub(1);
+                        }
+                    } else {
+                        consecutive_frame_failures += 1;
+                        if consecutive_frame_failures >= 60 {
+                            warn!("device {device_id}: udp failures; reconnect");
+                            break 'session;
+                        }
                     }
-                    frame_id = frame_id.wrapping_add(1);
-                    if force_sends_after_epoch > 0 {
-                        force_sends_after_epoch = force_sends_after_epoch.saturating_sub(1);
-                    }
-                } else {
-                    consecutive_frame_failures += 1;
-                    if consecutive_frame_failures >= 60 {
-                        warn!("device {device_id}: udp failures; reconnect");
-                        break 'session;
-                    }
+                } else if output_mode == OutputMode::Idle && !idle_link_economy_sent {
+                    send_link_mode(&sock, false).await;
+                    idle_link_economy_sent = true;
                 }
-            } else if output_mode == OutputMode::Idle && !idle_link_economy_sent {
-                send_link_mode(&sock, false).await;
-                idle_link_economy_sent = true;
             }
 
             if window_start.elapsed() >= Duration::from_secs(1) {

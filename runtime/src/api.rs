@@ -2772,16 +2772,16 @@ async fn audio_ingest_ws(ws: WebSocketUpgrade, app: SharedState) -> impl IntoRes
 async fn audio_ingest_loop(mut socket: WebSocket, app: SharedState) {
     if let Err(e) = app.audio.begin_ingest() {
         let _ = socket
-            .send(Message::Text(
-                json!({ "error": e }).to_string().into(),
-            ))
+            .send(Message::Text(json!({ "error": e }).to_string().into()))
             .await;
         let _ = socket.send(Message::Close(None)).await;
         return;
     }
     let _ = socket
         .send(Message::Text(
-            json!({ "ok": true, "sampleRate": 48000 }).to_string().into(),
+            json!({ "ok": true, "sampleRate": 48000 })
+                .to_string()
+                .into(),
         ))
         .await;
 
@@ -2795,8 +2795,8 @@ async fn audio_ingest_loop(mut socket: WebSocket, app: SharedState) {
                     continue;
                 }
                 let mut samples = Vec::with_capacity(bin.len() / 4);
-                for chunk in bin.chunks_exact(4) {
-                    let bits = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                for chunk in bin.as_chunks::<4>().0 {
+                    let bits = u32::from_le_bytes(*chunk);
                     samples.push(f32::from_bits(bits));
                 }
                 app.audio.push_ingest_samples(&samples);
@@ -2908,6 +2908,20 @@ async fn post_mode(
 
     if mode == OutputMode::Idle {
         slot.clear_clip().await;
+    }
+    if mode == OutputMode::Offline {
+        let layout_id = slot.state.read().await.layout_id.clone();
+        if !layouts::offline_supported_for_layout(&layout_id) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!(
+                        "offline mode requires geodesic-2v-60 or icosahedron-15 (got {layout_id})"
+                    ),
+                }),
+            )
+                .into_response();
+        }
     }
     if mode == OutputMode::Mate {
         let layout_id = slot.state.read().await.layout_id.clone();

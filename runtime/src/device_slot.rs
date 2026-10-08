@@ -319,7 +319,7 @@ impl DeviceSlot {
     pub fn fill_interactive_base(&self, rgb: &mut [u8]) {
         let solid = self.interactive_solid.read().ok().and_then(|g| *g);
         if let Some([r, g_ch, b]) = solid {
-            for px in rgb.chunks_exact_mut(3) {
+            for px in rgb.as_chunks_mut::<3>().0 {
                 px[0] = r;
                 px[1] = g_ch;
                 px[2] = b;
@@ -592,10 +592,7 @@ impl DeviceSlot {
     }
 
     pub fn audio_visualizer_params(&self) -> AudioVisualizerParams {
-        self.audio_viz
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_default()
+        self.audio_viz.read().map(|g| g.clone()).unwrap_or_default()
     }
 
     pub fn set_audio_visualizer_params(&self, mut params: AudioVisualizerParams) {
@@ -730,8 +727,7 @@ impl DeviceSlot {
         };
         if presence::tick_phase(&mut g, now) {
             let code = self.presence_resume_mode.load(Ordering::Relaxed);
-            self.presence_pending_resume
-                .store(code, Ordering::Relaxed);
+            self.presence_pending_resume.store(code, Ordering::Relaxed);
         }
     }
 
