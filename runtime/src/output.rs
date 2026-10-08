@@ -10,7 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::config::Config;
 use crate::device_slot::DeviceSlot;
-use crate::devices::{self, DeviceRecord};
+use crate::devices::DeviceRecord;
 use crate::discover;
 use crate::pattern;
 use crate::sphere::{angle_rad_between_unit, unit_dir_from_equirect_uv_y_up};
@@ -59,12 +59,7 @@ async fn resolve_esp_socket(config: &Config, record: &DeviceRecord) -> Result<So
     if let Some(hostname) = record.mdns_host() {
         let found = tokio::task::spawn_blocking({
             let hostname = hostname.to_string();
-            move || {
-                discover::glowbe_udp_all(Duration::from_secs(8))
-                    .into_iter()
-                    .find(|s| devices::mdns_hosts_match(&s.hostname, &hostname))
-                    .map(|s| s.addr)
-            }
+            move || discover::glowbe_udp_by_hostname(&hostname, Duration::from_secs(8))
         })
         .await
         .context("mDNS task join")?;

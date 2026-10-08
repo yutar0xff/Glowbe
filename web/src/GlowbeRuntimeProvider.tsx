@@ -11,6 +11,7 @@ import {
   apiDeviceQuery,
   fetchDevices,
   fetchState,
+  formatRuntimeError,
   POLL_MS,
   postMateExpression,
   postMateBreathing,
@@ -78,7 +79,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setLoad({
         kind: 'error',
-        message: err instanceof Error ? err.message : String(err),
+        message: formatRuntimeError(err),
         fetchedAt: new Date(),
       })
     } finally {
@@ -106,7 +107,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
         if (active) {
           setLoad({
             kind: 'error',
-            message: err instanceof Error ? err.message : String(err),
+            message: formatRuntimeError(err),
             fetchedAt: new Date(),
           })
         }
@@ -158,7 +159,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setLoad((prev) => ({
         kind: 'error',
-        message: err instanceof Error ? err.message : String(err),
+        message: formatRuntimeError(err),
         health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
         fetchedAt: new Date(),
       }))
@@ -201,7 +202,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setLoad((prev) => ({
         kind: 'error',
-        message: err instanceof Error ? err.message : String(err),
+        message: formatRuntimeError(err),
         health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
         fetchedAt: new Date(),
       }))
@@ -238,7 +239,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         setLoad((prev) => ({
           kind: 'error',
-          message: err instanceof Error ? err.message : String(err),
+          message: formatRuntimeError(err),
           health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
           fetchedAt: new Date(),
         }))
@@ -273,7 +274,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         setLoad((prev) => ({
           kind: 'error',
-          message: err instanceof Error ? err.message : String(err),
+          message: formatRuntimeError(err),
           health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
           fetchedAt: new Date(),
         }))
@@ -308,7 +309,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         setLoad((prev) => ({
           kind: 'error',
-          message: err instanceof Error ? err.message : String(err),
+          message: formatRuntimeError(err),
           health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
           fetchedAt: new Date(),
         }))
@@ -343,7 +344,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         setLoad((prev) => ({
           kind: 'error',
-          message: err instanceof Error ? err.message : String(err),
+          message: formatRuntimeError(err),
           health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
           fetchedAt: new Date(),
         }))
@@ -384,7 +385,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setLoad((prev) => ({
         kind: 'error',
-        message: err instanceof Error ? err.message : String(err),
+        message: formatRuntimeError(err),
         health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
         fetchedAt: new Date(),
       }))
@@ -418,7 +419,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setLoad((prev) => ({
         kind: 'error',
-        message: err instanceof Error ? err.message : String(err),
+        message: formatRuntimeError(err),
         health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
         fetchedAt: new Date(),
       }))
@@ -456,7 +457,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setLoad((prev) => ({
         kind: 'error',
-        message: err instanceof Error ? err.message : String(err),
+        message: formatRuntimeError(err),
         health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
         fetchedAt: new Date(),
       }))
@@ -659,7 +660,7 @@ export function GlowbeRuntimeProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         setLoad((prev) => ({
           kind: 'error',
-          message: err instanceof Error ? err.message : String(err),
+          message: formatRuntimeError(err),
           health: prev.kind === 'ready' || prev.kind === 'error' ? prev.health : undefined,
           fetchedAt: new Date(),
         }))
