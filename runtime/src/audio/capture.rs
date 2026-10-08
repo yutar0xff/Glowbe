@@ -251,9 +251,8 @@ where
                                 continue;
                             }
                             let mut samples = Vec::with_capacity(usable / 4);
-                            for chunk in leftover[..usable].chunks_exact(4) {
-                                let bits =
-                                    u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                            for chunk in leftover[..usable].as_chunks::<4>().0 {
+                                let bits = u32::from_le_bytes(*chunk);
                                 samples.push(f32::from_bits(bits));
                             }
                             leftover.drain(..usable);

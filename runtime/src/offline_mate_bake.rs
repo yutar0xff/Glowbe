@@ -49,9 +49,10 @@ fn bake_layout(compiled_dir: &Path, layout_id: &str, out_path: &Path) -> Result<
     leds.sort_by_key(|l| l.i);
     let uv: Vec<(f32, f32)> = leds.iter().map(|l| (l.u, l.v)).collect();
     // Offline mate face sits 90° clockwise from default front (+X → −Z, RH +Y yaw).
-    let mut frame_params = FaceFrameParams::default();
-    frame_params.yaw_deg = 90.0;
-    let frame = FaceFrame::from_params(frame_params);
+    let frame = FaceFrame::from_params(FaceFrameParams {
+        yaw_deg: 90.0,
+        ..Default::default()
+    });
     // Match offline geom tables (FRONT_YAW_DEG = 0 in tools/esp-local-tables.ts).
     let samples = mate::build_face_samples_yawed(&uv, &frame, 0.0);
     let registry =

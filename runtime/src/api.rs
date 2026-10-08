@@ -2795,8 +2795,8 @@ async fn audio_ingest_loop(mut socket: WebSocket, app: SharedState) {
                     continue;
                 }
                 let mut samples = Vec::with_capacity(bin.len() / 4);
-                for chunk in bin.chunks_exact(4) {
-                    let bits = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                for chunk in bin.as_chunks::<4>().0 {
+                    let bits = u32::from_le_bytes(*chunk);
                     samples.push(f32::from_bits(bits));
                 }
                 app.audio.push_ingest_samples(&samples);

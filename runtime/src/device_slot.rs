@@ -319,7 +319,7 @@ impl DeviceSlot {
     pub fn fill_interactive_base(&self, rgb: &mut [u8]) {
         let solid = self.interactive_solid.read().ok().and_then(|g| *g);
         if let Some([r, g_ch, b]) = solid {
-            for px in rgb.chunks_exact_mut(3) {
+            for px in rgb.as_chunks_mut::<3>().0 {
                 px[0] = r;
                 px[1] = g_ch;
                 px[2] = b;

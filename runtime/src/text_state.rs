@@ -255,7 +255,7 @@ impl TextRuntimeState {
         out_rgb: &mut [u8],
     ) {
         let params = self.params();
-        for px in out_rgb.chunks_exact_mut(3) {
+        for px in out_rgb.as_chunks_mut::<3>().0 {
             px.copy_from_slice(&params.bg_color);
         }
         let Some(font) = font else {
